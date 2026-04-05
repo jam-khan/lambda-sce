@@ -71,6 +71,17 @@ inductive Step : Exp → Exp → Exp → Prop where
     → RLookupV v1 l v2
     → Step v (.rproj v1 l) v2
 
+inductive MStep : Exp → Exp → Exp → Prop where
+  | refl :
+    ∀ {v e},
+      Value v
+    → MStep v e e
+  | step :
+    ∀ {v e e' e''},
+      Step v e e'
+    → MStep v e' e''
+    → MStep v e e''
+
 @[simp]
 theorem value_weaken
   {E A : Typ} { v : Exp} :
