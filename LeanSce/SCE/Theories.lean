@@ -1034,3 +1034,18 @@ theorem separate_compilation
   | link _ _ _ _ _ _ _ =>
     have hmlink := elabExp.mlink Γ Γ₁ A B l es₁ es₂ ec₁ ec₂ helab₁ helab₂ hlookup
     exact semantic_preservation hmlink heval henv henv_val
+
+theorem separate_compilation_closed
+    {Γ₁ A B : SCE.Typ} {l : String}
+    {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp}
+    {vs : SCE.Exp}
+    (helab₁ : elabExp SCE.Typ.top es₁ Γ₁ ec₁)
+    (helab₂ : elabExp SCE.Typ.top es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ec₂)
+    (hlookup : SRLookup Γ₁ l A)
+    (heval : S_Sem.BStep .unit (.mlink es₁ es₂) vs)
+    : ∃ vc, EBig .unit (linkedCore Core.Typ.top l ec₁ ec₂) vc
+           ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
+  have hlink : CoreLink Core.Typ.top l (elabTyp Γ₁) (elabTyp A) (elabTyp B) ec₁ ec₂
+      (linkedCore Core.Typ.top l ec₁ ec₂) :=
+    CoreLink.link _ _ _ _ _ _ _ (type_safe_record_lookup hlookup)
+  exact separate_compilation helab₁ helab₂ hlookup hlink heval (elabExp.eunit .top) SCE.Value.vunit
