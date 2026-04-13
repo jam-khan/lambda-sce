@@ -69,3 +69,19 @@ inductive SStep : Exp → Exp → Exp → Prop where
     → Value v1
     → Sel v1 l v2
     → SStep v (.rproj v1 l) v2
+  | ssmstruct_sandboxed {v e e'}
+    : Value v
+    → SStep .unit e e'
+    → SStep v (.mstruct .sandboxed e) (.mstruct .sandboxed e')
+  | ssmstruct_open {v e e'}
+    : Value v
+    → SStep v e e'
+    → SStep v (.mstruct .open_ e) (.mstruct .open_ e')
+  | ssmstructv_sandboxed {v v'}
+    : Value v
+    → Value v'
+    → SStep v (.mstruct .sandboxed v') v'
+  | ssmstructv_open {v v'}
+    : Value v
+    → Value v'
+    → SStep v (.mstruct .open_ v') v'

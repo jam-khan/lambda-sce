@@ -312,6 +312,30 @@ theorem sgpreservation
       have ⟨ce', hce'⟩ := elab_rlookup_pres hlook hsel hv1 (elab_value_weaken h1 hv1 _)
       have hv' := sce_sel_value hsel hv1
       exact ⟨_, elab_value_weaken hce' hv' _⟩
+  | ssmstruct_sandboxed hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab
+    rename_i _ _ hsb_sand hsb_open h
+    have heq := hsb_sand rfl; subst heq
+    have ⟨ce', h'⟩ := ih ⟨_, h⟩ Value.vunit ⟨_, elabExp.eunit _⟩
+    exact ⟨_, elabExp.mstruct _ _ _ _ _ _ Core.Exp.unit (fun _ => rfl) hsb_open h'⟩
+  | ssmstruct_open hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab
+    rename_i _ _ hsb_sand hsb_open h
+    have heq := hsb_open rfl; subst heq
+    have ⟨ce', h'⟩ := ih ⟨_, h⟩ hval ⟨ρc, henv⟩
+    exact ⟨_, elabExp.mstruct _ _ _ _ _ _ Core.Exp.unit hsb_sand (fun _ => rfl) h'⟩
+  | ssmstructv_sandboxed hv hv' =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab
+    rename_i _ _ _ _ h
+    exact ⟨_, elab_value_weaken h hv' _⟩
+  | ssmstructv_open hv hv' =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab
+    rename_i _ _ _ _ h
+    exact ⟨_, elab_value_weaken h hv' _⟩
 
 -- Whole-program preservation
 theorem spreservation {e e' : SCE.Exp} {A : SCE.Typ}

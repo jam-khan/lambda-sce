@@ -99,7 +99,21 @@ theorem sgprogress
   | enmrg => sorry
   | letb => sorry
   | openm => sorry
-  | mstruct => sorry
+  | @mstruct _ ctxInner _ sb se _ _ hsb_sand hsb_open h ih =>
+    intro v hv henv
+    cases sb with
+    | sandboxed =>
+      have heq := hsb_sand rfl; subst heq
+      have prog := ih Value.vunit ⟨_, elabExp.eunit _⟩
+      match prog with
+      | .inl hve => right; exact ⟨_, SStep.ssmstructv_sandboxed hv hve⟩
+      | .inr ⟨e', hstep⟩ => right; exact ⟨.mstruct .sandboxed e', SStep.ssmstruct_sandboxed hv hstep⟩
+    | open_ =>
+      have heq := hsb_open rfl; subst heq
+      have prog := ih hv henv
+      match prog with
+      | .inl hve => right; exact ⟨_, SStep.ssmstructv_open hv hve⟩
+      | .inr ⟨e', hstep⟩ => right; exact ⟨.mstruct .open_ e', SStep.ssmstruct_open hv hstep⟩
   | mfunctor => sorry
   | mapp => sorry
   | mlink => sorry
