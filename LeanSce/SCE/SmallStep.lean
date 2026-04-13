@@ -85,3 +85,9 @@ inductive SStep : Exp → Exp → Exp → Prop where
     : Value v
     → Value v'
     → SStep v (.mstruct .open_ v') v'
+  | ssmfunctor_sandboxed {v : Exp} {A : Typ} {e : Exp}
+    : Value v
+    → SStep v (.mfunctor .sandboxed A e) (.mclos .unit A e)
+  | ssmfunctor_open {v : Exp} {A : Typ} {e : Exp}
+    : Value v
+    → SStep v (.mfunctor .open_ A e) (.mclos v A e)

@@ -196,8 +196,10 @@ theorem sbig_sound {env e v : Exp}
     have hv' := sbig_produces_value hv hb
     exact smstep_trans (smstep_mstruct_open ih)
       (SMStep.step (SStep.ssmstructv_open hv hv') (SMStep.refl hv))
-  | mfunctor_sandboxed _ => sorry
-  | mfunctor_open _ => sorry
+  | mfunctor_sandboxed hv =>
+    exact SMStep.step (SStep.ssmfunctor_sandboxed hv) (SMStep.refl hv)
+  | mfunctor_open hv =>
+    exact SMStep.step (SStep.ssmfunctor_open hv) (SMStep.refl hv)
   | mlink _ _ _ _ _ _ _ _ => sorry
 
 -- Values big-step to themselves
@@ -341,6 +343,12 @@ theorem sstep_sbig {env e1 e2 v : Exp}
     have heq := sbig_value_eq hb hv'
     subst heq
     exact BStep.mstruct_open hv (sbig_value_refl hv' hv)
+  | ssmfunctor_sandboxed hv =>
+    cases hb with
+    | mclos_val _ hv' => exact BStep.mfunctor_sandboxed hv
+  | ssmfunctor_open hv =>
+    cases hb with
+    | mclos_val _ hv' => exact BStep.mfunctor_open hv
 
 -- Completeness: multi-step + value → big-step
 theorem sbig_complete {env e v : Exp}

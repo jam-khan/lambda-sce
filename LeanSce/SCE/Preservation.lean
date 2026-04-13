@@ -336,6 +336,18 @@ theorem sgpreservation
     cases helab
     rename_i _ _ _ _ h
     exact ⟨_, elab_value_weaken h hv' _⟩
+  | ssmfunctor_sandboxed hv =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab
+    rename_i _ hsb_sand hsb_open h
+    have heq := hsb_sand rfl; subst heq
+    exact ⟨_, elabExp.mclos _ _ _ _ _ _ _ _ Value.vunit (elabExp.eunit _) h⟩
+  | ssmfunctor_open hv =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab
+    rename_i _ hsb_sand hsb_open h
+    have heq := hsb_open rfl; subst heq
+    exact ⟨_, elabExp.mclos _ _ _ _ _ _ _ _ hval henv h⟩
 
 -- Whole-program preservation
 theorem spreservation {e e' : SCE.Exp} {A : SCE.Typ}

@@ -114,7 +114,11 @@ theorem sgprogress
       match prog with
       | .inl hve => right; exact ⟨_, SStep.ssmstructv_open hv hve⟩
       | .inr ⟨e', hstep⟩ => right; exact ⟨.mstruct .open_ e', SStep.ssmstruct_open hv hstep⟩
-  | mfunctor => sorry
+  | @mfunctor _ ctxInner _ _ sb se _ hsb_sand hsb_open h ih =>
+    intro v hv henv
+    cases sb with
+    | sandboxed => right; exact ⟨_, SStep.ssmfunctor_sandboxed hv⟩
+    | open_ => right; exact ⟨_, SStep.ssmfunctor_open hv⟩
   | mapp => sorry
   | mlink => sorry
 
