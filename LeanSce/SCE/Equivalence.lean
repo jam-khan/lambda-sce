@@ -128,6 +128,23 @@ theorem smstep_rproj {v e1 e2 : Exp} {l : String}
   | refl hv => exact SMStep.refl hv
   | step hs _ ih => exact SMStep.step (SStep.ssrproj (sstep_env_value hs) hs) ih
 
+-- Congruence: mstruct sandboxed
+theorem smstep_mstruct_sandboxed {v e1 e2 : Exp}
+    (hv : Value v)
+    (h : SMStep .unit e1 e2)
+    : SMStep v (.mstruct .sandboxed e1) (.mstruct .sandboxed e2) := by
+  induction h with
+  | refl _ => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssmstruct_sandboxed hv hs) ih
+
+-- Congruence: mstruct open
+theorem smstep_mstruct_open {v e1 e2 : Exp}
+    (h : SMStep v e1 e2)
+    : SMStep v (.mstruct .open_ e1) (.mstruct .open_ e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssmstruct_open (sstep_env_value hs) hs) ih
+
 -- Soundness: big-step → multi-step (simple cases filled)
 theorem sbig_sound {env e v : Exp}
     (h : BStep env e v)
@@ -171,8 +188,14 @@ theorem sbig_sound {env e v : Exp}
   | nmrg _ _ _ _ _ => sorry
   | letb _ _ _ _ _ => sorry
   | openm _ _ _ _ _ => sorry
-  | mstruct_sandboxed _ _ _ => sorry
-  | mstruct_open _ _ _ => sorry
+  | mstruct_sandboxed hv hb ih =>
+    have hv' := sbig_produces_value Value.vunit hb
+    exact smstep_trans (smstep_mstruct_sandboxed hv ih)
+      (SMStep.step (SStep.ssmstructv_sandboxed hv hv') (SMStep.refl hv))
+  | mstruct_open hv hb ih =>
+    have hv' := sbig_produces_value hv hb
+    exact smstep_trans (smstep_mstruct_open ih)
+      (SMStep.step (SStep.ssmstructv_open hv hv') (SMStep.refl hv))
   | mfunctor_sandboxed _ => sorry
   | mfunctor_open _ => sorry
   | mlink _ _ _ _ _ _ _ _ => sorry
@@ -304,6 +327,20 @@ theorem sstep_sbig {env e1 e2 v : Exp}
     have heq := sbig_value_eq hb (source_sel_value hv1 hsel)
     subst heq
     exact BStep.rproj hv (sbig_value_refl hv1 hv) hsel
+  | ssmstruct_sandboxed hv _ ih =>
+    cases hb with
+    | mstruct_sandboxed _ hb_body => exact BStep.mstruct_sandboxed hv (ih hb_body)
+  | ssmstruct_open hv _ ih =>
+    cases hb with
+    | mstruct_open _ hb_body => exact BStep.mstruct_open hv (ih hb_body)
+  | ssmstructv_sandboxed hv hv' =>
+    have heq := sbig_value_eq hb hv'
+    subst heq
+    exact BStep.mstruct_sandboxed hv (sbig_value_refl hv' Value.vunit)
+  | ssmstructv_open hv hv' =>
+    have heq := sbig_value_eq hb hv'
+    subst heq
+    exact BStep.mstruct_open hv (sbig_value_refl hv' hv)
 
 -- Completeness: multi-step + value → big-step
 theorem sbig_complete {env e v : Exp}
