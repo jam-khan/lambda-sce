@@ -96,9 +96,36 @@ theorem sgprogress
       right
       have ⟨v', hsel⟩ := elab_rlookup_prog hlook (elab_value_weaken h1 hve1 _) hve1
       exact ⟨_, SStep.ssrprojv hv hve1 hsel⟩
-  | enmrg => sorry
-  | letb => sorry
-  | openm => sorry
+  | @enmrg _ _ _ se1 se2 _ _ h1 h2 ih1 ih2 =>
+    intro v hv henv
+    have prog1 := ih1 hv henv
+    have prog2 := ih2 hv henv
+    match prog1 with
+    | .inr ⟨e', hstep⟩ => right; exact ⟨.nmrg e' se2, SStep.ssnmrgl hv hstep⟩
+    | .inl hve1 =>
+      match prog2 with
+      | .inr ⟨e', hstep⟩ => right; exact ⟨.nmrg se1 e', SStep.ssnmrgr hv hve1 hstep⟩
+      | .inl hve2 => right; exact ⟨.mrg se1 se2, SStep.ssnmrgv hv hve1 hve2⟩
+  | @letb _ _ _ se1 se2 _ _ h1 h2 ih1 ih2 =>
+    intro v hv henv
+    have prog1 := ih1 hv henv
+    match prog1 with
+    | .inr ⟨e', hstep⟩ => right; exact ⟨.letb e' _ se2, SStep.ssletbl hv hstep⟩
+    | .inl hve1 => right; exact ⟨.box (.mrg v se1) se2, SStep.ssletbv hv hve1⟩
+  | @openm _ _ _ se1 se2 _ _ _ h1 h2 ih1 ih2 =>
+    intro v hv henv
+    have prog1 := ih1 hv henv
+    match prog1 with
+    | .inr ⟨e', hstep⟩ => right; exact ⟨.openm e' se2, SStep.ssopenml hv hstep⟩
+    | .inl hve1 =>
+      right
+      match hve1 with
+      | .vlrec hv' => exact ⟨.box (.mrg v _) se2, SStep.ssopenm hv hv'⟩
+      | .vint => nomatch h1
+      | .vunit => nomatch h1
+      | .vmrg _ _ => nomatch h1
+      | .vclos _ => nomatch h1
+      | .vmclos _ => nomatch h1
   | @mstruct _ ctxInner _ sb se _ _ hsb_sand hsb_open h ih =>
     intro v hv henv
     cases sb with
@@ -119,8 +146,47 @@ theorem sgprogress
     cases sb with
     | sandboxed => right; exact ⟨_, SStep.ssmfunctor_sandboxed hv⟩
     | open_ => right; exact ⟨_, SStep.ssmfunctor_open hv⟩
-  | mapp => sorry
-  | mlink => sorry
+  | @mapp _ _ _ se1 se2 _ _ h1 h2 ih1 ih2 =>
+    intro v hv henv
+    have prog1 := ih1 hv henv
+    have prog2 := ih2 hv henv
+    match prog1 with
+    | .inr ⟨e', hstep⟩ => right; exact ⟨.mapp e' se2, SStep.ssmappl hv hstep⟩
+    | .inl hve1 =>
+      match prog2 with
+      | .inr ⟨e', hstep⟩ => right; exact ⟨.mapp se1 e', SStep.ssmappr hv hve1 hstep⟩
+      | .inl hve2 =>
+        right
+        match hve1 with
+        | .vmclos hvc => match h1 with
+          | .mclos _ _ _ _ _ _ _ _ _ _ _ => exact ⟨_, SStep.ssmbeta hv hve2 hvc⟩
+        | .vint => nomatch h1
+        | .vunit => nomatch h1
+        | .vmrg _ _ => nomatch h1
+        | .vclos _ => nomatch h1
+        | .vlrec _ => nomatch h1
+  | @mlink _ _ _ _ l se1 se2 _ _ h1 h2 hlook ih1 ih2 =>
+    intro v hv henv
+    have prog1 := ih1 hv henv
+    have prog2 := ih2 hv henv
+    match prog1 with
+    | .inr ⟨e', hstep⟩ => right; exact ⟨.mlink e' se2, SStep.ssmlinkl hv hstep⟩
+    | .inl hve1 =>
+      match prog2 with
+      | .inr ⟨e', hstep⟩ => right; exact ⟨.mlink se1 e', SStep.ssmlinkr hv hve1 hstep⟩
+      | .inl hve2 =>
+        right
+        match hve2 with
+        | .vmclos hvc =>
+          cases h2 with
+          | mclos _ _ _ _ _ _ _ _ _ _ _ =>
+            have ⟨vl, hsel⟩ := elab_rlookup_prog hlook (elab_value_weaken h1 hve1 _) hve1
+            exact ⟨_, SStep.ssmlinkbeta hv hve1 hvc hsel⟩
+        | .vint => nomatch h2
+        | .vunit => nomatch h2
+        | .vmrg _ _ => nomatch h2
+        | .vclos _ => nomatch h2
+        | .vlrec _ => nomatch h2
 
 -- Whole-program progress
 theorem sprogress {e : SCE.Exp} {A : SCE.Typ}

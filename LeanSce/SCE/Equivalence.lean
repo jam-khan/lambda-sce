@@ -145,6 +145,73 @@ theorem smstep_mstruct_open {v e1 e2 : Exp}
   | refl hv => exact SMStep.refl hv
   | step hs _ ih => exact SMStep.step (SStep.ssmstruct_open (sstep_env_value hs) hs) ih
 
+-- Congruence: mapp left
+theorem smstep_mapp_left {v e1 e1' : Exp}
+    (h : SMStep v e1 e1') (e2 : Exp)
+    : SMStep v (.mapp e1 e2) (.mapp e1' e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssmappl (sstep_env_value hs) hs) ih
+
+-- Congruence: mapp right
+theorem smstep_mapp_right {v v1 e2 e2' : Exp}
+    (hv1 : Value v1)
+    (h : SMStep v e2 e2')
+    : SMStep v (.mapp v1 e2) (.mapp v1 e2') := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssmappr (sstep_env_value hs) hv1 hs) ih
+
+-- Congruence: nmrg left
+theorem smstep_nmrg_left {v e1 e1' : Exp}
+    (h : SMStep v e1 e1') (e2 : Exp)
+    : SMStep v (.nmrg e1 e2) (.nmrg e1' e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssnmrgl (sstep_env_value hs) hs) ih
+
+-- Congruence: nmrg right
+theorem smstep_nmrg_right {v v1 e2 e2' : Exp}
+    (hv : Value v) (hv1 : Value v1)
+    (h : SMStep v e2 e2')
+    : SMStep v (.nmrg v1 e2) (.nmrg v1 e2') := by
+  induction h with
+  | refl _ => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssnmrgr hv hv1 hs) ih
+
+-- Congruence: letb
+theorem smstep_letb {v e1 e1' : Exp} {A : Typ}
+    (h : SMStep v e1 e1') (e2 : Exp)
+    : SMStep v (.letb e1 A e2) (.letb e1' A e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssletbl (sstep_env_value hs) hs) ih
+
+-- Congruence: mlink left
+theorem smstep_mlink_left {v e1 e1' : Exp}
+    (h : SMStep v e1 e1') (e2 : Exp)
+    : SMStep v (.mlink e1 e2) (.mlink e1' e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssmlinkl (sstep_env_value hs) hs) ih
+
+-- Congruence: mlink right
+theorem smstep_mlink_right {v v1 e2 e2' : Exp}
+    (hv1 : Value v1)
+    (h : SMStep v e2 e2')
+    : SMStep v (.mlink v1 e2) (.mlink v1 e2') := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssmlinkr (sstep_env_value hs) hv1 hs) ih
+
+-- Congruence: openm
+theorem smstep_openm {v e1 e1' : Exp}
+    (h : SMStep v e1 e1') (e2 : Exp)
+    : SMStep v (.openm e1 e2) (.openm e1' e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssopenml (sstep_env_value hs) hs) ih
+
 -- Soundness: big-step → multi-step (simple cases filled)
 theorem sbig_sound {env e v : Exp}
     (h : BStep env e v)
@@ -183,11 +250,40 @@ theorem sbig_sound {env e v : Exp}
     have hv' := sbig_produces_value hv hb
     exact smstep_trans (smstep_rproj ih) (SMStep.step (SStep.ssrprojv hv hv' hsel) (SMStep.refl hv))
   -- Non-lambdaE cases: no SStep rules yet
-  | mclos_val _ _ => sorry
-  | app_mclos _ _ _ _ _ _ _ => sorry
-  | nmrg _ _ _ _ _ => sorry
-  | letb _ _ _ _ _ => sorry
-  | openm _ _ _ _ _ => sorry
+  | mclos_val hv hv1 => exact SMStep.refl hv
+  | app_mclos hv hb1 hb2 hb3 ih1 ih2 ih3 =>
+    have hv1 := sbig_produces_value hv hb1
+    have hv2 := sbig_produces_value hv hb2
+    have hv3 := sbig_produces_value (Value.vmrg (by cases hv1; assumption) hv2) hb3
+    cases hv1 with
+    | vmclos hvc =>
+      exact smstep_trans (smstep_mapp_left ih1 _)
+        (smstep_trans (smstep_mapp_right (.vmclos hvc) ih2)
+          (smstep_trans
+            (SMStep.step (SStep.ssmbeta hv hv2 hvc) (SMStep.refl hv))
+            (sbox_mstep_drop_env ih3 hv3 hv)))
+  | nmrg hv hb1 hb2 ih1 ih2 =>
+    have hv1 := sbig_produces_value hv hb1
+    have hv2 := sbig_produces_value hv hb2
+    exact smstep_trans (smstep_nmrg_left ih1 _)
+      (smstep_trans (smstep_nmrg_right hv hv1 ih2)
+        (SMStep.step (SStep.ssnmrgv hv hv1 hv2) (SMStep.refl hv)))
+  | letb hv hb1 hb2 ih1 ih2 =>
+    have hv1 := sbig_produces_value hv hb1
+    have hv2 := sbig_produces_value (Value.vmrg hv hv1) hb2
+    exact smstep_trans (smstep_letb ih1 _)
+      (smstep_trans
+        (SMStep.step (SStep.ssletbv hv hv1) (SMStep.refl hv))
+        (sbox_mstep_drop_env ih2 hv2 hv))
+  | openm hv hb1 hb2 ih1 ih2 =>
+    have hv1 := sbig_produces_value hv hb1
+    cases hv1 with
+    | vlrec hv' =>
+      have hv2 := sbig_produces_value (Value.vmrg hv hv') hb2
+      exact smstep_trans (smstep_openm ih1 _)
+        (smstep_trans
+          (SMStep.step (SStep.ssopenm hv hv') (SMStep.refl hv))
+          (sbox_mstep_drop_env ih2 hv2 hv))
   | mstruct_sandboxed hv hb ih =>
     have hv' := sbig_produces_value Value.vunit hb
     exact smstep_trans (smstep_mstruct_sandboxed hv ih)
@@ -200,7 +296,18 @@ theorem sbig_sound {env e v : Exp}
     exact SMStep.step (SStep.ssmfunctor_sandboxed hv) (SMStep.refl hv)
   | mfunctor_open hv =>
     exact SMStep.step (SStep.ssmfunctor_open hv) (SMStep.refl hv)
-  | mlink _ _ _ _ _ _ _ _ => sorry
+  | mlink hv hb1 hb2 hsel hb3 ih1 ih2 ih3 =>
+    have hv1 := sbig_produces_value hv hb1
+    have hv2 := sbig_produces_value hv hb2
+    cases hv2 with
+    | vmclos hvc =>
+      have hvl := source_sel_value hv1 hsel
+      have hv3 := sbig_produces_value (Value.vmrg hvc (Value.vlrec hvl)) hb3
+      exact smstep_trans (smstep_mlink_left ih1 _)
+        (smstep_trans (smstep_mlink_right hv1 ih2)
+          (smstep_trans
+            (SMStep.step (SStep.ssmlinkbeta hv hv1 hvc hsel) (SMStep.refl hv))
+            (smstep_mrg_right hv hv1 (sbox_mstep_drop_env ih3 hv3 (Value.vmrg hv hv1)))))
 
 -- Values big-step to themselves
 theorem sbig_value_refl {e v : Exp}
@@ -349,6 +456,63 @@ theorem sstep_sbig {env e1 e2 v : Exp}
   | ssmfunctor_open hv =>
     cases hb with
     | mclos_val _ hv' => exact BStep.mfunctor_open hv
+  | ssmappl hv _ ih =>
+    cases hb with
+    | app_mclos _ hb1 hb2 hb3 => exact BStep.app_mclos hv (ih hb1) hb2 hb3
+  | ssmappr hv hv1 _ ih =>
+    cases hb with
+    | app_mclos _ hb1 hb2 hb3 => exact BStep.app_mclos hv hb1 (ih hb2) hb3
+  | ssmbeta hv hv1 hv2 =>
+    cases hb with
+    | box _ hb1 hb2 =>
+      have heq := sbig_value_eq hb1 (Value.vmrg hv2 hv1)
+      subst heq
+      exact BStep.app_mclos hv (BStep.mclos_val hv hv2) (sbig_value_refl hv1 hv) hb2
+  | ssnmrgl hv _ ih =>
+    cases hb with
+    | nmrg _ hb1 hb2 => exact BStep.nmrg hv (ih hb1) hb2
+  | ssnmrgr hv hv1 _ ih =>
+    cases hb with
+    | nmrg _ hb1 hb2 => exact BStep.nmrg hv hb1 (ih hb2)
+  | ssnmrgv hv hv1 hv2 =>
+    cases hb with
+    | dmrg _ hb1 hb2 =>
+      have heq1 := sbig_value_eq hb1 hv1; subst heq1
+      have heq2 := sbig_value_eq hb2 hv2; subst heq2
+      exact BStep.nmrg hv (sbig_value_refl hv1 hv) (sbig_value_refl hv2 hv)
+  | ssletbl hv _ ih =>
+    cases hb with
+    | letb _ hb1 hb2 => exact BStep.letb hv (ih hb1) hb2
+  | ssletbv hv hv1 =>
+    cases hb with
+    | box _ hb1 hb2 =>
+      have heq := sbig_value_eq hb1 (Value.vmrg hv hv1)
+      subst heq
+      exact BStep.letb hv (sbig_value_refl hv1 hv) hb2
+  | ssmlinkl hv _ ih =>
+    cases hb with
+    | mlink _ hb1 hb2 hsel hb3 => exact BStep.mlink hv (ih hb1) hb2 hsel hb3
+  | ssmlinkr hv hv1 _ ih =>
+    cases hb with
+    | mlink _ hb1 hb2 hsel hb3 => exact BStep.mlink hv hb1 (ih hb2) hsel hb3
+  | ssmlinkbeta hv hv1 hv2 hsel =>
+    cases hb with
+    | dmrg _ hb1 hb2 =>
+      have heq := sbig_value_eq hb1 hv1; subst heq
+      cases hb2 with
+      | box _ hb_env hb_body =>
+        have heq := sbig_value_eq hb_env (Value.vmrg hv2 (Value.vlrec (source_sel_value hv1 hsel)))
+        subst heq
+        exact BStep.mlink hv (sbig_value_refl hv1 hv) (BStep.mclos_val hv hv2) hsel hb_body
+  | ssopenml hv _ ih =>
+    cases hb with
+    | openm _ hb1 hb2 => exact BStep.openm hv (ih hb1) hb2
+  | ssopenm hv hv' =>
+    cases hb with
+    | box _ hb1 hb2 =>
+      have heq := sbig_value_eq hb1 (Value.vmrg hv hv')
+      subst heq
+      exact BStep.openm hv (BStep.lrec hv (sbig_value_refl hv' hv)) hb2
 
 -- Completeness: multi-step + value → big-step
 theorem sbig_complete {env e v : Exp}

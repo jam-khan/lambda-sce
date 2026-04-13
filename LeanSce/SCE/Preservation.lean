@@ -348,6 +348,107 @@ theorem sgpreservation
     rename_i _ hsb_sand hsb_open h
     have heq := hsb_open rfl; subst heq
     exact ⟨_, elabExp.mclos _ _ _ _ _ _ _ _ hval henv h⟩
+  | ssmappl hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | mapp _ _ _ _ _ _ _ h1 h2 =>
+      have ⟨ce', h⟩ := ih ⟨_, h1⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.mapp _ _ _ _ _ _ _ h h2⟩
+  | ssmappr hv hv1 hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | mapp _ _ _ _ _ _ _ h1 h2 =>
+      have ⟨ce', h⟩ := ih ⟨_, h2⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.mapp _ _ _ _ _ _ _ h1 h⟩
+  | ssmbeta hv hv1 hv2 =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | mapp _ _ _ _ _ _ _ h1 h2 =>
+      cases h1 with
+      | mclos _ _ _ _ _ _ _ _ hval' ht hb =>
+        exact ⟨_, elabExp.ebox _ _ _ _ _ _ _
+          (elabExp.edmrg _ _ _ _ _ _ _
+            (elab_value_weaken ht hval' _)
+            (elab_value_weaken h2 hv1 _))
+          hb⟩
+  | ssnmrgl hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | enmrg _ _ _ _ _ _ _ h1 h2 =>
+      have ⟨ce', h⟩ := ih ⟨_, h1⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.enmrg _ _ _ _ _ _ _ h h2⟩
+  | ssnmrgr hv hv1 hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | enmrg _ _ _ _ _ _ _ h1 h2 =>
+      have ⟨ce', h⟩ := ih ⟨_, h2⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.enmrg _ _ _ _ _ _ _ h1 h⟩
+  | ssnmrgv hv hv1 hv2 =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | enmrg _ _ _ _ _ _ _ h1 h2 =>
+      exact ⟨_, elabExp.edmrg _ _ _ _ _ _ _
+        (elab_value_weaken h1 hv1 _)
+        (elab_value_weaken h2 hv2 _)⟩
+  | ssletbl hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | letb _ _ _ _ _ _ _ h1 h2 =>
+      have ⟨ce', h⟩ := ih ⟨_, h1⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.letb _ _ _ _ _ _ _ h h2⟩
+  | ssletbv hv hv1 =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | letb _ _ _ _ _ _ _ h1 h2 =>
+      exact ⟨_, elabExp.ebox _ _ _ _ _ _ _
+        (elabExp.edmrg _ _ _ _ _ _ _
+          (elab_value_weaken henv hval _)
+          (elab_value_weaken h1 hv1 _))
+        h2⟩
+  | ssmlinkl hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | mlink _ _ _ _ _ _ _ _ _ h1 h2 hlook =>
+      have ⟨ce', h⟩ := ih ⟨_, h1⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.mlink _ _ _ _ _ _ _ _ _ h h2 hlook⟩
+  | ssmlinkr hv hv1 hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | mlink _ _ _ _ _ _ _ _ _ h1 h2 hlook =>
+      have ⟨ce', h⟩ := ih ⟨_, h2⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.mlink _ _ _ _ _ _ _ _ _ h1 h hlook⟩
+  | ssmlinkbeta hv hv1 hv2 hsel =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | mlink _ _ _ _ _ _ _ _ _ h1 h2 hlook =>
+      cases h2 with
+      | mclos _ _ _ _ _ _ _ _ hval_v2 henv_v2 hbody =>
+        have hvl := sce_sel_value hsel hv1
+        have ⟨_, helab_vl⟩ := elab_rlookup_pres hlook hsel hv1 (elab_value_weaken h1 hv1 _)
+        exact ⟨_, elabExp.edmrg _ _ _ _ _ _ _
+          (elab_value_weaken h1 hv1 _)
+          (elabExp.ebox _ _ _ _ _ _ _
+            (elabExp.edmrg _ _ _ _ _ _ _
+              (elab_value_weaken henv_v2 hval_v2 _)
+              (elabExp.elrec _ _ _ _ _ (elab_value_weaken helab_vl hvl _)))
+            hbody)⟩
+  | ssopenml hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | openm _ _ _ _ _ _ _ _ h1 h2 =>
+      have ⟨ce', h⟩ := ih ⟨_, h1⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.openm _ _ _ _ _ _ _ _ h h2⟩
+  | ssopenm hv hv' =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | openm _ _ _ _ _ _ _ _ h1 h2 =>
+      cases h1 with
+      | elrec _ _ _ _ _ h1_inner =>
+        exact ⟨_, elabExp.ebox _ _ _ _ _ _ _
+          (elabExp.edmrg _ _ _ _ _ _ _
+            (elab_value_weaken henv hval _)
+            (elab_value_weaken h1_inner hv' _))
+          h2⟩
 
 -- Whole-program preservation
 theorem spreservation {e e' : SCE.Exp} {A : SCE.Typ}

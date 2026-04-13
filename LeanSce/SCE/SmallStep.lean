@@ -91,3 +91,63 @@ inductive SStep : Exp → Exp → Exp → Prop where
   | ssmfunctor_open {v : Exp} {A : Typ} {e : Exp}
     : Value v
     → SStep v (.mfunctor .open_ A e) (.mclos v A e)
+  | ssmappl {v e1 e1' e2}
+    : Value v
+    → SStep v e1 e1'
+    → SStep v (.mapp e1 e2) (.mapp e1' e2)
+  | ssmappr {v v1 e2 e2'}
+    : Value v
+    → Value v1
+    → SStep v e2 e2'
+    → SStep v (.mapp v1 e2) (.mapp v1 e2')
+  | ssmbeta {v v1 v2 A e}
+    : Value v
+    → Value v1
+    → Value v2
+    → SStep v (.mapp (.mclos v2 A e) v1) (.box (.mrg v2 v1) e)
+  | ssnmrgl {v e1 e1' e2}
+    : Value v
+    → SStep v e1 e1'
+    → SStep v (.nmrg e1 e2) (.nmrg e1' e2)
+  | ssnmrgr {v v1 e2 e2'}
+    : Value v
+    → Value v1
+    → SStep v e2 e2'
+    → SStep v (.nmrg v1 e2) (.nmrg v1 e2')
+  | ssnmrgv {v v1 v2}
+    : Value v
+    → Value v1
+    → Value v2
+    → SStep v (.nmrg v1 v2) (.mrg v1 v2)
+  | ssletbl {v e1 e1' e2 A}
+    : Value v
+    → SStep v e1 e1'
+    → SStep v (.letb e1 A e2) (.letb e1' A e2)
+  | ssletbv {v v1 A e2}
+    : Value v
+    → Value v1
+    → SStep v (.letb v1 A e2) (.box (.mrg v v1) e2)
+  | ssmlinkl {v e1 e1' e2}
+    : Value v
+    → SStep v e1 e1'
+    → SStep v (.mlink e1 e2) (.mlink e1' e2)
+  | ssmlinkr {v v1 e2 e2'}
+    : Value v
+    → Value v1
+    → SStep v e2 e2'
+    → SStep v (.mlink v1 e2) (.mlink v1 e2')
+  | ssmlinkbeta {v v1 v2 vl A body l}
+    : Value v
+    → Value v1
+    → Value v2
+    → Sel v1 l vl
+    → SStep v (.mlink v1 (.mclos v2 (.rcd l A) body))
+              (.mrg v1 (.box (.mrg v2 (.lrec l vl)) body))
+  | ssopenml {v e1 e1' e2}
+    : Value v
+    → SStep v e1 e1'
+    → SStep v (.openm e1 e2) (.openm e1' e2)
+  | ssopenm {v v' e2 l}
+    : Value v
+    → Value v'
+    → SStep v (.openm (.lrec l v') e2) (.box (.mrg v v') e2)
