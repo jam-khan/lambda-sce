@@ -70,6 +70,47 @@ inductive Step : Exp → Exp → Exp → Prop where
     → Value v1
     → RLookupV v1 l v2
     → Step v (.rproj v1 l) v2
+  | sinl {v e1 e2 B}
+    : Value v
+    → Step v e1 e2
+    → Step v (.inl B e1) (.inl B e2)
+  | sinr {v e1 e2 A}
+    : Value v
+    → Step v e1 e2
+    → Step v (.inr A e1) (.inr A e2)
+  | scase {v e e' e1 e2}
+    : Value v
+    → Step v e e'
+    → Step v (.case e e1 e2) (.case e' e1 e2)
+  | scasel {v v1 B e1 e2}
+    : Value v
+    → Value v1
+    → Step v (.case (.inl B v1) e1 e2) (.box (.mrg v v1) e1)
+  | scaser {v v1 A e1 e2}
+    : Value v
+    → Value v1
+    → Step v (.case (.inr A v1) e1 e2) (.box (.mrg v v1) e2)
+  | sfclos {v A B e}
+    : Value v
+    → Step v (.flam A B e) (.fclos v A B e)
+  | sfbeta {v v1 v2 A B e}
+    : Value v
+    → Value v1
+    → Value v2
+    → Step v (.app (.fclos v2 A B e) v1)
+             (.box (.mrg (.mrg v2 (.fclos v2 A B e)) v1) e)
+  | sfold {v e1 e2 T}
+    : Value v
+    → Step v e1 e2
+    → Step v (.fold T e1) (.fold T e2)
+  | sunfold {v e1 e2}
+    : Value v
+    → Step v e1 e2
+    → Step v (.unfold e1) (.unfold e2)
+  | sunfoldv {v v1 T}
+    : Value v
+    → Value v1
+    → Step v (.unfold (.fold T v1)) v1
 
 inductive MStep : Exp → Exp → Exp → Prop where
   | refl :
@@ -100,6 +141,15 @@ theorem value_weaken
   | tbox _ _      => intro _ hv; cases hv
   | tproj _ _     => intro _ hv; cases hv
   | trproj _ _    => intro _ hv; cases hv
+  | tinl ht ih    => intro _ hv; cases hv; exact .tinl (ih ‹_›)
+  | tinr ht ih    => intro _ hv; cases hv; exact .tinr (ih ‹_›)
+  | tcase _ _ _   => intro _ hv; cases hv
+  | tflam _       => intro _ hv; cases hv
+  | tfclos hv' ht' hb ih1 ih2 =>
+    intro E' hv
+    apply HasType.tfclos <;> assumption
+  | tfold ht ih   => intro _ hv; cases hv; exact .tfold (ih ‹_›)
+  | tunfold _     => intro _ hv; cases hv
   | tmrg h1 h2 ih1 ih2 =>
     intro _ hv
     cases hv with
@@ -194,6 +244,8 @@ theorem rcd_shape {E v l B} :
   | tbox _ _ => cases hv
   | tproj _ _ => cases hv
   | trproj _ _ => cases hv
+  | tcase _ _ _ => cases hv
+  | tunfold _ => cases hv
 
 
 @[simp]
@@ -213,6 +265,13 @@ theorem notin_false {E v A} :
   | tbox _ _ => intro l v' hr; cases hr
   | tproj _ _ => intro l v' hr; cases hr
   | trproj _ _ => intro l v' hr; cases hr
+  | tinl _ _ => intro l v' hr; cases hr
+  | tinr _ _ => intro l v' hr; cases hr
+  | tcase _ _ _ => intro l v' hr; cases hr
+  | tflam _ => intro l v' hr; cases hr
+  | tfclos _ _ _ => intro l v' hr; cases hr
+  | tfold _ _ => intro l v' hr; cases hr
+  | tunfold _ _ => intro l v' hr; cases hr
   | trcd ht ih =>
     intro l v' hr hnl
     cases hr with
@@ -243,6 +302,8 @@ theorem rlookup_pres_aux {E l A} :
     | tbox _ _ => cases hv
     | tproj _ _ => cases hv
     | trproj _ _ => cases hv
+    | tcase _ _ _ => cases hv
+    | tunfold _ => cases hv
     | trcd ht' =>
       cases hlv with
       | rvlzero =>
@@ -479,6 +540,62 @@ theorem gpreservation
     cases htype
     rename_i B ih2 hlook'
     exact value_weaken (rlookup_pres hlook' hlook hv1 (value_weaken ih2 hv1)) (rlookupv_value hlook hv1)
+  | sinl hv hstep ih =>
+    intro E A htype henv
+    cases htype with
+    | tinl ht => exact HasType.tinl (ih ht henv)
+  | sinr hv hstep ih =>
+    intro E A htype henv
+    cases htype with
+    | tinr ht => exact HasType.tinr (ih ht henv)
+  | scase hv hstep ih =>
+    intro E A htype henv
+    cases htype with
+    | tcase ht h1 h2 => exact HasType.tcase (ih ht henv) h1 h2
+  | scasel hv hv1 =>
+    intro E A htype henv
+    cases htype with
+    | tcase hinl h1 h2 =>
+      cases hinl with
+      | tinl ht1 =>
+        exact HasType.tbox (HasType.tmrg (value_weaken henv hv) (value_weaken ht1 hv1)) h1
+  | scaser hv hv1 =>
+    intro E A htype henv
+    cases htype with
+    | tcase hinr h1 h2 =>
+      cases hinr with
+      | tinr ht1 =>
+        exact HasType.tbox (HasType.tmrg (value_weaken henv hv) (value_weaken ht1 hv1)) h2
+  | sfclos hv =>
+    intro E A htype henv
+    cases htype with
+    | tflam h => exact HasType.tfclos hv henv h
+  | sfbeta hv hv1 hv2 =>
+    intro E A htype henv
+    cases htype with
+    | tapp ih1 ih2 =>
+      cases ih1 with
+      | tfclos hv' ht' hb =>
+        exact HasType.tbox
+          (HasType.tmrg
+            (HasType.tmrg (value_weaken ht' hv2) (HasType.tfclos hv' ht' hb))
+            (value_weaken ih2 hv1))
+          hb
+  | sfold hv hstep ih =>
+    intro E A htype henv
+    cases htype with
+    | tfold ht => exact HasType.tfold (ih ht henv)
+  | sunfold hv hstep ih =>
+    intro E A htype henv
+    cases htype with
+    | tunfold ht heq => exact HasType.tunfold (ih ht henv) heq
+  | sunfoldv hv hv1 =>
+    intro E A htype henv
+    cases htype with
+    | tunfold ht heq =>
+      subst heq
+      cases ht with
+      | tfold ht1 => exact ht1
 
 theorem gprogress
   {E A : Typ} {e : Exp}
@@ -528,6 +645,10 @@ theorem gprogress
             cases htype1 with
             | tclos hv' ht' hb =>
               exact ⟨_, Step.sbeta hv h hvc⟩
+          | vfclos hvc =>
+            cases htype1 with
+            | tfclos hv' ht' hb =>
+              exact ⟨_, Step.sfbeta hv h hvc⟩
           | _ =>
             cases htype1
   | tbox htyp1 htyp2 ih1 ih2 =>
@@ -624,6 +745,73 @@ theorem gprogress
       have htyp_top : HasType .top e1 B := value_weaken htyp1 h
       have ⟨v', hlv⟩ := rlookup_prog hlookup htyp_top h
       exact ⟨_, Step.srprojv hv h hlv⟩
+  | tinl htyp ih =>
+    intro v hv henv
+    cases ih hv henv with
+    | inl hve => left; exact Value.vinl hve
+    | inr h =>
+      obtain ⟨e', hstep⟩ := h
+      right
+      exact ⟨_, Step.sinl hv hstep⟩
+  | tinr htyp ih =>
+    intro v hv henv
+    cases ih hv henv with
+    | inl hve => left; exact Value.vinr hve
+    | inr h =>
+      obtain ⟨e', hstep⟩ := h
+      right
+      exact ⟨_, Step.sinr hv hstep⟩
+  | tflam htyp ih =>
+    intro v hv henv
+    right
+    exact ⟨_, Step.sfclos hv⟩
+  | tfclos hv' htyp1 htyp2 ih1 ih2 =>
+    intro v hv henv
+    left
+    exact Value.vfclos hv'
+  | tfold htyp ih =>
+    intro v hv henv
+    cases ih hv henv with
+    | inl hve => left; exact Value.vfold hve
+    | inr h =>
+      obtain ⟨e', hstep⟩ := h
+      right
+      exact ⟨_, Step.sfold hv hstep⟩
+  | tunfold htyp heq ih =>
+    intro v hv henv
+    right
+    cases ih hv henv with
+    | inr h =>
+      obtain ⟨e', hstep⟩ := h
+      exact ⟨_, Step.sunfold hv hstep⟩
+    | inl hve =>
+      match hve with
+      | .vfold hv1 => exact ⟨_, Step.sunfoldv hv hv1⟩
+      | .vint => cases htyp
+      | .vunit => cases htyp
+      | .vclos _ => cases htyp
+      | .vrcd _ => cases htyp
+      | .vmrg _ _ => cases htyp
+      | .vinl _ => cases htyp
+      | .vinr _ => cases htyp
+      | .vfclos _ => cases htyp
+  | tcase htyp h1 h2 ih ih1 ih2 =>
+    rename_i Γ A B C e e1 e2
+    intro v hv henv
+    right
+    cases ih hv henv with
+    | inr h =>
+      obtain ⟨e', hstep⟩ := h
+      exact ⟨_, Step.scase hv hstep⟩
+    | inl hve =>
+      match hve with
+      | .vinl hv1 => exact ⟨_, Step.scasel hv hv1⟩
+      | .vinr hv1 => exact ⟨_, Step.scaser hv hv1⟩
+      | .vint => cases htyp
+      | .vunit => cases htyp
+      | .vclos _ => cases htyp
+      | .vrcd _ => cases htyp
+      | .vmrg _ _ => cases htyp
 
 theorem preservation {e e' A}
   : HasType .top e A

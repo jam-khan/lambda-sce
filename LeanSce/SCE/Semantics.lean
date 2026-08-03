@@ -32,6 +32,32 @@ inductive Sel : Exp → String → Exp → Prop where
     : Sel v₂ l v'
     → Sel (.nmrg v₁ v₂) l v'
 
+-- SelPkg v D pkg: extract from the module value v the record package pkg
+-- shaped after the import interface D (one Sel per labeled import)
+inductive SelPkg : Exp → Typ → Exp → Prop where
+  | one {v : Exp} {l : String} {A : Typ} {vl : Exp}
+    : Sel v l vl
+    → SelPkg v (.rcd l A) (.lrec l vl)
+  | more {v : Exp} {D : Typ} {pkg : Exp} {l : String} {A : Typ} {vl : Exp}
+    : SelPkg v D pkg
+    → Sel v l vl
+    → SelPkg v (.and D (.rcd l A)) (.mrg pkg (.lrec l vl))
+
+theorem sel_value {v v' : Exp} {l : String}
+    (hsel : Sel v l v') (hv : Value v) : Value v' := by
+  induction hsel with
+  | rcd => cases hv; assumption
+  | dmrg_left _ ih => cases hv with | vmrg h1 h2 => exact ih h1
+  | dmrg_right _ ih => cases hv with | vmrg h1 h2 => exact ih h2
+  | nmrg_left _ ih => cases hv
+  | nmrg_right _ ih => cases hv
+
+theorem selpkg_value {v : Exp} {D : Typ} {pkg : Exp}
+    (hsp : SelPkg v D pkg) (hv : Value v) : Value pkg := by
+  induction hsp with
+  | one hsel => exact Value.vlrec (sel_value hsel hv)
+  | more _ hsel ih => exact Value.vmrg ih (Value.vlrec (sel_value hsel hv))
+
 inductive BStep : Exp → Exp → Exp → Prop where
   | query {ρ : Exp}
     : Value ρ
@@ -125,4 +151,50 @@ inductive BStep : Exp → Exp → Exp → Prop where
     → Sel v₁ l vₗ
     → BStep (.mrg v₂ (.lrec l vₗ)) body v₃
     → BStep ρ (.mlink e₁ e₂) (.mrg v₁ v₃)
+  | inl {ρ e v : Exp} {B : Typ}
+    : Value ρ
+    → BStep ρ e v
+    → BStep ρ (.inl B e) (.inl B v)
+  | inr {ρ e v : Exp} {A : Typ}
+    : Value ρ
+    → BStep ρ e v
+    → BStep ρ (.inr A e) (.inr A v)
+  | case_inl {ρ e e₁ e₂ v₁ v : Exp} {B : Typ}
+    : Value ρ
+    → BStep ρ e (.inl B v₁)
+    → BStep (.mrg ρ v₁) e₁ v
+    → BStep ρ (.case e e₁ e₂) v
+  | case_inr {ρ e e₁ e₂ v₁ v : Exp} {A : Typ}
+    : Value ρ
+    → BStep ρ e (.inr A v₁)
+    → BStep (.mrg ρ v₁) e₂ v
+    → BStep ρ (.case e e₁ e₂) v
+  | fclos_val {ρ v : Exp} {A B : Typ} {body : Exp}
+    : Value ρ
+    → Value v
+    → BStep ρ (.fclos v A B body) (.fclos v A B body)
+  | flam {ρ : Exp} {A B : Typ} {body : Exp}
+    : Value ρ
+    → BStep ρ (.flam A B body) (.fclos ρ A B body)
+  | app_fclos {ρ e₁ e₂ v₁ v₂ v : Exp} {A B : Typ} {body : Exp}
+    : Value ρ
+    → BStep ρ e₁ (.fclos v₁ A B body)
+    → BStep ρ e₂ v₂
+    → BStep (.mrg (.mrg v₁ (.fclos v₁ A B body)) v₂) body v
+    → BStep ρ (.app e₁ e₂) v
+  | fold {ρ e v : Exp} {T : Typ}
+    : Value ρ
+    → BStep ρ e v
+    → BStep ρ (.fold T e) (.fold T v)
+  | unfold {ρ e v : Exp} {T : Typ}
+    : Value ρ
+    → BStep ρ e (.fold T v)
+    → BStep ρ (.unfold e) v
+  | mlinkn {ρ e₁ e₂ v₁ v₂ pkg v₃ : Exp} {D : Typ} {body : Exp}
+    : Value ρ
+    → BStep ρ e₁ v₁
+    → BStep ρ e₂ (.mclos v₂ D body)
+    → SelPkg v₁ D pkg
+    → BStep (.mrg v₂ pkg) body v₃
+    → BStep ρ (.mlinkn e₁ e₂) (.mrg v₁ v₃)
 end S_Sem

@@ -204,6 +204,23 @@ theorem smstep_mlink_right {v v1 e2 e2' : Exp}
   | refl hv => exact SMStep.refl hv
   | step hs _ ih => exact SMStep.step (SStep.ssmlinkr (sstep_env_value hs) hv1 hs) ih
 
+-- Congruence: mlinkn left
+theorem smstep_mlinkn_left {v e1 e1' : Exp}
+    (h : SMStep v e1 e1') (e2 : Exp)
+    : SMStep v (.mlinkn e1 e2) (.mlinkn e1' e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssmlinknl (sstep_env_value hs) hs) ih
+
+-- Congruence: mlinkn right
+theorem smstep_mlinkn_right {v v1 e2 e2' : Exp}
+    (hv1 : Value v1)
+    (h : SMStep v e2 e2')
+    : SMStep v (.mlinkn v1 e2) (.mlinkn v1 e2') := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssmlinknr (sstep_env_value hs) hv1 hs) ih
+
 -- Congruence: openm
 theorem smstep_openm {v e1 e1' : Exp}
     (h : SMStep v e1 e1') (e2 : Exp)
@@ -211,6 +228,46 @@ theorem smstep_openm {v e1 e1' : Exp}
   induction h with
   | refl hv => exact SMStep.refl hv
   | step hs _ ih => exact SMStep.step (SStep.ssopenml (sstep_env_value hs) hs) ih
+
+-- Congruence: inl
+theorem smstep_inl {v e1 e2 : Exp} {B : Typ}
+    (h : SMStep v e1 e2)
+    : SMStep v (.inl B e1) (.inl B e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssinl (sstep_env_value hs) hs) ih
+
+-- Congruence: inr
+theorem smstep_inr {v e1 e2 : Exp} {A : Typ}
+    (h : SMStep v e1 e2)
+    : SMStep v (.inr A e1) (.inr A e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssinr (sstep_env_value hs) hs) ih
+
+-- Congruence: case scrutinee
+theorem smstep_case {v e e' e1 e2 : Exp}
+    (h : SMStep v e e')
+    : SMStep v (.case e e1 e2) (.case e' e1 e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.sscase (sstep_env_value hs) hs) ih
+
+-- Congruence: fold
+theorem smstep_fold {v e1 e2 : Exp} {T : Typ}
+    (h : SMStep v e1 e2)
+    : SMStep v (.fold T e1) (.fold T e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssfold (sstep_env_value hs) hs) ih
+
+-- Congruence: unfold
+theorem smstep_unfold {v e1 e2 : Exp}
+    (h : SMStep v e1 e2)
+    : SMStep v (.unfold e1) (.unfold e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssunfold (sstep_env_value hs) hs) ih
 
 -- Soundness: big-step → multi-step (simple cases filled)
 theorem sbig_sound {env e v : Exp}
@@ -308,6 +365,56 @@ theorem sbig_sound {env e v : Exp}
           (smstep_trans
             (SMStep.step (SStep.ssmlinkbeta hv hv1 hvc hsel) (SMStep.refl hv))
             (smstep_mrg_right hv hv1 (sbox_mstep_drop_env ih3 hv3 (Value.vmrg hv hv1)))))
+  | mlinkn hv hb1 hb2 hsp hb3 ih1 ih2 ih3 =>
+    have hv1 := sbig_produces_value hv hb1
+    have hv2 := sbig_produces_value hv hb2
+    cases hv2 with
+    | vmclos hvc =>
+      have hvpkg := selpkg_value hsp hv1
+      have hv3 := sbig_produces_value (Value.vmrg hvc hvpkg) hb3
+      exact smstep_trans (smstep_mlinkn_left ih1 _)
+        (smstep_trans (smstep_mlinkn_right hv1 ih2)
+          (smstep_trans
+            (SMStep.step (SStep.ssmlinknbeta hv hv1 hvc hsp) (SMStep.refl hv))
+            (smstep_mrg_right hv hv1 (sbox_mstep_drop_env ih3 hv3 (Value.vmrg hv hv1)))))
+  | inl hv hb ih => exact smstep_inl ih
+  | inr hv hb ih => exact smstep_inr ih
+  | case_inl hv hb1 hb2 ih1 ih2 =>
+    have hinl := sbig_produces_value hv hb1
+    cases hinl with
+    | vinl hv1 =>
+      have hv2 := sbig_produces_value (Value.vmrg hv hv1) hb2
+      exact smstep_trans (smstep_case ih1)
+        (SMStep.step (SStep.sscasel hv hv1) (sbox_mstep_drop_env ih2 hv2 hv))
+  | case_inr hv hb1 hb2 ih1 ih2 =>
+    have hinr := sbig_produces_value hv hb1
+    cases hinr with
+    | vinr hv1 =>
+      have hv2 := sbig_produces_value (Value.vmrg hv hv1) hb2
+      exact smstep_trans (smstep_case ih1)
+        (SMStep.step (SStep.sscaser hv hv1) (sbox_mstep_drop_env ih2 hv2 hv))
+  | fclos_val hv hv1 => exact SMStep.refl hv
+  | flam hv =>
+    exact SMStep.step (SStep.ssfclos hv) (SMStep.refl hv)
+  | app_fclos hv hb1 hb2 hb3 ih1 ih2 ih3 =>
+    have hv1 := sbig_produces_value hv hb1
+    have hv2 := sbig_produces_value hv hb2
+    cases hv1 with
+    | vfclos hvc =>
+      have hv3 := sbig_produces_value
+        (Value.vmrg (Value.vmrg hvc (Value.vfclos hvc)) hv2) hb3
+      exact smstep_trans (smstep_app_left ih1 _)
+        (smstep_trans (smstep_app_right (.vfclos hvc) ih2)
+          (smstep_trans
+            (SMStep.step (SStep.ssfbeta hv hv2 hvc) (SMStep.refl hv))
+            (sbox_mstep_drop_env ih3 hv3 hv)))
+  | fold hv hb ih => exact smstep_fold ih
+  | unfold hv hb ih =>
+    have hfold := sbig_produces_value hv hb
+    cases hfold with
+    | vfold hv1 =>
+      exact smstep_trans (smstep_unfold ih)
+        (SMStep.step (SStep.ssunfoldv hv hv1) (SMStep.refl hv))
 
 -- Values big-step to themselves
 theorem sbig_value_refl {e v : Exp}
@@ -319,6 +426,10 @@ theorem sbig_value_refl {e v : Exp}
   | vclos hv' => exact BStep.clos_val hvv hv'
   | vmclos hv' => exact BStep.mclos_val hvv hv'
   | vlrec hv' ih => exact BStep.lrec hvv (ih hvv)
+  | vinl hv' ih => exact BStep.inl hvv (ih hvv)
+  | vinr hv' ih => exact BStep.inr hvv (ih hvv)
+  | vfclos hv' ih => exact BStep.fclos_val hvv hv'
+  | vfold hv' ih => exact BStep.fold hvv (ih hvv)
   | vmrg hv1 hv2 ih1 ih2 =>
     have h1 := ih1 hvv
     exact BStep.dmrg hvv h1 (ih2 (Value.vmrg hvv (sbig_produces_value hvv h1)))
@@ -333,8 +444,11 @@ theorem sbig_val_det {env e v1 : Exp}
   | unit _ => cases h2 <;> rfl
   | clos_val _ _ => cases h2 <;> rfl
   | mclos_val _ _ => cases h2 <;> rfl
+  | fclos_val _ _ => cases h2 <;> rfl
   | query _ => cases hv
   | lam _ => cases hv
+  | flam _ => cases hv
+  | app_fclos _ _ _ _ _ _ _ => cases hv
   | box _ _ _ _ _ => cases hv
   | app_clos _ _ _ _ _ _ _ => cases hv
   | app_mclos _ _ _ _ _ _ _ => cases hv
@@ -347,7 +461,32 @@ theorem sbig_val_det {env e v1 : Exp}
   | mfunctor_sandboxed _ => cases hv
   | mfunctor_open _ => cases hv
   | mlink _ _ _ _ _ _ _ _ => cases hv
+  | mlinkn _ _ _ _ _ _ _ _ => cases hv
   | nmrg _ _ _ _ _ => cases hv
+  | case_inl _ _ _ _ _ => cases hv
+  | case_inr _ _ _ _ _ => cases hv
+  | unfold _ _ _ => cases hv
+  | fold _ hb1 ih1 =>
+    cases hv with
+    | vfold hv' =>
+      cases h2 with
+      | fold _ hb2 =>
+        congr 1
+        exact ih1 hv' hb2
+  | inl _ hb1 ih1 =>
+    cases hv with
+    | vinl hv' =>
+      cases h2 with
+      | inl _ hb2 =>
+        congr 1
+        exact ih1 hv' hb2
+  | inr _ hb1 ih1 =>
+    cases hv with
+    | vinr hv' =>
+      cases h2 with
+      | inr _ hb2 =>
+        congr 1
+        exact ih1 hv' hb2
   | lrec _ _ ih1 =>
     cases hv with
     | vlrec hv' =>
@@ -388,9 +527,11 @@ theorem sstep_sbig {env e1 e2 v : Exp}
   | ssappl hv _ ih =>
     cases hb with
     | app_clos _ hb1 hb2 hb3 => exact BStep.app_clos hv (ih hb1) hb2 hb3
+    | app_fclos _ hb1 hb2 hb3 => exact BStep.app_fclos hv (ih hb1) hb2 hb3
   | ssappr hv hv1 _ ih =>
     cases hb with
     | app_clos _ hb1 hb2 hb3 => exact BStep.app_clos hv hb1 (ih hb2) hb3
+    | app_fclos _ hb1 hb2 hb3 => exact BStep.app_fclos hv hb1 (ih hb2) hb3
   | ssbeta hv hv1 hv2 =>
     cases hb with
     | box _ hb1 hb2 =>
@@ -504,6 +645,21 @@ theorem sstep_sbig {env e1 e2 v : Exp}
         have heq := sbig_value_eq hb_env (Value.vmrg hv2 (Value.vlrec (source_sel_value hv1 hsel)))
         subst heq
         exact BStep.mlink hv (sbig_value_refl hv1 hv) (BStep.mclos_val hv hv2) hsel hb_body
+  | ssmlinknl hv _ ih =>
+    cases hb with
+    | mlinkn _ hb1 hb2 hsp hb3 => exact BStep.mlinkn hv (ih hb1) hb2 hsp hb3
+  | ssmlinknr hv hv1 _ ih =>
+    cases hb with
+    | mlinkn _ hb1 hb2 hsp hb3 => exact BStep.mlinkn hv hb1 (ih hb2) hsp hb3
+  | ssmlinknbeta hv hv1 hv2 hsp =>
+    cases hb with
+    | dmrg _ hb1 hb2 =>
+      have heq := sbig_value_eq hb1 hv1; subst heq
+      cases hb2 with
+      | box _ hb_env hb_body =>
+        have heq := sbig_value_eq hb_env (Value.vmrg hv2 (selpkg_value hsp hv1))
+        subst heq
+        exact BStep.mlinkn hv (sbig_value_refl hv1 hv) (BStep.mclos_val hv hv2) hsp hb_body
   | ssopenml hv _ ih =>
     cases hb with
     | openm _ hb1 hb2 => exact BStep.openm hv (ih hb1) hb2
@@ -513,6 +669,47 @@ theorem sstep_sbig {env e1 e2 v : Exp}
       have heq := sbig_value_eq hb1 (Value.vmrg hv hv')
       subst heq
       exact BStep.openm hv (BStep.lrec hv (sbig_value_refl hv' hv)) hb2
+  | ssinl hv _ ih =>
+    cases hb with
+    | inl _ hb1 => exact BStep.inl hv (ih hb1)
+  | ssinr hv _ ih =>
+    cases hb with
+    | inr _ hb1 => exact BStep.inr hv (ih hb1)
+  | sscase hv _ ih =>
+    cases hb with
+    | case_inl _ hb1 hb2 => exact BStep.case_inl hv (ih hb1) hb2
+    | case_inr _ hb1 hb2 => exact BStep.case_inr hv (ih hb1) hb2
+  | sscasel hv hv1 =>
+    cases hb with
+    | box _ hb1 hb2 =>
+      have heq := sbig_value_eq hb1 (Value.vmrg hv hv1)
+      subst heq
+      exact BStep.case_inl hv (sbig_value_refl (Value.vinl hv1) hv) hb2
+  | sscaser hv hv1 =>
+    cases hb with
+    | box _ hb1 hb2 =>
+      have heq := sbig_value_eq hb1 (Value.vmrg hv hv1)
+      subst heq
+      exact BStep.case_inr hv (sbig_value_refl (Value.vinr hv1) hv) hb2
+  | ssfclos hv =>
+    cases hb with
+    | fclos_val hv1 hv2 => exact BStep.flam hv
+  | ssfbeta hv hv1 hv2 =>
+    cases hb with
+    | box _ hb1 hb2 =>
+      have heq := sbig_value_eq hb1 (Value.vmrg (Value.vmrg hv2 (Value.vfclos hv2)) hv1)
+      subst heq
+      exact BStep.app_fclos hv (BStep.fclos_val hv hv2) (sbig_value_refl hv1 hv) hb2
+  | ssfold hv _ ih =>
+    cases hb with
+    | fold _ hb1 => exact BStep.fold hv (ih hb1)
+  | ssunfold hv _ ih =>
+    cases hb with
+    | unfold _ hb1 => exact BStep.unfold hv (ih hb1)
+  | ssunfoldv hv hv1 =>
+    have heq := sbig_value_eq hb hv1
+    subst heq
+    exact BStep.unfold hv (sbig_value_refl (Value.vfold hv1) hv)
 
 -- Completeness: multi-step + value → big-step
 theorem sbig_complete {env e v : Exp}

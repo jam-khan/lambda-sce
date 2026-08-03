@@ -45,6 +45,38 @@ inductive EBig : Exp → Exp → Exp → Prop where
     : EBig e a v₁
     → RLookupV v₁ l v₂
     → EBig e (.rproj a l) v₂
+  | ebinl {e a v : Exp} {B : Typ}
+    : EBig e a v
+    → EBig e (.inl B a) (.inl B v)
+  | ebinr {e a v : Exp} {A : Typ}
+    : EBig e a v
+    → EBig e (.inr A a) (.inr A v)
+  | ebcasel {ρ e e₁ e₂ v₁ v : Exp} {B : Typ}
+    : EBig ρ e (.inl B v₁)
+    → EBig (.mrg ρ v₁) e₁ v
+    → EBig ρ (.case e e₁ e₂) v
+  | ebcaser {ρ e e₁ e₂ v₁ v : Exp} {A : Typ}
+    : EBig ρ e (.inr A v₁)
+    → EBig (.mrg ρ v₁) e₂ v
+    → EBig ρ (.case e e₁ e₂) v
+  | ebflam {v : Exp} {A B : Typ} {e : Exp}
+    : Value v
+    → EBig v (.flam A B e) (.fclos v A B e)
+  | efclos {v v₁ : Exp} {A B : Typ} {e : Exp}
+    : Value v
+    → Value v₁
+    → EBig v (.fclos v₁ A B e) (.fclos v₁ A B e)
+  | ebfapp {v e₁ e₂ v₁ v₂ vr e : Exp} {A B : Typ}
+    : EBig v e₁ (.fclos v₂ A B e)
+    → EBig v e₂ v₁
+    → EBig (.mrg (.mrg v₂ (.fclos v₂ A B e)) v₁) e vr
+    → EBig v (.app e₁ e₂) vr
+  | ebfold {e a v : Exp} {T : Typ}
+    : EBig e a v
+    → EBig e (.fold T a) (.fold T v)
+  | ebunfold {ρ e v : Exp} {T : Typ}
+    : EBig ρ e (.fold T v)
+    → EBig ρ (.unfold e) v
 
 theorem ebig_produces_value
     {v e v' : Core.Exp}
@@ -67,6 +99,24 @@ theorem ebig_produces_value
   | ebrec _ ih => exact Value.vrcd (ih hval)
   | ebsel _ hsel ih =>
     exact rlookupv_value hsel (ih hval)
+  | ebinl _ ih => exact Value.vinl (ih hval)
+  | ebinr _ ih => exact Value.vinr (ih hval)
+  | ebcasel _ _ ih1 ih2 =>
+    have hinl := ih1 hval
+    cases hinl with | vinl hv1 => exact ih2 (Value.vmrg hval hv1)
+  | ebcaser _ _ ih1 ih2 =>
+    have hinr := ih1 hval
+    cases hinr with | vinr hv1 => exact ih2 (Value.vmrg hval hv1)
+  | ebflam hv => exact Value.vfclos hv
+  | efclos _ hv1 => exact Value.vfclos hv1
+  | ebfapp _ _ _ ih1 ih2 ih3 =>
+    have hclos := ih1 hval
+    cases hclos with
+    | vfclos hv => exact ih3 (Value.vmrg (Value.vmrg hv (Value.vfclos hv)) (ih2 hval))
+  | ebfold _ ih => exact Value.vfold (ih hval)
+  | ebunfold _ ih =>
+    have hfold := ih hval
+    cases hfold with | vfold hv => exact hv
 
 theorem ebig_env_value {env e v : Core.Exp} (h : EBig env e v) : Core.Value env := by
   induction h with
@@ -76,6 +126,13 @@ theorem ebig_env_value {env e v : Core.Exp} (h : EBig env e v) : Core.Value env 
   | ebproj _ _ ih => exact ih
   | ebrec _ ih => exact ih
   | ebsel _ _ ih => exact ih
+  | ebinl _ ih => exact ih
+  | ebinr _ ih => exact ih
+  | ebcasel _ _ ih1 _ => exact ih1
+  | ebcaser _ _ ih1 _ => exact ih1
+  | ebfapp _ _ _ ih1 _ _ => exact ih1
+  | ebfold _ ih => exact ih
+  | ebunfold _ ih => exact ih
   | _ => assumption
 
 -- step implies that environment is value
@@ -178,6 +235,41 @@ theorem mstep_rproj {v e1 e2 : Core.Exp} {l : String}
   | refl hv => exact MStep.refl hv
   | step hs _ ih => exact MStep.step (Step.srproj (step_env_value hs) hs) ih
 
+theorem mstep_inl {v e1 e2 : Core.Exp} {B : Core.Typ}
+    (h : MStep v e1 e2)
+    : MStep v (.inl B e1) (.inl B e2) := by
+  induction h with
+  | refl hv => exact MStep.refl hv
+  | step hs _ ih => exact MStep.step (Step.sinl (step_env_value hs) hs) ih
+
+theorem mstep_inr {v e1 e2 : Core.Exp} {A : Core.Typ}
+    (h : MStep v e1 e2)
+    : MStep v (.inr A e1) (.inr A e2) := by
+  induction h with
+  | refl hv => exact MStep.refl hv
+  | step hs _ ih => exact MStep.step (Step.sinr (step_env_value hs) hs) ih
+
+theorem mstep_case {v e e' e1 e2 : Core.Exp}
+    (h : MStep v e e')
+    : MStep v (.case e e1 e2) (.case e' e1 e2) := by
+  induction h with
+  | refl hv => exact MStep.refl hv
+  | step hs _ ih => exact MStep.step (Step.scase (step_env_value hs) hs) ih
+
+theorem mstep_fold {v e1 e2 : Core.Exp} {T : Core.Typ}
+    (h : MStep v e1 e2)
+    : MStep v (.fold T e1) (.fold T e2) := by
+  induction h with
+  | refl hv => exact MStep.refl hv
+  | step hs _ ih => exact MStep.step (Step.sfold (step_env_value hs) hs) ih
+
+theorem mstep_unfold {v e1 e2 : Core.Exp}
+    (h : MStep v e1 e2)
+    : MStep v (.unfold e1) (.unfold e2) := by
+  induction h with
+  | refl hv => exact MStep.refl hv
+  | step hs _ ih => exact MStep.step (Step.sunfold (step_env_value hs) hs) ih
+
 -- Soundness: big-step → multi-step
 theorem ebig_sound {env e v : Core.Exp}
     (h : EBig env e v)
@@ -232,6 +324,47 @@ theorem ebig_sound {env e v : Core.Exp}
     have hv := ebig_env_value ib
     have hv' := ebig_produces_value hv ib
     exact mstep_trans (mstep_rproj ih) (MStep.step (Step.srprojv hv hv' ilookup) (MStep.refl hv))
+  | ebinl ib ih => exact mstep_inl ih
+  | ebinr ib ih => exact mstep_inr ih
+  | ebcasel ib1 ib2 ih1 ih2 =>
+    have hv := ebig_env_value ib1
+    have hinl := ebig_produces_value hv ib1
+    cases hinl with
+    | vinl hv1 =>
+      have hvr := ebig_produces_value (Value.vmrg hv hv1) ib2
+      exact mstep_trans (mstep_case ih1)
+        (MStep.step (Step.scasel hv hv1) (box_mstep_drop_env ih2 hvr hv))
+  | ebcaser ib1 ib2 ih1 ih2 =>
+    have hv := ebig_env_value ib1
+    have hinr := ebig_produces_value hv ib1
+    cases hinr with
+    | vinr hv1 =>
+      have hvr := ebig_produces_value (Value.vmrg hv hv1) ib2
+      exact mstep_trans (mstep_case ih1)
+        (MStep.step (Step.scaser hv hv1) (box_mstep_drop_env ih2 hvr hv))
+  | ebflam hv => exact MStep.step (Step.sfclos hv) (MStep.refl hv)
+  | efclos hv hv1 => exact MStep.refl hv
+  | ebfapp hb1 hb2 hb3 ih1 ih2 ih3 =>
+    have hv := ebig_env_value hb1
+    have hv1 := ebig_produces_value hv hb1  -- Value (fclos v2 A B e)
+    have hv2 := ebig_produces_value hv hb2
+    cases hv1 with
+    | vfclos hv3 =>
+      have hv4 := ebig_produces_value
+        (Value.vmrg (Value.vmrg hv3 (Value.vfclos hv3)) hv2) hb3
+      exact mstep_trans (mstep_app_left ih1 _)
+        (mstep_trans (mstep_app_right (.vfclos hv3) ih2)
+          (mstep_trans
+            (MStep.step (Step.sfbeta hv hv2 hv3) (MStep.refl hv))
+            (box_mstep_drop_env ih3 hv4 hv)))
+  | ebfold ib ih => exact mstep_fold ih
+  | ebunfold ib ih =>
+    have hv := ebig_env_value ib
+    have hfold := ebig_produces_value hv ib
+    cases hfold with
+    | vfold hv1 =>
+      exact mstep_trans (mstep_unfold ih)
+        (MStep.step (Step.sunfoldv hv hv1) (MStep.refl hv))
 
 theorem ebig_value_refl {e v : Core.Exp}
     (hve : Core.Value e) (hvv : Core.Value v)
@@ -241,6 +374,10 @@ theorem ebig_value_refl {e v : Core.Exp}
   | vunit => exact EBig.ebunit hvv
   | vclos hv' => exact EBig.eclos hvv hv'
   | vrcd hv' ih => exact EBig.ebrec (ih hvv)
+  | vinl hv' ih => exact EBig.ebinl (ih hvv)
+  | vinr hv' ih => exact EBig.ebinr (ih hvv)
+  | vfclos hv' ih => exact EBig.efclos hvv hv'
+  | vfold hv' ih => exact EBig.ebfold (ih hvv)
   | vmrg hv1 hv2 ih1 ih2 =>
     have h1 := ih1 hvv
     exact EBig.ebmrg h1 (ih2 (Value.vmrg hvv (ebig_produces_value hvv h1)))
@@ -254,12 +391,39 @@ theorem ebig_val_det {env e v1 : Core.Exp}
   | eblit _ => cases h2; rfl
   | ebunit _ => cases h2; rfl
   | eclos _ _ => cases h2; rfl
+  | efclos _ _ => cases h2; rfl
   | equery _ => cases hv
   | ebclos _ => cases hv
+  | ebflam _ => cases hv
   | ebapp _ _ _ _ _ _ => cases hv
+  | ebfapp _ _ _ _ _ _ => cases hv
   | ebbox _ _ _ _ => cases hv
   | ebproj _ _ _ => cases hv
   | ebsel _ _ _ => cases hv
+  | ebcasel _ _ _ _ => cases hv
+  | ebcaser _ _ _ _ => cases hv
+  | ebunfold _ _ => cases hv
+  | ebfold hb1 ih1 =>
+    cases hv with
+    | vfold hv' =>
+      cases h2 with
+      | ebfold hb2 =>
+        congr 1
+        exact ih1 hv' hb2
+  | ebinl hb1 ih1 =>
+    cases hv with
+    | vinl hv' =>
+      cases h2 with
+      | ebinl hb2 =>
+        congr 1
+        exact ih1 hv' hb2
+  | ebinr hb1 ih1 =>
+    cases hv with
+    | vinr hv' =>
+      cases h2 with
+      | ebinr hb2 =>
+        congr 1
+        exact ih1 hv' hb2
   | ebrec hb1 ih1 =>
     cases hv with
     | vrcd hv' =>
@@ -304,6 +468,8 @@ theorem step_ebig {env e1 e2 v : Core.Exp}
       apply EBig.ebapp <;> try assumption
       apply ih
       assumption
+    | ebfapp hb1 hb2 hb3 =>
+      exact EBig.ebfapp (ih hb1) hb2 hb3
   | sboxl hv hstep ih =>
     rename_i v' e1' e1'' e2'
     cases hb with
@@ -319,6 +485,8 @@ theorem step_ebig {env e1 e2 v : Core.Exp}
     cases hb with
     | ebapp hb1 hb2 hb3 =>
       exact EBig.ebapp hb1 (ih hb2) hb3
+    | ebfapp hb1 hb2 hb3 =>
+      exact EBig.ebfapp hb1 (ih hb2) hb3
   | sboxr hv hv1 hstep ih =>
     cases hb with
     | ebbox hb1 hb2 =>
@@ -370,6 +538,52 @@ theorem step_ebig {env e1 e2 v : Core.Exp}
     have heq := ebig_value_eq hb (rlookupv_value hlook hv1)
     subst heq
     exact EBig.ebsel (ebig_value_refl hv1 hv) hlook
+  | sinl hv hstep ih =>
+    cases hb with
+    | ebinl hb1 =>
+      exact EBig.ebinl (ih hb1)
+  | sinr hv hstep ih =>
+    cases hb with
+    | ebinr hb1 =>
+      exact EBig.ebinr (ih hb1)
+  | scase hv hstep ih =>
+    cases hb with
+    | ebcasel hb1 hb2 => exact EBig.ebcasel (ih hb1) hb2
+    | ebcaser hb1 hb2 => exact EBig.ebcaser (ih hb1) hb2
+  | scasel hv hv1 =>
+    -- hb : EBig env (.box (.mrg env v1) e1) v
+    cases hb with
+    | ebbox hb1 hb2 =>
+      have heq := ebig_value_eq hb1 (Value.vmrg hv hv1)
+      subst heq
+      exact EBig.ebcasel (ebig_value_refl (Value.vinl hv1) hv) hb2
+  | scaser hv hv1 =>
+    cases hb with
+    | ebbox hb1 hb2 =>
+      have heq := ebig_value_eq hb1 (Value.vmrg hv hv1)
+      subst heq
+      exact EBig.ebcaser (ebig_value_refl (Value.vinr hv1) hv) hb2
+  | sfclos hv =>
+    cases hb with
+    | efclos hv1 hv2 => exact EBig.ebflam hv
+  | sfbeta hv hv1 hv2 =>
+    -- hb : EBig env (.box (.mrg (.mrg v2 (fclos v2 A B e)) v1) e) v
+    cases hb with
+    | ebbox hb1 hb2 =>
+      have heq := ebig_value_eq hb1 (Value.vmrg (Value.vmrg hv2 (Value.vfclos hv2)) hv1)
+      subst heq
+      exact EBig.ebfapp (EBig.efclos hv hv2) (ebig_value_refl hv1 hv) hb2
+  | sfold hv hstep ih =>
+    cases hb with
+    | ebfold hb1 => exact EBig.ebfold (ih hb1)
+  | sunfold hv hstep ih =>
+    cases hb with
+    | ebunfold hb1 => exact EBig.ebunfold (ih hb1)
+  | sunfoldv hv hv1 =>
+    -- hb : EBig env v1 v, where v1 is a value
+    have heq := ebig_value_eq hb hv1
+    subst heq
+    exact EBig.ebunfold (ebig_value_refl (Value.vfold hv1) hv)
 
 -- Completeness: multi-step + value → big-step
 theorem ebig_complete {env e v : Core.Exp}

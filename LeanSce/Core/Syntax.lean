@@ -5,8 +5,23 @@ inductive Typ where
   | top  : Typ
   | arr  : Typ → Typ → Typ
   | and  : Typ → Typ → Typ
+  | or   : Typ → Typ → Typ
   | rcd  : String → Typ → Typ
+  -- iso-recursive types: de Bruijn var 0 is bound by the nearest mu
+  | var  : Nat → Typ
+  | mu   : Typ → Typ
   deriving Repr
+
+-- substTyp d S T replaces var d by S in T (S is closed, so no shifting)
+def substTyp (d : Nat) (S : Typ) : Typ → Typ
+  | .int => .int
+  | .top => .top
+  | .arr A B => .arr (substTyp d S A) (substTyp d S B)
+  | .and A B => .and (substTyp d S A) (substTyp d S B)
+  | .or A B => .or (substTyp d S A) (substTyp d S B)
+  | .rcd l A => .rcd l (substTyp d S A)
+  | .var n => if n = d then S else .var n
+  | .mu T => .mu (substTyp (d + 1) S T)
 
 inductive Exp where
   | query  : Exp
@@ -20,6 +35,17 @@ inductive Exp where
   | mrg    : Exp → Exp → Exp
   | lrec   : String → Exp → Exp
   | rproj  : Exp → String → Exp
+  -- unions: inl B e injects into _ ∨ B, inr A e into A ∨ _
+  | inl    : Typ → Exp → Exp
+  | inr    : Typ → Exp → Exp
+  | case   : Exp → Exp → Exp → Exp
+  -- fixpoint: flam A B e is a recursive function of type A → B;
+  -- its body sees ?.0 = argument, ?.1 = the function itself
+  | flam   : Typ → Typ → Exp → Exp
+  | fclos  : Exp → Typ → Typ → Exp → Exp
+  -- iso-recursive types: fold T e stores the mu-body T, folds into mu T
+  | fold   : Typ → Exp → Exp
+  | unfold : Exp → Exp
   deriving Repr
 
 inductive Lookup : Typ → Nat → Typ → Prop where
@@ -35,6 +61,10 @@ inductive Value : Exp → Prop where
   | vclos {v A e} : Value v → Value (.clos v A e)
   | vrcd {v l}    : Value v → Value (.lrec l v)
   | vmrg {v1 v2}  : Value v1 → Value v2 → Value (.mrg v1 v2)
+  | vinl {v B}    : Value v → Value (.inl B v)
+  | vinr {v A}    : Value v → Value (.inr A v)
+  | vfclos {v A B e} : Value v → Value (.fclos v A B e)
+  | vfold {v T}   : Value v → Value (.fold T v)
 
 inductive Lin : String → Typ → Prop where
   | rcd {l A}

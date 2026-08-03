@@ -43,11 +43,15 @@ theorem sgprogress
         match hve1 with
         | .vclos hvc => match h1 with
           | .eclos _ _ _ _ _ _ _ _ _ _ _ => exact ⟨_, SStep.ssbeta hv hve2 hvc⟩
+        | .vfclos hvc => match h1 with
+          | .efclos _ _ _ _ _ _ _ _ _ _ _ => exact ⟨_, SStep.ssfbeta hv hve2 hvc⟩
         | .vint => nomatch h1
         | .vunit => nomatch h1
         | .vmrg _ _ => nomatch h1
         | .vmclos _ => nomatch h1
         | .vlrec _ => nomatch h1
+        | .vinl _ => nomatch h1
+        | .vinr _ => nomatch h1
   | @ebox _ _ _ se1 se2 _ _ h1 h2 ih1 ih2 =>
     intro v hv henv
     have prog1 := ih1 hv henv
@@ -126,6 +130,9 @@ theorem sgprogress
       | .vmrg _ _ => nomatch h1
       | .vclos _ => nomatch h1
       | .vmclos _ => nomatch h1
+      | .vinl _ => nomatch h1
+      | .vinr _ => nomatch h1
+      | .vfclos _ => nomatch h1
   | @mstruct _ ctxInner _ sb se _ _ hsb_sand hsb_open h ih =>
     intro v hv henv
     cases sb with
@@ -165,6 +172,9 @@ theorem sgprogress
         | .vmrg _ _ => nomatch h1
         | .vclos _ => nomatch h1
         | .vlrec _ => nomatch h1
+        | .vinl _ => nomatch h1
+        | .vinr _ => nomatch h1
+        | .vfclos _ => nomatch h1
   | @mlink _ _ _ _ l se1 se2 _ _ h1 h2 hlook ih1 ih2 =>
     intro v hv henv
     have prog1 := ih1 hv henv
@@ -187,6 +197,94 @@ theorem sgprogress
         | .vmrg _ _ => nomatch h2
         | .vclos _ => nomatch h2
         | .vlrec _ => nomatch h2
+        | .vinl _ => nomatch h2
+        | .vinr _ => nomatch h2
+        | .vfclos _ => nomatch h2
+  | @mlinkn _ _ _ _ se1 se2 _ _ h1 h2 hok ih1 ih2 =>
+    intro v hv henv
+    have prog1 := ih1 hv henv
+    have prog2 := ih2 hv henv
+    match prog1 with
+    | .inr ⟨e', hstep⟩ => right; exact ⟨.mlinkn e' se2, SStep.ssmlinknl hv hstep⟩
+    | .inl hve1 =>
+      match prog2 with
+      | .inr ⟨e', hstep⟩ => right; exact ⟨.mlinkn se1 e', SStep.ssmlinknr hv hve1 hstep⟩
+      | .inl hve2 =>
+        right
+        match hve2 with
+        | .vmclos hvc =>
+          cases h2 with
+          | mclos _ _ _ _ _ _ _ _ _ _ _ =>
+            have ⟨pkg, hsp⟩ := selpkg_prog hok (elab_value_weaken h1 hve1 _) hve1
+            exact ⟨_, SStep.ssmlinknbeta hv hve1 hvc hsp⟩
+        | .vint => nomatch h2
+        | .vunit => nomatch h2
+        | .vmrg _ _ => nomatch h2
+        | .vclos _ => nomatch h2
+        | .vlrec _ => nomatch h2
+        | .vinl _ => nomatch h2
+        | .vinr _ => nomatch h2
+        | .vfclos _ => nomatch h2
+        | .vfold _ => nomatch h2
+  | @einl _ _ _ se _ h ih =>
+    intro v hv henv
+    have prog := ih hv henv
+    match prog with
+    | .inl hve => left; exact Value.vinl hve
+    | .inr ⟨e', hstep⟩ => right; exact ⟨_, SStep.ssinl hv hstep⟩
+  | @einr _ _ _ se _ h ih =>
+    intro v hv henv
+    have prog := ih hv henv
+    match prog with
+    | .inl hve => left; exact Value.vinr hve
+    | .inr ⟨e', hstep⟩ => right; exact ⟨_, SStep.ssinr hv hstep⟩
+  | @ecase _ _ _ _ se se1 se2 _ _ _ h h1 h2 ih ih1 ih2 =>
+    intro v hv henv
+    right
+    have prog := ih hv henv
+    match prog with
+    | .inr ⟨e', hstep⟩ => exact ⟨_, SStep.sscase hv hstep⟩
+    | .inl hve =>
+      match hve with
+      | .vinl hv1 => exact ⟨_, SStep.sscasel hv hv1⟩
+      | .vinr hv1 => exact ⟨_, SStep.sscaser hv hv1⟩
+      | .vint => nomatch h
+      | .vunit => nomatch h
+      | .vclos _ => nomatch h
+      | .vmclos _ => nomatch h
+      | .vmrg _ _ => nomatch h
+      | .vlrec _ => nomatch h
+      | .vfclos _ => nomatch h
+  | @eflam _ _ _ se _ h ih =>
+    intro v hv henv
+    right
+    exact ⟨_, SStep.ssfclos hv⟩
+  | @efclos _ _ _ _ se1 _ _ _ hval _ _ =>
+    intro v hv _; left; exact Value.vfclos hval
+  | @efold _ _ se _ h ih =>
+    intro v hv henv
+    have prog := ih hv henv
+    match prog with
+    | .inl hve => left; exact Value.vfold hve
+    | .inr ⟨e', hstep⟩ => right; exact ⟨_, SStep.ssfold hv hstep⟩
+  | @eunfold _ _ _ se _ h heq ih =>
+    intro v hv henv
+    right
+    have prog := ih hv henv
+    match prog with
+    | .inr ⟨e', hstep⟩ => exact ⟨_, SStep.ssunfold hv hstep⟩
+    | .inl hve =>
+      match hve with
+      | .vfold hv1 => exact ⟨_, SStep.ssunfoldv hv hv1⟩
+      | .vint => nomatch h
+      | .vunit => nomatch h
+      | .vclos _ => nomatch h
+      | .vmclos _ => nomatch h
+      | .vmrg _ _ => nomatch h
+      | .vlrec _ => nomatch h
+      | .vinl _ => nomatch h
+      | .vinr _ => nomatch h
+      | .vfclos _ => nomatch h
 
 -- Whole-program progress
 theorem sprogress {e : SCE.Exp} {A : SCE.Typ}

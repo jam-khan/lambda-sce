@@ -25,7 +25,23 @@ theorem elab_value_weaken
   | mfunctor _ => cases hv
   | mapp _ => cases hv
   | mlink _ => cases hv
+  | mlinkn _ => cases hv
   | enmrg _ => cases hv
+  | ecase _ => cases hv
+  | eflam _ => cases hv
+  | efclos _ _ _ _ _ _ _ _ hval ht hb ih1 ih2 =>
+    cases hv with
+    | vfclos hv' => exact elabExp.efclos _ _ _ _ _ _ _ _ hval ht hb
+  | eunfold _ => cases hv
+  | efold _ _ _ _ _ ih =>
+    cases hv with
+    | vfold hv' => exact elabExp.efold _ _ _ _ (ih hv' _)
+  | einl _ _ _ _ _ _ ih =>
+    cases hv with
+    | vinl hv' => exact elabExp.einl _ _ _ _ _ (ih hv' _)
+  | einr _ _ _ _ _ _ ih =>
+    cases hv with
+    | vinr hv' => exact elabExp.einr _ _ _ _ _ (ih hv' _)
   | edmrg _ _ _ _ _ _ _ _ _ ih1 ih2 =>
     cases hv with
     | vmrg hv1 hv2 =>
@@ -204,6 +220,51 @@ theorem elab_rlookup_prog {A B : SCE.Typ} {l : String}
     rename_i v₁ v₂ ce₁ ce₂ h1 h2 hv1 hv2
     have ⟨v', hsel⟩ := ih (elab_value_weaken h2 hv2 _) hv2
     exact ⟨_, Sel.dmrg_right hsel⟩
+
+-- Package extraction progress: every import of D can be selected from a
+-- well-elaborated module value
+theorem selpkg_prog {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
+    ∀ {v : SCE.Exp} {ce : Core.Exp},
+    elabExp SCE.Typ.top v Γ₁ ce
+    → SCE.Value v
+    → ∃ pkg, S_Sem.SelPkg v D pkg := by
+  induction hok with
+  | one hrl =>
+    intro v ce helab hv
+    have ⟨vl, hsel⟩ := elab_rlookup_prog hrl helab hv
+    exact ⟨_, S_Sem.SelPkg.one hsel⟩
+  | more hok' hrl ih =>
+    intro v ce helab hv
+    have ⟨pkg, hsp⟩ := ih helab hv
+    have ⟨vl, hsel⟩ := elab_rlookup_prog hrl helab hv
+    exact ⟨_, S_Sem.SelPkg.more hsp hsel⟩
+
+-- Package extraction preservation: the extracted package elaborates at D
+theorem selpkg_pres {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
+    ∀ {v pkg : SCE.Exp} {ce : Core.Exp},
+    S_Sem.SelPkg v D pkg
+    → SCE.Value v
+    → elabExp SCE.Typ.top v Γ₁ ce
+    → ∃ cpkg, elabExp SCE.Typ.top pkg D cpkg := by
+  induction hok with
+  | one hrl =>
+    intro v pkg ce hsp hv helab
+    cases hsp with
+    | one hsel =>
+      have ⟨ce', h⟩ := elab_rlookup_pres hrl hsel hv helab
+      have hvl := sce_sel_value hsel hv
+      exact ⟨_, elabExp.elrec _ _ _ _ _ (elab_value_weaken h hvl _)⟩
+  | more hok' hrl ih =>
+    intro v pkg ce hsp hv helab
+    cases hsp with
+    | more hsp' hsel =>
+      have ⟨cpkg, hpkg⟩ := ih hsp' hv helab
+      have ⟨ce', h⟩ := elab_rlookup_pres hrl hsel hv helab
+      have hvl := sce_sel_value hsel hv
+      exact ⟨_, elabExp.edmrg _ _ _ _ _ _ _ hpkg
+        (elab_value_weaken
+          (elabExp.elrec SCE.Typ.top _ _ _ _ (elab_value_weaken h hvl SCE.Typ.top))
+          (SCE.Value.vlrec hvl) _)⟩
 
 -- Generalized preservation: SCE small steps preserve elaboration types
 theorem sgpreservation
@@ -449,6 +510,110 @@ theorem sgpreservation
             (elab_value_weaken henv hval _)
             (elab_value_weaken h1_inner hv' _))
           h2⟩
+  | ssinl hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | einl _ _ _ _ _ h1 =>
+      have ⟨ce', h⟩ := ih ⟨_, h1⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.einl _ _ _ _ _ h⟩
+  | ssinr hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | einr _ _ _ _ _ h1 =>
+      have ⟨ce', h⟩ := ih ⟨_, h1⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.einr _ _ _ _ _ h⟩
+  | sscase hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | ecase _ _ _ _ _ _ _ _ _ _ h h1 h2 =>
+      have ⟨ce', h'⟩ := ih ⟨_, h⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.ecase _ _ _ _ _ _ _ _ _ _ h' h1 h2⟩
+  | sscasel hv hv1 =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | ecase _ _ _ _ _ _ _ _ _ _ h h1 h2 =>
+      cases h with
+      | einl _ _ _ _ _ hinner =>
+        exact ⟨_, elabExp.ebox _ _ _ _ _ _ _
+          (elabExp.edmrg _ _ _ _ _ _ _
+            (elab_value_weaken henv hval _)
+            (elab_value_weaken hinner hv1 _))
+          h1⟩
+  | sscaser hv hv1 =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | ecase _ _ _ _ _ _ _ _ _ _ h h1 h2 =>
+      cases h with
+      | einr _ _ _ _ _ hinner =>
+        exact ⟨_, elabExp.ebox _ _ _ _ _ _ _
+          (elabExp.edmrg _ _ _ _ _ _ _
+            (elab_value_weaken henv hval _)
+            (elab_value_weaken hinner hv1 _))
+          h2⟩
+  | ssfclos hv =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | eflam _ _ _ _ _ h1 =>
+      exact ⟨_, elabExp.efclos _ _ _ _ _ _ _ _ hval henv h1⟩
+  | ssfbeta hv hv1 hv2 =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | eapp _ _ _ _ _ _ _ h1 h2 =>
+      cases h1 with
+      | efclos _ _ _ _ _ _ _ _ hval' ht hb =>
+        exact ⟨_, elabExp.ebox _ _ _ _ _ _ _
+          (elabExp.edmrg _ _ _ _ _ _ _
+            (elabExp.edmrg _ _ _ _ _ _ _
+              (elab_value_weaken ht hval' _)
+              (elabExp.efclos _ _ _ _ _ _ _ _ hval' ht hb))
+            (elab_value_weaken h2 hv1 _))
+          hb⟩
+  | ssfold hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | efold _ _ _ _ h1 =>
+      have ⟨ce', h⟩ := ih ⟨_, h1⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.efold _ _ _ _ h⟩
+  | ssunfold hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | eunfold _ _ _ _ _ h1 heq =>
+      have ⟨ce', h⟩ := ih ⟨_, h1⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.eunfold _ _ _ _ _ h heq⟩
+  | ssunfoldv hv hv1 =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | eunfold _ _ _ _ _ h1 heq =>
+      subst heq
+      cases h1 with
+      | efold _ _ _ _ hinner => exact ⟨_, hinner⟩
+  | ssmlinknl hv hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | mlinkn _ _ _ _ _ _ _ _ h1 h2 hok =>
+      have ⟨ce', h⟩ := ih ⟨_, h1⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.mlinkn _ _ _ _ _ _ _ _ h h2 hok⟩
+  | ssmlinknr hv hv1 hstep ih =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | mlinkn _ _ _ _ _ _ _ _ h1 h2 hok =>
+      have ⟨ce', h⟩ := ih ⟨_, h2⟩ hval ⟨ρc, henv⟩
+      exact ⟨_, elabExp.mlinkn _ _ _ _ _ _ _ _ h1 h hok⟩
+  | ssmlinknbeta hv hv1 hv2 hsp =>
+    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
+    cases helab with
+    | mlinkn _ _ _ _ _ _ _ _ h1 h2 hok =>
+      cases h2 with
+      | mclos _ _ _ _ _ _ _ _ hval_v2 henv_v2 hbody =>
+        have ⟨cpkg, hpkg⟩ := selpkg_pres hok hsp hv1 (elab_value_weaken h1 hv1 _)
+        have hvpkg := S_Sem.selpkg_value hsp hv1
+        exact ⟨_, elabExp.edmrg _ _ _ _ _ _ _
+          (elab_value_weaken h1 hv1 _)
+          (elabExp.ebox _ _ _ _ _ _ _
+            (elabExp.edmrg _ _ _ _ _ _ _
+              (elab_value_weaken henv_v2 hval_v2 _)
+              (elab_value_weaken hpkg hvpkg _))
+            hbody)⟩
 
 -- Whole-program preservation
 theorem spreservation {e e' : SCE.Exp} {A : SCE.Typ}

@@ -151,3 +151,60 @@ inductive SStep : Exp → Exp → Exp → Prop where
     : Value v
     → Value v'
     → SStep v (.openm (.lrec l v') e2) (.box (.mrg v v') e2)
+  | ssinl {v e1 e2 B}
+    : Value v
+    → SStep v e1 e2
+    → SStep v (.inl B e1) (.inl B e2)
+  | ssinr {v e1 e2 A}
+    : Value v
+    → SStep v e1 e2
+    → SStep v (.inr A e1) (.inr A e2)
+  | sscase {v e e' e1 e2}
+    : Value v
+    → SStep v e e'
+    → SStep v (.case e e1 e2) (.case e' e1 e2)
+  | sscasel {v v1 B e1 e2}
+    : Value v
+    → Value v1
+    → SStep v (.case (.inl B v1) e1 e2) (.box (.mrg v v1) e1)
+  | sscaser {v v1 A e1 e2}
+    : Value v
+    → Value v1
+    → SStep v (.case (.inr A v1) e1 e2) (.box (.mrg v v1) e2)
+  | ssfclos {v A B e}
+    : Value v
+    → SStep v (.flam A B e) (.fclos v A B e)
+  | ssfbeta {v v1 v2 A B e}
+    : Value v
+    → Value v1
+    → Value v2
+    → SStep v (.app (.fclos v2 A B e) v1)
+              (.box (.mrg (.mrg v2 (.fclos v2 A B e)) v1) e)
+  | ssfold {v e1 e2 T}
+    : Value v
+    → SStep v e1 e2
+    → SStep v (.fold T e1) (.fold T e2)
+  | ssunfold {v e1 e2}
+    : Value v
+    → SStep v e1 e2
+    → SStep v (.unfold e1) (.unfold e2)
+  | ssunfoldv {v v1 T}
+    : Value v
+    → Value v1
+    → SStep v (.unfold (.fold T v1)) v1
+  | ssmlinknl {v e1 e1' e2}
+    : Value v
+    → SStep v e1 e1'
+    → SStep v (.mlinkn e1 e2) (.mlinkn e1' e2)
+  | ssmlinknr {v v1 e2 e2'}
+    : Value v
+    → Value v1
+    → SStep v e2 e2'
+    → SStep v (.mlinkn v1 e2) (.mlinkn v1 e2')
+  | ssmlinknbeta {v v1 v2 pkg : Exp} {D : Typ} {body : Exp}
+    : Value v
+    → Value v1
+    → Value v2
+    → SelPkg v1 D pkg
+    → SStep v (.mlinkn v1 (.mclos v2 D body))
+              (.mrg v1 (.box (.mrg v2 pkg) body))

@@ -8,8 +8,12 @@ inductive Typ where
   | top  : Typ
   | arr  : Typ → Typ → Typ
   | and  : Typ → Typ → Typ
+  | or   : Typ → Typ → Typ
   | rcd  : String → Typ → Typ
   | sig  : ModTyp → Typ
+  -- iso-recursive types: de Bruijn var 0 is bound by the nearest mu
+  | var  : Nat → Typ
+  | mu   : Typ → Typ
 
 inductive ModTyp where
   | TyIntf : Typ → ModTyp
@@ -19,6 +23,24 @@ end
 
 deriving instance Repr for Typ
 deriving instance Repr for ModTyp
+
+mutual
+-- substTyp d S T replaces var d by S in T (S is closed, so no shifting)
+def substTyp (d : Nat) (S : Typ) : Typ → Typ
+  | .int => .int
+  | .top => .top
+  | .arr A B => .arr (substTyp d S A) (substTyp d S B)
+  | .and A B => .and (substTyp d S A) (substTyp d S B)
+  | .or A B => .or (substTyp d S A) (substTyp d S B)
+  | .rcd l A => .rcd l (substTyp d S A)
+  | .sig mt => .sig (substModTyp d S mt)
+  | .var n => if n = d then S else .var n
+  | .mu T => .mu (substTyp (d + 1) S T)
+
+def substModTyp (d : Nat) (S : Typ) : ModTyp → ModTyp
+  | .TyIntf T => .TyIntf (substTyp d S T)
+  | .TyArrM T mt => .TyArrM (substTyp d S T) (substModTyp d S mt)
+end
 
 inductive Sandbox where
   | sandboxed : Sandbox
@@ -47,6 +69,19 @@ inductive Exp where
   | nmrg  : Exp → Exp → Exp
   | letb  : Exp → Typ → Exp → Exp
   | openm : Exp → Exp → Exp
+  -- n-ary linking: satisfy every labeled import of a functor at once
+  | mlinkn : Exp → Exp → Exp
+  -- unions: inl B e injects into _ ∨ B, inr A e into A ∨ _
+  | inl   : Typ → Exp → Exp
+  | inr   : Typ → Exp → Exp
+  | case  : Exp → Exp → Exp → Exp
+  -- fixpoint: flam A B e is a recursive function of type A → B;
+  -- its body sees ?.0 = argument, ?.1 = the function itself
+  | flam  : Typ → Typ → Exp → Exp
+  | fclos : Exp → Typ → Typ → Exp → Exp
+  -- iso-recursive types: fold T e stores the mu-body T, folds into mu T
+  | fold   : Typ → Exp → Exp
+  | unfold : Exp → Exp
   deriving Repr
 
 inductive Value : Exp → Prop where
@@ -56,6 +91,10 @@ inductive Value : Exp → Prop where
   | vmclos {v A e}  : Value v → Value (.mclos v A e)
   | vmrg   {v₁ v₂}  : Value v₁ → Value v₂ → Value (.mrg v₁ v₂)
   | vlrec  {v l}    : Value v → Value (.lrec l v)
+  | vinl   {v B}    : Value v → Value (.inl B v)
+  | vinr   {v A}    : Value v → Value (.inr A v)
+  | vfclos {v A B e} : Value v → Value (.fclos v A B e)
+  | vfold  {v T}    : Value v → Value (.fold T v)
 
 inductive SLookup : Typ → Nat → Typ → Prop
 | zero (A B : Typ) : SLookup (Typ.and A B) 0 B
@@ -83,5 +122,16 @@ inductive SRLookup : Typ → String → Typ → Prop
     SRLookup B label T →
     LabelIn label B ∧ ¬ LabelIn label A →
     SRLookup (Typ.and A B) label T
+
+-- LinkOk Γ₁ D: the module type Γ₁ satisfies every labeled import of the
+-- interface D ::= rcd l A | D & rcd l A (left-nested intersections of records)
+inductive LinkOk : Typ → Typ → Prop where
+  | one {Γ₁ : Typ} {l : String} {A : Typ}
+    : SRLookup Γ₁ l A
+    → LinkOk Γ₁ (.rcd l A)
+  | more {Γ₁ D : Typ} {l : String} {A : Typ}
+    : LinkOk Γ₁ D
+    → SRLookup Γ₁ l A
+    → LinkOk Γ₁ (.and D (.rcd l A))
 
 end SCE

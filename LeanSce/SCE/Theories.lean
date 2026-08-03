@@ -83,6 +83,9 @@ theorem type_safe_label_existence
     | int => simp [elabTyp] at h; cases h
     | top => simp [elabTyp] at h; cases h
     | arr _ _ => simp [elabTyp] at h; cases h
+    | or _ _ => simp [elabTyp] at h; cases h
+    | var _ => simp [elabTyp] at h; cases h
+    | mu _ => simp [elabTyp] at h; cases h
     | sig mt =>
       cases mt with
       | TyIntf T =>
@@ -252,6 +255,52 @@ theorem inference_uniqueness
       have := ih2 h2'
       cases this
       rw [hΓ]
+  | mlinkn ctx Γ₁ D B se1 se2 ce1 ce2 _ _ _ ih1 ih2 =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | mlinkn _ Γ₁' D' B' _ _ ce1' ce2' h1' h2' _ =>
+      have hΓ := ih1 h1'
+      have := ih2 h2'
+      cases this
+      rw [hΓ]
+  | einl ctx A B se ce _ ih =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | einl _ a' _ _ ce' h' =>
+      have hA := ih h'
+      rw [hA]
+  | einr ctx A B se ce _ ih =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | einr _ _ b' _ ce' h' =>
+      have hB := ih h'
+      rw [hB]
+  | ecase ctx A B C se se1 se2 ce ce1 ce2 _ _ _ ih ih1 ih2 =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | ecase _ a' b' c' _ _ _ ce' ce1' ce2' h' h1' h2' =>
+      have hor := ih h'
+      cases hor
+      exact ih1 h1'
+  | eflam ctx A B se ce _ ih =>
+    intro ce₂ T₂ h₂
+    cases h₂
+    rfl
+  | efclos ctx ctx' A B se1 se2 ce1 ce2 _ _ _ ih1 ih2 =>
+    intro ce₂ T₂ h₂
+    cases h₂
+    rfl
+  | efold ctx T se ce _ ih =>
+    intro ce₂ T₂ h₂
+    cases h₂
+    rfl
+  | eunfold ctx T A se ce _ heq ih =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | eunfold _ T' _ _ ce' h' heq' =>
+      have hmu := ih h'
+      cases hmu
+      rw [heq, heq']
 
 theorem elaboration_uniqueness
     {Γ T₁ T₂ : SCE.Typ} {e : SCE.Exp} {ce₁ ce₂ : Core.Exp}
@@ -396,6 +445,66 @@ theorem elaboration_uniqueness
       have htyp := inference_uniqueness h2_orig h2'
       cases htyp
       rw [hce1, hce2]
+  | mlinkn ctx Γ₁ D B se1 se2 ce1 ce2 h1_orig h2_orig _ ih1 ih2 =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | mlinkn _ Γ₁' D' B' _ _ ce1' ce2' h1' h2' _ =>
+      have hce1 := ih1 h1'
+      have hce2 := ih2 h2'
+      have htyp := inference_uniqueness h2_orig h2'
+      cases htyp
+      rw [hce1, hce2]
+  | einl ctx A B se ce _ ih =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | einl _ a' _ _ ce' h' =>
+      have hce := ih h'
+      rw [hce]
+  | einr ctx A B se ce _ ih =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | einr _ _ b' _ ce' h' =>
+      have hce := ih h'
+      rw [hce]
+  | ecase ctx A B C se se1 se2 ce ce1 ce2 h_orig _ _ ih ih1 ih2 =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | ecase _ a' b' c' _ _ _ ce' ce1' ce2' h' h1' h2' =>
+      have hor := inference_uniqueness h_orig h'
+      cases hor
+      have hce := ih h'
+      have hce1 := ih1 h1'
+      have hce2 := ih2 h2'
+      rw [hce, hce1, hce2]
+  | eflam ctx A B se ce _ ih =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | eflam _ _ _ _ ce' h' =>
+      have hce := ih h'
+      rw [hce]
+  | efclos ctx ctx' A B se1 se2 ce1 ce2 hval h1_orig h2_orig ih1 ih2 =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | efclos _ et _ _ _ _ ce1' ce2' _ h1' h2' =>
+      have hce1 := ih1 h1'
+      have hctx := inference_uniqueness h1_orig h1'
+      rw [← hctx] at h2'
+      have hce2 := ih2 h2'
+      rw [hce1, hce2]
+  | efold ctx T se ce _ ih =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | efold _ _ _ ce' h' =>
+      have hce := ih h'
+      rw [hce]
+  | eunfold ctx T A se ce h_orig heq ih =>
+    intro ce₂ T₂ h₂
+    cases h₂ with
+    | eunfold _ T' _ _ ce' h' heq' =>
+      have hmu := inference_uniqueness h_orig h'
+      cases hmu
+      have hce := ih h'
+      rw [hce]
 
 theorem elab_value
     {Γ A : SCE.Typ} {v : SCE.Exp} {cv : Core.Exp}
@@ -425,6 +534,43 @@ theorem elab_value
     cases helab with
     | elrec _ _ _ ce _ h =>
       exact Core.Value.vrcd (ih h)
+  | vinl hv ih =>
+    cases helab with
+    | einl _ _ _ _ ce h =>
+      exact Core.Value.vinl (ih h)
+  | vinr hv ih =>
+    cases helab with
+    | einr _ _ _ _ ce h =>
+      exact Core.Value.vinr (ih h)
+  | vfclos hv ih =>
+    cases helab with
+    | efclos _ _ _ _ _ _ ce1 ce2 _ h1 h2 =>
+      exact Core.Value.vfclos (ih h1)
+  | vfold hv ih =>
+    cases helab with
+    | efold _ _ _ ce h =>
+      exact Core.Value.vfold (ih h)
+
+-- the wired import package is well-typed at the interface type
+theorem wireArg_typed {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D)
+    {Γc : Core.Typ} {ce₁ : Core.Exp}
+    (h₁ : HasType Γc ce₁ (elabTyp Γ₁))
+    : HasType Γc (wireArg Γc ce₁ D) (elabTyp D) := by
+  induction hok with
+  | one hrl =>
+    exact HasType.trcd (HasType.trproj h₁ (type_safe_record_lookup hrl))
+  | more hok' hrl ih =>
+    simp only [wireArg, nmrgCore, elabTyp]
+    apply HasType.tapp
+    · apply HasType.tlam
+      apply HasType.tmrg
+      · apply HasType.tbox
+        · exact HasType.tproj HasType.tquery Lookup.zero
+        · exact ih
+      · apply HasType.tbox
+        · exact HasType.tproj HasType.tquery (Lookup.succ Lookup.zero)
+        · exact HasType.trcd (HasType.trproj h₁ (type_safe_record_lookup hrl))
+    · exact HasType.tquery
 
 theorem type_preservation
     {Γ A : SCE.Typ} {es : SCE.Exp} {ec : Core.Exp}
@@ -517,6 +663,42 @@ theorem type_preservation
           · exact HasType.tapp ih2
               (HasType.trcd (HasType.trproj ih1 (type_safe_record_lookup hlookup)))
       · exact HasType.tquery
+    | mlinkn ctx Γ₁ D B se1 se2 ce1 ce2 _ _ hok ih1 ih2 =>
+      simp [elabTyp, linkedCoreN]
+      apply HasType.tapp
+      · apply HasType.tlam
+        apply HasType.tmrg
+        · apply HasType.tbox
+          · exact HasType.tproj HasType.tquery Lookup.zero
+          · exact ih1
+        · apply HasType.tbox
+          · exact HasType.tproj HasType.tquery (Lookup.succ Lookup.zero)
+          · exact HasType.tapp ih2 (wireArg_typed hok ih1)
+      · exact HasType.tquery
+    | einl ctx A B se ce _ ih =>
+      simp [elabTyp]
+      exact HasType.tinl ih
+    | einr ctx A B se ce _ ih =>
+      simp [elabTyp]
+      exact HasType.tinr ih
+    | ecase ctx A B C se se1 se2 ce ce1 ce2 _ _ _ ih ih1 ih2 =>
+      simp [elabTyp] at ih
+      exact HasType.tcase ih ih1 ih2
+    | eflam ctx A B se ce _ ih =>
+      simp [elabTyp] at ih ⊢
+      exact HasType.tflam ih
+    | efclos ctx ctx' A B se1 se2 ce1 ce2 hval h1 h2 ih1 ih2 =>
+      simp [elabTyp] at ih2 ⊢
+      exact HasType.tfclos (elab_value h1 hval) ih1 ih2
+    | efold ctx T se ce _ ih =>
+      rw [elab_substTyp] at ih
+      simp [elabTyp] at ih ⊢
+      exact HasType.tfold ih
+    | eunfold ctx T A se ce _ heq ih =>
+      subst heq
+      rw [elab_substTyp]
+      simp [elabTyp] at ih ⊢
+      exact HasType.tunfold ih rfl
 
 theorem value_typing_weakening
     {v : SCE.Exp} {cv : Core.Exp} {A Γ₁ Γ₂ : SCE.Typ}
@@ -546,6 +728,22 @@ theorem value_typing_weakening
     cases helab with
     | elrec _ _ _ _ _ h =>
       exact elabExp.elrec Γ₂ _ _ _ _ (ih h)
+  | vinl hv ih =>
+    cases helab with
+    | einl _ _ _ _ _ h =>
+      exact elabExp.einl Γ₂ _ _ _ _ (ih h)
+  | vinr hv ih =>
+    cases helab with
+    | einr _ _ _ _ _ h =>
+      exact elabExp.einr Γ₂ _ _ _ _ (ih h)
+  | vfclos hv ih =>
+    cases helab with
+    | efclos _ _ _ _ _ _ _ _ hval' h1 h2 =>
+      exact elabExp.efclos Γ₂ _ _ _ _ _ _ _ hval' h1 h2
+  | vfold hv ih =>
+    cases helab with
+    | efold _ _ _ _ h =>
+      exact elabExp.efold Γ₂ _ _ _ (ih h)
 
 theorem source_lookupv_value
     {v v' : SCE.Exp} {n : Nat}
@@ -614,6 +812,31 @@ theorem eval_produces_value
     | vmclos hvv2 =>
       have hvl := source_sel_value hv1 hsel
       exact SCE.Value.vmrg hv1 (ih3 (SCE.Value.vmrg hvv2 (SCE.Value.vlrec hvl)))
+  | mlinkn hv hstep1 hstep2 hsp hstep3 ih1 ih2 ih3 =>
+    have hv1 := ih1 hv
+    have hv2 := ih2 hv
+    cases hv2 with
+    | vmclos hvv2 =>
+      exact SCE.Value.vmrg hv1 (ih3 (SCE.Value.vmrg hvv2 (S_Sem.selpkg_value hsp hv1)))
+  | inl _ _ ih => exact SCE.Value.vinl (ih hval)
+  | inr _ _ ih => exact SCE.Value.vinr (ih hval)
+  | case_inl _ _ _ ih1 ih2 =>
+    have hinl := ih1 hval
+    cases hinl with | vinl hv1 => exact ih2 (SCE.Value.vmrg hval hv1)
+  | case_inr _ _ _ ih1 ih2 =>
+    have hinr := ih1 hval
+    cases hinr with | vinr hv1 => exact ih2 (SCE.Value.vmrg hval hv1)
+  | fclos_val _ hv => exact SCE.Value.vfclos hv
+  | flam _ => exact SCE.Value.vfclos hval
+  | app_fclos _ _ _ _ ih1 ih2 ih3 =>
+    have hvclos := ih1 hval
+    cases hvclos with
+    | vfclos hv =>
+      exact ih3 (SCE.Value.vmrg (SCE.Value.vmrg hv (SCE.Value.vfclos hv)) (ih2 hval))
+  | fold _ _ ih => exact SCE.Value.vfold (ih hval)
+  | unfold _ _ ih =>
+    have hfold := ih hval
+    cases hfold with | vfold hv => exact hv
 
 theorem sel_implies_label_in
     {v v' : SCE.Exp} {vc : Core.Exp} {A : SCE.Typ} {l : String}
@@ -752,6 +975,85 @@ theorem nmrg_core_eval
           (EBig.equery (Value.vmrg (Value.vmrg hval_ρ hval_ρ) hval_vc1))
           (LookupV.lvsucc LookupV.lvzero)
       · exact hbig2
+
+-- the extracted package elaborates at the interface type
+theorem selpkg_elab {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
+    ∀ {v pkg : SCE.Exp} {vc : Core.Exp},
+    S_Sem.SelPkg v D pkg
+    → SCE.Value v
+    → elabExp SCE.Typ.top v Γ₁ vc
+    → ∃ cpkg, elabExp SCE.Typ.top pkg D cpkg := by
+  induction hok with
+  | one hrl =>
+    intro v pkg vc hsp hv helab
+    cases hsp with
+    | one hsel =>
+      obtain ⟨vcl, _, helab_vl⟩ := sel_preservation hv helab hsel hrl
+      exact ⟨_, elabExp.elrec _ _ _ _ _ helab_vl⟩
+  | more hok' hrl ih =>
+    intro v pkg vc hsp hv helab
+    cases hsp with
+    | more hsp' hsel =>
+      obtain ⟨cpkg', helab'⟩ := ih hsp' hv helab
+      obtain ⟨vcl, _, helab_vl⟩ := sel_preservation hv helab hsel hrl
+      have hvl := source_sel_value hv hsel
+      exact ⟨_, elabExp.edmrg _ _ _ _ _ _ _ helab'
+        (value_typing_weakening (SCE.Value.vlrec hvl)
+          (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl))⟩
+
+-- the wired import package evaluates to a Core package that elaborates
+-- the source package
+theorem wireArg_eval {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
+    ∀ {v₁ pkg : SCE.Exp} {Γc : Core.Typ} {ρc ce1 vc1 : Core.Exp},
+    S_Sem.SelPkg v₁ D pkg
+    → SCE.Value v₁
+    → elabExp SCE.Typ.top v₁ Γ₁ vc1
+    → Core.Value ρc
+    → EBig ρc ce1 vc1
+    → ∃ cpkg, EBig ρc (wireArg Γc ce1 D) cpkg ∧ elabExp SCE.Typ.top pkg D cpkg := by
+  induction hok with
+  | one hrl =>
+    intro v₁ pkg Γc ρc ce1 vc1 hsp hv1 helab1 hρ hbig1
+    cases hsp with
+    | one hsel =>
+      obtain ⟨vcl, hrlv, helab_vl⟩ := sel_preservation hv1 helab1 hsel hrl
+      exact ⟨_, EBig.ebrec (EBig.ebsel hbig1 hrlv),
+             elabExp.elrec _ _ _ _ _ helab_vl⟩
+  | more hok' hrl ih =>
+    intro v₁ pkg Γc ρc ce1 vc1 hsp hv1 helab1 hρ hbig1
+    cases hsp with
+    | more hsp' hsel =>
+      obtain ⟨cpkg', hbig', helab'⟩ := ih (Γc := Γc) hsp' hv1 helab1 hρ hbig1
+      obtain ⟨vcl, hrlv, helab_vl⟩ := sel_preservation hv1 helab1 hsel hrl
+      have hvl := source_sel_value hv1 hsel
+      exact ⟨_, nmrg_core_eval hρ hbig' (EBig.ebrec (EBig.ebsel hbig1 hrlv)),
+             elabExp.edmrg _ _ _ _ _ _ _ helab'
+               (value_typing_weakening (SCE.Value.vlrec hvl)
+                 (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl))⟩
+
+theorem linkedCoreN_eval
+    {ρc vc1 vc2 cpkg vc3 : Core.Exp} {ctx DT : Core.Typ} {D : SCE.Typ}
+    {ce1 ce2 body : Core.Exp}
+    (hval_ρ : Core.Value ρc)
+    (hbig1 : EBig ρc ce1 vc1)
+    (hbig2 : EBig ρc ce2 (Core.Exp.clos vc2 DT body))
+    (hbigw : EBig ρc (wireArg ctx ce1 D) cpkg)
+    (hbig3 : EBig (.mrg vc2 cpkg) body vc3)
+    : EBig ρc (linkedCoreN ctx D ce1 ce2) (.mrg vc1 vc3) := by
+  have hval_vc1 := ebig_produces_value hval_ρ hbig1
+  simp [linkedCoreN]
+  apply EBig.ebapp
+  · exact EBig.ebclos hval_ρ
+  · exact EBig.equery hval_ρ
+  · apply EBig.ebmrg
+    · apply EBig.ebbox
+      · exact EBig.ebproj (EBig.equery (Value.vmrg hval_ρ hval_ρ)) LookupV.lvzero
+      · exact hbig1
+    · apply EBig.ebbox
+      · exact EBig.ebproj
+          (EBig.equery (Value.vmrg (Value.vmrg hval_ρ hval_ρ) hval_vc1))
+          (LookupV.lvsucc LookupV.lvzero)
+      · exact EBig.ebapp hbig2 hbigw hbig3
 
 theorem semantic_preservation
     {Γ A : SCE.Typ} {es : SCE.Exp} {ec : Core.Exp}
@@ -984,6 +1286,110 @@ theorem semantic_preservation
         exact ⟨.mrg vc1 vc3,
                linkedCore_eval (elab_value henv henv_val) hbig1 hbig2 hrlookup_v hbig3,
                helab_result⟩
+  | mlinkn h1 bstep1 bstep2 hsp bstep3 ih1 ih2 ih3 =>
+    cases helab with
+    | mlinkn _ Γ₁ D_e B_e _ _ ce1 ce2 h_elab1 h_elab2 hok =>
+      obtain ⟨vc1, hbig1, helab_v1⟩ := ih1 h_elab1 henv henv_val
+      obtain ⟨vc2, hbig2, helab_v2⟩ := ih2 h_elab2 henv henv_val
+      cases helab_v2 with
+      | mclos _ ctx_inner _ _ _ _ ce_env ce_body hval_v2 h_env2 h_body =>
+        have hv1_val := eval_produces_value henv_val bstep1
+        obtain ⟨cpkg, hbigw, helab_pkg⟩ :=
+          wireArg_eval hok hsp hv1_val helab_v1 (elab_value henv henv_val) hbig1
+        have hvpkg := S_Sem.selpkg_value hsp hv1_val
+        have hval_env := SCE.Value.vmrg hval_v2 hvpkg
+        have helab_env := elabExp.edmrg .top _ _ _ _ _ _ h_env2
+          (value_typing_weakening hvpkg helab_pkg)
+        obtain ⟨vc3, hbig3, helab_v3⟩ := ih3 h_body helab_env hval_env
+        have hv3_val := eval_produces_value hval_env bstep3
+        have helab_result := elabExp.edmrg .top _ _ _ _ _ _
+          helab_v1 (value_typing_weakening hv3_val helab_v3)
+        exact ⟨.mrg vc1 vc3,
+               linkedCoreN_eval (elab_value henv henv_val) hbig1 hbig2 hbigw hbig3,
+               helab_result⟩
+  | inl hval_ρ hstep ih =>
+    cases helab with
+    | einl _ A_inner B_inner _ ce h_elab =>
+      obtain ⟨vc, hbig, helab_v⟩ := ih h_elab henv henv_val
+      exact ⟨_, EBig.ebinl hbig, elabExp.einl .top _ _ _ _ helab_v⟩
+  | inr hval_ρ hstep ih =>
+    cases helab with
+    | einr _ A_inner B_inner _ ce h_elab =>
+      obtain ⟨vc, hbig, helab_v⟩ := ih h_elab henv henv_val
+      exact ⟨_, EBig.ebinr hbig, elabExp.einr .top _ _ _ _ helab_v⟩
+  | case_inl hval_ρ hstep1 hstep2 ih1 ih2 =>
+    cases helab with
+    | ecase _ A_inner B_inner C_inner _ _ _ ce ce1 ce2 h_elab h_elab1 h_elab2 =>
+      obtain ⟨vc_inl, hbig1, helab_inl⟩ := ih1 h_elab henv henv_val
+      cases helab_inl with
+      | einl _ _ _ _ ce_v h_v =>
+        have h_inl_val := eval_produces_value henv_val hstep1
+        cases h_inl_val with
+        | vinl hv1 =>
+          have hval_mrg := SCE.Value.vmrg henv_val hv1
+          have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _
+            henv (value_typing_weakening hv1 h_v)
+          obtain ⟨vc, hbig2, helab_v⟩ := ih2 h_elab1 helab_mrg hval_mrg
+          exact ⟨vc, EBig.ebcasel hbig1 hbig2, helab_v⟩
+  | case_inr hval_ρ hstep1 hstep2 ih1 ih2 =>
+    cases helab with
+    | ecase _ A_inner B_inner C_inner _ _ _ ce ce1 ce2 h_elab h_elab1 h_elab2 =>
+      obtain ⟨vc_inr, hbig1, helab_inr⟩ := ih1 h_elab henv henv_val
+      cases helab_inr with
+      | einr _ _ _ _ ce_v h_v =>
+        have h_inr_val := eval_produces_value henv_val hstep1
+        cases h_inr_val with
+        | vinr hv1 =>
+          have hval_mrg := SCE.Value.vmrg henv_val hv1
+          have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _
+            henv (value_typing_weakening hv1 h_v)
+          obtain ⟨vc, hbig2, helab_v⟩ := ih2 h_elab2 helab_mrg hval_mrg
+          exact ⟨vc, EBig.ebcaser hbig1 hbig2, helab_v⟩
+  | fclos_val henv_src hval =>
+    cases helab with
+    | efclos _ _ _ _ _ _ _ _ hval' h1 h2 =>
+      exact ⟨_, EBig.efclos (elab_value henv henv_val) (elab_value h1 hval),
+               elabExp.efclos .top _ _ _ _ _ _ _ hval h1 h2⟩
+  | flam hval =>
+    cases helab with
+    | eflam _ _ _ _ ce h_body =>
+      exact ⟨Core.Exp.fclos ρc _ _ ce,
+             EBig.ebflam (elab_value henv henv_val),
+             elabExp.efclos .top _ _ _ _ _ _ _ henv_val henv h_body⟩
+  | app_fclos hval_ρ hstep1 hstep2 hstep_body ih1 ih2 ih3 =>
+    cases helab with
+    | eapp _ A_param B _ _ ce1 ce2 h_elab1 h_elab2 =>
+      obtain ⟨vc_clos, hbig1, helab_clos⟩ := ih1 h_elab1 henv henv_val
+      obtain ⟨vc2, hbig2, helab_v2⟩ := ih2 h_elab2 henv henv_val
+      cases helab_clos with
+      | efclos _ _ _ _ _ _ _ _ hval_v1 h_env_v1 h_body_elab =>
+        rename_i ctx_clos ce_env ce_body
+        have hv1_val := eval_produces_value henv_val hstep1
+        cases hv1_val with
+        | vfclos hval_inner =>
+          have hv2_val := eval_produces_value henv_val hstep2
+          have helab_body_env := elabExp.edmrg .top _ _ _ _ _ _
+            (elabExp.edmrg .top _ _ _ _ _ _ h_env_v1
+              (elabExp.efclos _ _ _ _ _ _ _ _ hval_inner h_env_v1 h_body_elab))
+            (value_typing_weakening hv2_val helab_v2)
+          obtain ⟨vc_result, hbig3, helab_result⟩ := ih3 h_body_elab helab_body_env
+            (SCE.Value.vmrg (SCE.Value.vmrg hval_inner (SCE.Value.vfclos hval_inner)) hv2_val)
+          exact ⟨vc_result,
+                 EBig.ebfapp hbig1 hbig2 hbig3,
+                 helab_result⟩
+  | fold hval_ρ hstep ih =>
+    cases helab with
+    | efold _ T_inner _ ce h_elab =>
+      obtain ⟨vc, hbig, helab_v⟩ := ih h_elab henv henv_val
+      exact ⟨_, EBig.ebfold hbig, elabExp.efold .top _ _ _ helab_v⟩
+  | unfold hval_ρ hstep ih =>
+    cases helab with
+    | eunfold _ T_inner _ _ ce h_elab heq =>
+      subst heq
+      obtain ⟨vc_fold, hbig, helab_fold⟩ := ih h_elab henv henv_val
+      cases helab_fold with
+      | efold _ _ _ ce_v h_v =>
+        exact ⟨_, EBig.ebunfold hbig, h_v⟩
 
 theorem whole_program_correctness
     {A : SCE.Typ} {es : SCE.Exp} {ec : Core.Exp} {vs : SCE.Exp}
@@ -1050,6 +1456,65 @@ theorem separate_compilation_closed
     CoreLink.link _ _ _ _ _ _ _ (type_safe_record_lookup hlookup)
   exact separate_compilation helab₁ helab₂ hlookup hlink heval (elabExp.eunit .top) SCE.Value.vunit
 
+-- N-ary linking and separate compilation
+
+inductive CoreLinkN
+    : Core.Typ → SCE.Typ → Core.Exp → Core.Exp → Core.Exp → Prop where
+  | link (Γ : Core.Typ) (D : SCE.Typ) (ec₁ ec₂ : Core.Exp)
+    : CoreLinkN Γ D ec₁ ec₂ (linkedCoreN Γ D ec₁ ec₂)
+
+theorem core_linkn_typed
+    {Γ₁ D : SCE.Typ} {Γc B : Core.Typ} {ec₁ ec₂ ec : Core.Exp}
+    (hlink : CoreLinkN Γc D ec₁ ec₂ ec)
+    (hok : LinkOk Γ₁ D)
+    (h₁ : HasType Γc ec₁ (elabTyp Γ₁))
+    (h₂ : HasType Γc ec₂ (.arr (elabTyp D) B))
+    : HasType Γc ec (.and (elabTyp Γ₁) B) := by
+  cases hlink with
+  | link =>
+    simp [linkedCoreN]
+    apply HasType.tapp
+    · apply HasType.tlam
+      apply HasType.tmrg
+      · apply HasType.tbox
+        · exact HasType.tproj HasType.tquery Lookup.zero
+        · exact h₁
+      · apply HasType.tbox
+        · exact HasType.tproj HasType.tquery (Lookup.succ Lookup.zero)
+        · exact HasType.tapp h₂ (wireArg_typed hok h₁)
+    · exact HasType.tquery
+
+theorem separate_compilation_n
+    {Γ Γ₁ D B : SCE.Typ}
+    {es₁ es₂ : SCE.Exp} {ec₁ ec₂ ec : Core.Exp}
+    {ρs vs : SCE.Exp} {ρc : Core.Exp}
+    (helab₁ : elabExp Γ es₁ Γ₁ ec₁)
+    (helab₂ : elabExp Γ es₂ (.sig (.TyArrM D (.TyIntf B))) ec₂)
+    (hok : LinkOk Γ₁ D)
+    (hlink : CoreLinkN (elabTyp Γ) D ec₁ ec₂ ec)
+    (heval : S_Sem.BStep ρs (.mlinkn es₁ es₂) vs)
+    (henv : elabExp SCE.Typ.top ρs Γ ρc)
+    (henv_val : SCE.Value ρs)
+    : ∃ vc, EBig ρc ec vc ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
+  cases hlink with
+  | link =>
+    have hn := elabExp.mlinkn Γ Γ₁ D B es₁ es₂ ec₁ ec₂ helab₁ helab₂ hok
+    exact semantic_preservation hn heval henv henv_val
+
+theorem separate_compilation_n_closed
+    {Γ₁ D B : SCE.Typ}
+    {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp}
+    {vs : SCE.Exp}
+    (helab₁ : elabExp SCE.Typ.top es₁ Γ₁ ec₁)
+    (helab₂ : elabExp SCE.Typ.top es₂ (.sig (.TyArrM D (.TyIntf B))) ec₂)
+    (hok : LinkOk Γ₁ D)
+    (heval : S_Sem.BStep .unit (.mlinkn es₁ es₂) vs)
+    : ∃ vc, EBig .unit (linkedCoreN Core.Typ.top D ec₁ ec₂) vc
+           ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
+  have hlink : CoreLinkN Core.Typ.top D ec₁ ec₂ (linkedCoreN Core.Typ.top D ec₁ ec₂) :=
+    CoreLinkN.link _ _ _ _
+  exact separate_compilation_n helab₁ helab₂ hok hlink heval (elabExp.eunit .top) SCE.Value.vunit
+
 -- Determinism
 
 private theorem lookupV_deterministic
@@ -1107,6 +1572,27 @@ private theorem sel_deterministic
       exact absurd hlin hcond.2
   | nmrg_left   => cases hval
   | nmrg_right  => cases hval
+
+private theorem selpkg_deterministic
+    {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D)
+    {v : SCE.Exp} {vc : Core.Exp}
+    (hval : SCE.Value v)
+    (helab : elabExp SCE.Typ.top v Γ₁ vc)
+    : ∀ {pkg₁ pkg₂ : SCE.Exp},
+      S_Sem.SelPkg v D pkg₁
+      → S_Sem.SelPkg v D pkg₂
+      → pkg₁ = pkg₂ := by
+  induction hok with
+  | one hrl =>
+    intro pkg₁ pkg₂ hsp₁ hsp₂
+    cases hsp₁ with | one hsel₁ =>
+    cases hsp₂ with | one hsel₂ =>
+    rw [sel_deterministic hval helab hrl hsel₁ hsel₂]
+  | more hok' hrl ih =>
+    intro pkg₁ pkg₂ hsp₁ hsp₂
+    cases hsp₁ with | more hsp₁' hsel₁ =>
+    cases hsp₂ with | more hsp₂' hsel₂ =>
+    rw [ih hsp₁' hsp₂', sel_deterministic hval helab hrl hsel₁ hsel₂]
 
 theorem bigstep_deterministic_gen
     {Γ A : SCE.Typ} {e ρ v₁ v₂ : SCE.Exp} {ec ρc : Core.Exp}
@@ -1172,6 +1658,9 @@ theorem bigstep_deterministic_gen
             have helab_body_env := elabExp.edmrg .top _ _ _ _ _ _ h_env_inner
               (value_typing_weakening hva helab_arg)
             exact ih₁b h_body helab_body_env hval_body_env hstep₂b
+      | app_fclos _ hstep₂f hstep₂a hstep₂b =>
+        have heq_f := ih₁f h_elab1 henv henv_val hstep₂f
+        cases heq_f
   | app_mclos hval₁ hstep₁f hstep₁a hstep₁b ih₁f ih₁a ih₁b =>
     cases helab with
     | mapp _ A_param B _ _ ce1 ce2 h_elab1 h_elab2 =>
@@ -1318,6 +1807,131 @@ theorem bigstep_deterministic_gen
           have helab_env := elabExp.edmrg .top _ _ _ _ _ _ h_env2 helab_lrec_weak
           have heq_c := ih₁c h_body helab_env hval_env hstep₂c
           rw [heq_a, heq_c]
+  | mlinkn hval₁ hstep₁a hstep₁b hsp₁ hstep₁c ih₁a ih₁b ih₁c =>
+    cases helab with
+    | mlinkn _ Γ₁ D_e B_e _ _ ce1 ce2 h_elab1 h_elab2 hok =>
+      cases heval₂ with
+      | mlinkn _ hstep₂a hstep₂b hsp₂ hstep₂c =>
+        have heq_a := ih₁a h_elab1 henv henv_val hstep₂a
+        have heq_b := ih₁b h_elab2 henv henv_val hstep₂b
+        cases heq_b
+        have hv1_val := eval_produces_value henv_val hstep₁a
+        have ⟨_, _, helab_v1⟩ := semantic_preservation h_elab1 hstep₁a henv henv_val
+        have ⟨_, _, helab_mclos⟩ := semantic_preservation h_elab2 hstep₁b henv henv_val
+        cases helab_mclos with
+        | mclos _ ctx_inner _ _ _ _ _ _ hval_v2 h_env2 h_body =>
+          rw [← heq_a] at hsp₂
+          have heq_pkg := selpkg_deterministic hok hv1_val helab_v1 hsp₁ hsp₂
+          subst heq_pkg
+          have hvpkg := S_Sem.selpkg_value hsp₁ hv1_val
+          have ⟨_, helab_pkg⟩ := selpkg_elab hok hsp₁ hv1_val helab_v1
+          have hval_env := SCE.Value.vmrg hval_v2 hvpkg
+          have helab_env := elabExp.edmrg .top _ _ _ _ _ _ h_env2
+            (value_typing_weakening hvpkg helab_pkg)
+          have heq_c := ih₁c h_body helab_env hval_env hstep₂c
+          rw [heq_a, heq_c]
+  | inl hval₁ hstep₁ ih₁ =>
+    cases helab with
+    | einl _ _ _ _ _ h_elab =>
+      cases heval₂ with
+      | inl _ hstep₂ =>
+        have := ih₁ h_elab henv henv_val hstep₂
+        rw [this]
+  | inr hval₁ hstep₁ ih₁ =>
+    cases helab with
+    | einr _ _ _ _ _ h_elab =>
+      cases heval₂ with
+      | inr _ hstep₂ =>
+        have := ih₁ h_elab henv henv_val hstep₂
+        rw [this]
+  | case_inl hval₁ hstep₁a hstep₁b ih₁a ih₁b =>
+    cases helab with
+    | ecase _ A' B' C' _ _ _ ce ce1 ce2 h_elab h_elab1 h_elab2 =>
+      cases heval₂ with
+      | case_inl _ hstep₂a hstep₂b =>
+        have heq_a := ih₁a h_elab henv henv_val hstep₂a
+        cases heq_a
+        have h_inl_val := eval_produces_value henv_val hstep₁a
+        cases h_inl_val with
+        | vinl hv1 =>
+          have ⟨_, _, helab_inl⟩ := semantic_preservation h_elab hstep₁a henv henv_val
+          cases helab_inl with
+          | einl _ _ _ _ _ h_v =>
+            have hval_mrg := SCE.Value.vmrg henv_val hv1
+            have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _
+              henv (value_typing_weakening hv1 h_v)
+            exact ih₁b h_elab1 helab_mrg hval_mrg hstep₂b
+      | case_inr _ hstep₂a hstep₂b =>
+        have heq_a := ih₁a h_elab henv henv_val hstep₂a
+        cases heq_a
+  | case_inr hval₁ hstep₁a hstep₁b ih₁a ih₁b =>
+    cases helab with
+    | ecase _ A' B' C' _ _ _ ce ce1 ce2 h_elab h_elab1 h_elab2 =>
+      cases heval₂ with
+      | case_inr _ hstep₂a hstep₂b =>
+        have heq_a := ih₁a h_elab henv henv_val hstep₂a
+        cases heq_a
+        have h_inr_val := eval_produces_value henv_val hstep₁a
+        cases h_inr_val with
+        | vinr hv1 =>
+          have ⟨_, _, helab_inr⟩ := semantic_preservation h_elab hstep₁a henv henv_val
+          cases helab_inr with
+          | einr _ _ _ _ _ h_v =>
+            have hval_mrg := SCE.Value.vmrg henv_val hv1
+            have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _
+              henv (value_typing_weakening hv1 h_v)
+            exact ih₁b h_elab2 helab_mrg hval_mrg hstep₂b
+      | case_inl _ hstep₂a hstep₂b =>
+        have heq_a := ih₁a h_elab henv henv_val hstep₂a
+        cases heq_a
+  | fclos_val _ _ =>
+    cases helab with
+    | efclos _ _ _ _ _ _ _ _ _ h1 h2 =>
+      cases heval₂ with | fclos_val => rfl
+  | flam _ =>
+    cases helab; cases heval₂; rfl
+  | app_fclos hval₁ hstep₁f hstep₁a hstep₁b ih₁f ih₁a ih₁b =>
+    cases helab with
+    | eapp _ A_param B _ _ ce1 ce2 h_elab1 h_elab2 =>
+      cases heval₂ with
+      | app_clos _ hstep₂f hstep₂a hstep₂b =>
+        have heq_f := ih₁f h_elab1 henv henv_val hstep₂f
+        cases heq_f
+      | app_fclos _ hstep₂f hstep₂a hstep₂b =>
+        have heq_f := ih₁f h_elab1 henv henv_val hstep₂f
+        cases heq_f
+        have heq_a := ih₁a h_elab2 henv henv_val hstep₂a
+        rw [← heq_a] at hstep₂b
+        have hvclos := eval_produces_value henv_val hstep₁f
+        cases hvclos with
+        | vfclos hval_inner =>
+          have hva := eval_produces_value henv_val hstep₁a
+          have ⟨_, _, helab_clos⟩ := semantic_preservation h_elab1 hstep₁f henv henv_val
+          cases helab_clos with
+          | efclos _ _ _ _ _ _ _ _ _ h_env_inner h_body =>
+            have ⟨_, _, helab_arg⟩ := semantic_preservation h_elab2 hstep₁a henv henv_val
+            have helab_body_env := elabExp.edmrg .top _ _ _ _ _ _
+              (elabExp.edmrg .top _ _ _ _ _ _ h_env_inner
+                (elabExp.efclos _ _ _ _ _ _ _ _ hval_inner h_env_inner h_body))
+              (value_typing_weakening hva helab_arg)
+            exact ih₁b h_body helab_body_env
+              (SCE.Value.vmrg (SCE.Value.vmrg hval_inner (SCE.Value.vfclos hval_inner)) hva)
+              hstep₂b
+  | fold hval₁ hstep₁ ih₁ =>
+    cases helab with
+    | efold _ _ _ _ h_elab =>
+      cases heval₂ with
+      | fold _ hstep₂ =>
+        have := ih₁ h_elab henv henv_val hstep₂
+        rw [this]
+  | unfold hval₁ hstep₁ ih₁ =>
+    cases helab with
+    | eunfold _ _ _ _ _ h_elab heq =>
+      cases heval₂ with
+      | unfold _ hstep₂ =>
+        have heq_f := ih₁ h_elab henv henv_val hstep₂
+        cases heq_f
+        rfl
 
 theorem bigstep_deterministic
     {A : SCE.Typ} {e v₁ v₂ : SCE.Exp}

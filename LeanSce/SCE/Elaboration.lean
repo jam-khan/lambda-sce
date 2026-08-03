@@ -14,6 +14,33 @@ def linkedCore (ctx : Core.Typ) (l : String) (ce₁ ce₂ : Core.Exp) : Core.Exp
             (Core.Exp.lrec l (Core.Exp.rproj ce₁ l))))))
     Core.Exp.query
 
+-- the non-capturing merge combinator (the enmrg elaboration skeleton):
+-- both components evaluate under the same ambient environment
+def nmrgCore (ctx : Core.Typ) (ce1 ce2 : Core.Exp) : Core.Exp :=
+  Core.Exp.app
+    (Core.Exp.lam ctx
+      (Core.Exp.mrg
+        (Core.Exp.box (Core.Exp.proj Core.Exp.query 0) ce1)
+        (Core.Exp.box (Core.Exp.proj Core.Exp.query 1) ce2)))
+    Core.Exp.query
+
+-- wireArg ctx ce₁ D: build the import package for interface D by projecting
+-- each labeled import out of the module elaboration ce₁
+def wireArg (ctx : Core.Typ) (ce₁ : Core.Exp) : Typ → Core.Exp
+  | .rcd l _ => Core.Exp.lrec l (Core.Exp.rproj ce₁ l)
+  | .and D (.rcd l _) =>
+    nmrgCore ctx (wireArg ctx ce₁ D) (Core.Exp.lrec l (Core.Exp.rproj ce₁ l))
+  | _ => Core.Exp.unit
+
+def linkedCoreN (ctx : Core.Typ) (D : Typ) (ce₁ ce₂ : Core.Exp) : Core.Exp :=
+  Core.Exp.app
+    (Core.Exp.lam ctx
+      (Core.Exp.mrg
+        (Core.Exp.box (Core.Exp.proj Core.Exp.query 0) ce₁)
+        (Core.Exp.box (Core.Exp.proj Core.Exp.query 1)
+          (Core.Exp.app ce₂ (wireArg ctx ce₁ D)))))
+    Core.Exp.query
+
 mutual
 @[simp]
 def elabTyp : Typ → Core.Typ
@@ -21,13 +48,45 @@ def elabTyp : Typ → Core.Typ
   | Typ.top        => Core.Typ.top
   | Typ.arr t1 t2  => Core.Typ.arr (elabTyp t1) (elabTyp t2)
   | Typ.and t1 t2  => Core.Typ.and (elabTyp t1) (elabTyp t2)
+  | Typ.or t1 t2   => Core.Typ.or (elabTyp t1) (elabTyp t2)
   | Typ.rcd str t  => Core.Typ.rcd str (elabTyp t)
   | Typ.sig mty    => elabModTyp mty
+  | Typ.var n      => Core.Typ.var n
+  | Typ.mu t       => Core.Typ.mu (elabTyp t)
 
 @[simp]
 def elabModTyp : ModTyp → Core.Typ
   | ModTyp.TyIntf t1      => elabTyp t1
   | ModTyp.TyArrM t1 mty  => Core.Typ.arr (elabTyp t1) (elabModTyp mty)
+end
+
+mutual
+-- elaboration commutes with mu-unfolding substitution
+theorem elab_substTyp (d : Nat) (S : Typ)
+    : (T : Typ) → elabTyp (substTyp d S T) = Core.substTyp d (elabTyp S) (elabTyp T)
+  | .int => rfl
+  | .top => rfl
+  | .arr A B => by
+    simp [substTyp, elabTyp, Core.substTyp, elab_substTyp d S A, elab_substTyp d S B]
+  | .and A B => by
+    simp [substTyp, elabTyp, Core.substTyp, elab_substTyp d S A, elab_substTyp d S B]
+  | .or A B => by
+    simp [substTyp, elabTyp, Core.substTyp, elab_substTyp d S A, elab_substTyp d S B]
+  | .rcd l A => by
+    simp [substTyp, elabTyp, Core.substTyp, elab_substTyp d S A]
+  | .sig mt => by
+    simp [substTyp, elabTyp, elab_substModTyp d S mt]
+  | .var n => by
+    by_cases h : n = d <;> simp [substTyp, elabTyp, Core.substTyp, h]
+  | .mu T => by
+    simp [substTyp, elabTyp, Core.substTyp, elab_substTyp (d + 1) S T]
+
+theorem elab_substModTyp (d : Nat) (S : Typ)
+    : (mt : ModTyp) → elabModTyp (substModTyp d S mt) = Core.substTyp d (elabTyp S) (elabModTyp mt)
+  | .TyIntf T => by
+    simp [substModTyp, elabModTyp, elab_substTyp d S T]
+  | .TyArrM T mt => by
+    simp [substModTyp, elabModTyp, Core.substTyp, elab_substTyp d S T, elab_substModTyp d S mt]
 end
 
 abbrev TyCtx := Typ
@@ -131,3 +190,40 @@ inductive elabExp : TyCtx → Exp → Typ → Core.Exp → Prop
     → SRLookup Γ₁ l A
     → elabExp ctx (Exp.mlink se1 se2) (Typ.and Γ₁ B)
         (linkedCore (elabTyp ctx) l ce1 ce2)
+  | mlinkn (ctx Γ₁ D B : Typ)
+      (se1 se2 : Exp) (ce1 ce2 : Core.Exp)
+    : elabExp ctx se1 Γ₁ ce1
+    → elabExp ctx se2 (Typ.sig (ModTyp.TyArrM D (ModTyp.TyIntf B))) ce2
+    → LinkOk Γ₁ D
+    → elabExp ctx (Exp.mlinkn se1 se2) (Typ.and Γ₁ B)
+        (linkedCoreN (elabTyp ctx) D ce1 ce2)
+  | einl (ctx A B : Typ) (se : Exp) (ce : Core.Exp)
+    : elabExp ctx se A ce
+    → elabExp ctx (Exp.inl B se) (Typ.or A B) (Core.Exp.inl (elabTyp B) ce)
+  | einr (ctx A B : Typ) (se : Exp) (ce : Core.Exp)
+    : elabExp ctx se B ce
+    → elabExp ctx (Exp.inr A se) (Typ.or A B) (Core.Exp.inr (elabTyp A) ce)
+  | ecase (ctx A B C : Typ) (se se1 se2 : Exp) (ce ce1 ce2 : Core.Exp)
+    : elabExp ctx se (Typ.or A B) ce
+    → elabExp (Typ.and ctx A) se1 C ce1
+    → elabExp (Typ.and ctx B) se2 C ce2
+    → elabExp ctx (Exp.case se se1 se2) C (Core.Exp.case ce ce1 ce2)
+  | eflam (ctx A B : Typ) (se : Exp) (ce : Core.Exp)
+    : elabExp (Typ.and (Typ.and ctx (Typ.arr A B)) A) se B ce
+    → elabExp ctx (Exp.flam A B se) (Typ.arr A B)
+        (Core.Exp.flam (elabTyp A) (elabTyp B) ce)
+  | efclos (ctx ctx' A B : Typ) (se1 se2 : Exp) (ce1 ce2 : Core.Exp)
+    : SCE.Value se1
+    → elabExp Typ.top se1 ctx' ce1
+    → elabExp (Typ.and (Typ.and ctx' (Typ.arr A B)) A) se2 B ce2
+    → elabExp ctx (Exp.fclos se1 A B se2) (Typ.arr A B)
+        (Core.Exp.fclos ce1 (elabTyp A) (elabTyp B) ce2)
+  | efold (ctx T : Typ) (se : Exp) (ce : Core.Exp)
+    : elabExp ctx se (substTyp 0 (Typ.mu T) T) ce
+    → elabExp ctx (Exp.fold T se) (Typ.mu T) (Core.Exp.fold (elabTyp T) ce)
+  -- result type is a variable guarded by an equation so that dependent
+  -- elimination (cases at a concrete type) does not get stuck on substTyp
+  | eunfold (ctx T A : Typ) (se : Exp) (ce : Core.Exp)
+    : elabExp ctx se (Typ.mu T) ce
+    → A = substTyp 0 (Typ.mu T) T
+    → elabExp ctx (Exp.unfold se) A (Core.Exp.unfold ce)

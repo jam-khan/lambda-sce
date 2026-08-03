@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(lake build *)",
+      "Read(//Users/jamkabeeralikhan/Documents/Programming/SCE/**)"
+    ],
+    "additionalDirectories": [
+      "/Users/jamkabeeralikhan/Documents/Programming/SCE"
+    ]
+  }
+}
