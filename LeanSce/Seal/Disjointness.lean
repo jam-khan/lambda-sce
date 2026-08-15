@@ -1,0 +1,132 @@
+import LeanSce.Seal.Subtyping
+
+-- Disjointness via Common Ordinary Super Types (Eᵢ Definition 1 / Appendix A.1), taken
+-- algorithmically: A ∗ B := ¬(A ⊓ B).  The COST relation ports verbatim because the λE^≤
+-- type grammar is exactly Eᵢ's.  Cost-arr ignoring input types is load-bearing: it makes
+-- (A→C) ∗ (B→D) ↔ C ∗ D (Eᵢ Lemma 2.5), which the closure cases of consistency rely on.
+namespace Seal
+
+inductive Cost : Typ → Typ → Prop where
+  | cint : Cost .int .int
+  | candl {A B C} : Cost A C → Cost (.and A B) C
+  | candr {A B C} : Cost B C → Cost (.and A B) C
+  | crandl {A B C} : Cost A B → Cost A (.and B C)
+  | crandr {A B C} : Cost A C → Cost A (.and B C)
+  | carr {A B C D} : Cost B D → Cost (.arr A B) (.arr C D)
+  | crcd {l A B} : Cost A B → Cost (.rcd l A) (.rcd l B)
+
+def Disj (A B : Typ) : Prop := ¬ Cost A B
+
+theorem cost_symm : {A B : Typ} → Cost A B → Cost B A
+  | _, _, .cint => .cint
+  | _, _, .candl h => .crandl (cost_symm h)
+  | _, _, .candr h => .crandr (cost_symm h)
+  | _, _, .crandl h => .candl (cost_symm h)
+  | _, _, .crandr h => .candr (cost_symm h)
+  | _, _, .carr h => .carr (cost_symm h)
+  | _, _, .crcd h => .crcd (cost_symm h)
+
+theorem disj_symm {A B : Typ} (h : Disj A B) : Disj B A :=
+  fun hc => h (cost_symm hc)
+
+-- ε shares no common ordinary supertype with anything (its supertypes are all top-like).
+theorem cost_top_l : {C : Typ} → ¬ Cost .top C
+  | _, .crandl h => cost_top_l h
+  | _, .crandr h => cost_top_l h
+
+theorem disj_top {A : Typ} : Disj .top A := cost_top_l
+
+theorem disj_top_r {A : Typ} : Disj A .top := fun hc => cost_top_l (cost_symm hc)
+
+-- COST propagates down subtyping on the left (the engine of Eᵢ Lemma 2.6).
+theorem cost_compose : {A B C : Typ} → Sub A B → Cost B C → Cost A C
+  | _, _, _, .sint, h => h
+  | _, _, _, .stop, h => absurd h cost_top_l
+  | _, _, _, .sandl p, h => .candl (cost_compose p h)
+  | _, _, _, .sandr p, h => .candr (cost_compose p h)
+  | _, _, _, .sarr _ q, .carr h => .carr (cost_compose q h)
+  | _, _, _, .sarr p q, .crandl h => .crandl (cost_compose (.sarr p q) h)
+  | _, _, _, .sarr p q, .crandr h => .crandr (cost_compose (.sarr p q) h)
+  | _, _, _, .srcd p, .crcd h => .crcd (cost_compose p h)
+  | _, _, _, .srcd p, .crandl h => .crandl (cost_compose (.srcd p) h)
+  | _, _, _, .srcd p, .crandr h => .crandr (cost_compose (.srcd p) h)
+  | _, _, _, .sand p₁ _, .candl h => cost_compose p₁ h
+  | _, _, _, .sand _ p₂, .candr h => cost_compose p₂ h
+  | _, _, _, .sand p₁ p₂, .crandl h => .crandl (cost_compose (.sand p₁ p₂) h)
+  | _, _, _, .sand p₁ p₂, .crandr h => .crandr (cost_compose (.sand p₁ p₂) h)
+
+-- Eᵢ Lemma 2.6: disjointness is preserved by widening.
+theorem sub_disj {A B C : Typ} (hs : Sub A B) (hd : Disj A C) : Disj B C :=
+  fun hc => hd (cost_compose hs hc)
+
+-- Disjointness with an intersection splits (Eᵢ Lemma 2.2, the directions used here).
+theorem disj_and_inv_l {A B₁ B₂ : Typ} (h : Disj A (.and B₁ B₂)) : Disj A B₁ :=
+  fun hc => h (.crandl hc)
+
+theorem disj_and_inv_r {A B₁ B₂ : Typ} (h : Disj A (.and B₁ B₂)) : Disj A B₂ :=
+  fun hc => h (.crandr hc)
+
+-- Records with distinct labels are disjoint (Eᵢ Lemma 2.4's easy direction).
+theorem disj_rcd_ne {l₁ l₂ : String} (hne : l₁ ≠ l₂) {A B : Typ}
+    : Disj (.rcd l₁ A) (.rcd l₂ B) := fun hc => by
+  cases hc with
+  | crcd _ => exact hne rfl
+
+-- A subtype of a non-top-like type is COST-related to it.
+theorem sub_cost {B D : Typ} (h : Sub B D) (hntl : ¬ TopLike D) : Cost B D := by
+  induction h with
+  | sint => exact Cost.cint
+  | stop => exact absurd TopLike.tltop hntl
+  | sarr _ _ _ ih₂ => exact Cost.carr (ih₂ (fun htl => hntl (TopLike.tlarr htl)))
+  | sandl _ ih => exact Cost.candl (ih hntl)
+  | sandr _ ih => exact Cost.candr (ih hntl)
+  | sand _ _ ih₁ ih₂ =>
+    rename_i D₁ D₂ _ _
+    cases toplike_dec D₁ with
+    | inl htl₁ =>
+      exact Cost.crandr (ih₂ (fun htl₂ => hntl (TopLike.tland htl₁ htl₂)))
+    | inr hntl₁ => exact Cost.crandl (ih₁ hntl₁)
+  | srcd _ ih => exact Cost.crcd (ih (fun htl => hntl (TopLike.tlrcd htl)))
+
+-- Two types COST-related to Int are COST-related to each other.
+theorem cost_int_compose : {B₁ B₂ : Typ} → Cost B₁ .int → Cost B₂ .int → Cost B₁ B₂
+  | _, _, .cint, c₂ => cost_symm c₂
+  | _, _, .candl h, c₂ => .candl (cost_int_compose h c₂)
+  | _, _, .candr h, c₂ => .candr (cost_int_compose h c₂)
+
+-- Two subtypes of a common non-top-like type share a common ordinary supertype
+-- (the compositional bridge behind "both casts succeeding refutes disjointness").
+theorem sub_sub_cost : {D B₁ B₂ : Typ} → ¬ TopLike D → Sub B₁ D → Sub B₂ D → Cost B₁ B₂ := by
+  intro D
+  induction D with
+  | top => intro _ _ hntl _; exact absurd TopLike.tltop hntl
+  | int =>
+    intro B₁ B₂ hntl h₁ h₂
+    exact cost_int_compose (sub_cost h₁ hntl) (sub_cost h₂ hntl)
+  | and D₁ D₂ ihD₁ ihD₂ =>
+    intro B₁ B₂ hntl h₁ h₂
+    cases toplike_dec D₁ with
+    | inr hntl₁ => exact ihD₁ hntl₁ (sub_and_inv_l h₁) (sub_and_inv_l h₂)
+    | inl htl₁ =>
+      have hntl₂ : ¬ TopLike D₂ := fun htl₂ => hntl (TopLike.tland htl₁ htl₂)
+      exact ihD₂ hntl₂ (sub_and_inv_r h₁) (sub_and_inv_r h₂)
+  | arr C D' _ ihD' =>
+    intro B₁ B₂ hntl h₁ h₂
+    have hntl' : ¬ TopLike D' := fun htl => hntl (TopLike.tlarr htl)
+    refine sub_arr_peel (P := fun X => Cost X B₂) h₁
+      (fun {A₁ A₂} _ s₁ => ?_)
+      (fun t => Cost.candl t) (fun t => Cost.candr t)
+    exact sub_arr_peel (P := fun Y => Cost (.arr A₁ A₂) Y) h₂
+      (fun _ s₂ => Cost.carr (ihD' hntl' s₁ s₂))
+      (fun t => Cost.crandl t) (fun t => Cost.crandr t)
+  | rcd l D' ihD' =>
+    intro B₁ B₂ hntl h₁ h₂
+    have hntl' : ¬ TopLike D' := fun htl => hntl (TopLike.tlrcd htl)
+    refine sub_rcd_peel (P := fun X => Cost X B₂) h₁
+      (fun {A'} s₁ => ?_)
+      (fun t => Cost.candl t) (fun t => Cost.candr t)
+    exact sub_rcd_peel (P := fun Y => Cost (.rcd l A') Y) h₂
+      (fun s₂ => Cost.crcd (ihD' hntl' s₁ s₂))
+      (fun t => Cost.crandl t) (fun t => Cost.crandr t)
+
+end Seal

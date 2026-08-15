@@ -1,0 +1,73 @@
+import LeanSce.Seal.Disjointness
+
+-- The casting relation v ↪_A v' (Eᵢ Figure 3), adapted to de Bruijn closures.  Casting is
+-- deliberately typing-free: its premises mention only the closure's own annotations, never
+-- a typing derivation — Consistent is defined from casting and consumed by typing, so a
+-- typed cast would collapse that stratification.
+namespace Seal
+
+inductive Cast : Exp → Typ → Exp → Prop where
+  | cint {i}
+    : Cast (.lit i) .int (.lit i)
+  | ctop {v}
+    : Cast v .top .unit
+  | carrow {v A B e C D}
+    : ¬ TopLike D
+    → Sub C A
+    → Sub B D
+    → Cast (.clos v A B e) (.arr C D) (.clos v A D e)
+  | carrowtl {v A B e C D}
+    : TopLike D
+    → Sub C A
+    → Sub B D
+    → Cast (.clos v A B e) (.arr C D) (.clos .unit C D (genVal D))
+  | cmrgl {v₁ v₂ A v₁'}
+    : Ordinary A
+    → Cast v₁ A v₁'
+    → Cast (.mrg v₁ v₂) A v₁'
+  | cmrgr {v₁ v₂ A v₂'}
+    : Ordinary A
+    → Cast v₂ A v₂'
+    → Cast (.mrg v₁ v₂) A v₂'
+  | cand {v A B v₁ v₂}
+    : Cast v A v₁
+    → Cast v B v₂
+    → Cast v (.and A B) (.mrg v₁ v₂)
+  | crcd {v A v' l}
+    : Cast v A v'
+    → Cast (.lrec l v) (.rcd l A) (.lrec l v')
+
+-- Eᵢ Definition 3.
+def Consistent (v₁ v₂ : Exp) : Prop :=
+  ∀ {A w₁ w₂}, Cast v₁ A w₁ → Cast v₂ A w₂ → w₁ = w₂
+
+theorem cast_value {v : Exp} {A : Typ} {w : Exp} (hv : Value v) (h : Cast v A w) : Value w := by
+  induction h with
+  | cint => exact Value.vint
+  | ctop => exact Value.vunit
+  | carrow _ _ _ => cases hv with | vclos hv' => exact Value.vclos hv'
+  | carrowtl _ _ _ => exact Value.vclos Value.vunit
+  | cmrgl _ _ ih => cases hv with | vmrg hv₁ _ => exact ih hv₁
+  | cmrgr _ _ ih => cases hv with | vmrg _ hv₂ => exact ih hv₂
+  | cand _ _ ih₁ ih₂ => exact Value.vmrg (ih₁ hv) (ih₂ hv)
+  | crcd _ ih => cases hv with | vrcd hv' => exact Value.vrcd (ih hv')
+
+-- Casting at a top-like type always yields the canonical generated value — the collapse
+-- that keeps casting deterministic at top-like targets (Eᵢ's Casting-arrowtl rationale).
+theorem cast_toplike_gen {v : Exp} {A : Typ} {w : Exp} (htl : TopLike A) (h : Cast v A w)
+    : w = genVal A := by
+  induction h with
+  | cint => nomatch htl
+  | ctop => rfl
+  | carrow hntl _ _ => cases htl with | tlarr hD => exact absurd hD hntl
+  | carrowtl _ _ _ => rfl
+  | cmrgl _ _ ih => exact ih htl
+  | cmrgr _ _ ih => exact ih htl
+  | cand _ _ ih₁ ih₂ =>
+    cases htl with
+    | tland h₁ h₂ => rw [ih₁ h₁, ih₂ h₂]; rfl
+  | crcd _ ih =>
+    cases htl with
+    | tlrcd h' => rw [ih h']; rfl
+
+end Seal

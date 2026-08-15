@@ -85,8 +85,19 @@ inductive RLookup : Typ → String → Typ → Prop where
       → RLookup (.and A B) l C
   | landr {B l C A}
     : RLookup B l C
-      → ¬Lin l A ∧ Lin l B
+      → ¬Lin l A
       → RLookup (.and A B) l C
+
+-- A successful lookup witnesses containment.  This is why `landr` needs only
+-- `¬Lin l A`: the `Lin l B` half of the disjointness condition is already
+-- implied by its first premise, so stating it would be redundant.  Both
+-- constructors now carry exactly one negative premise, matching SCE.SRLookup.
+theorem rlookup_lin {A : Typ} {l : String} {C : Typ} : RLookup A l C → Lin l A := by
+  intro h
+  induction h with
+  | zero => exact Lin.rcd
+  | landl _ _ ih => exact Lin.andl ih
+  | landr _ _ ih => exact Lin.andr ih
 
 inductive LookupV : Exp → Nat → Exp → Prop where
   | lvzero {v₁ v₂ : Exp}
