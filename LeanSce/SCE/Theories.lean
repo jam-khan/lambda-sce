@@ -30,16 +30,19 @@ theorem record_lookup_uniqueness
     : T₁ = T₂ := by
   induction h₁ with
   | zero l T => cases h₂; rfl
-  | andl A B l T _ h_cond ih =>
+  | andl A B l T hsr h_cond ih =>
     cases h₂ with
     | andl _ _ _ _ h₂' _ => exact ih h₂'
     | andr _ _ _ _ h₂' h_cond₂ =>
-      exact absurd (h_cond.1) h_cond₂.2
-  | andr A B l T _ h_cond ih =>
+      exact absurd (SCE.srlookup_labelin hsr) h_cond₂
+  | andr A B l T hsr h_cond ih =>
     cases h₂ with
     | andr _ _ _ _ h₂' _ => exact ih h₂'
     | andl _ _ _ _ h₂' h_cond₂ =>
-      exact absurd (h_cond.1) h_cond₂.2
+      exact absurd (SCE.srlookup_labelin hsr) h_cond₂
+  | sig l T A _ ih =>
+    cases h₂ with
+    | sig _ _ _ h₂' => exact ih h₂'
 
 theorem type_safe_index_lookup
     {ST₁ ST₂ : SCE.Typ} {n : Nat}
@@ -113,12 +116,13 @@ theorem type_safe_record_lookup
   | andl A B l T _ h_cond ih =>
     simp [elabTyp]
     exact Core.RLookup.landl ih
-      (type_safe_label_nonexistence.mp h_cond.2)
+      (type_safe_label_nonexistence.mp h_cond)
   | andr A B l T _ h_cond ih =>
     simp [elabTyp]
     exact Core.RLookup.landr ih
-      ⟨type_safe_label_nonexistence.mp h_cond.2,
-       type_safe_label_existence.mp h_cond.1⟩
+      (type_safe_label_nonexistence.mp h_cond)
+  | sig l T A _ ih =>
+    simpa [elabTyp, elabModTyp] using ih
 
 theorem inference_uniqueness
     {Γ T₁ T₂ : SCE.Typ} {e : SCE.Exp} {ce₁ ce₂ : Core.Exp}
@@ -904,7 +908,7 @@ theorem sel_preservation
       exact ⟨vc', Core.RLookupV.vlandl hlookvc, helab_v'⟩
     | andr _ _ _ _ hrl hcond =>
       have hlin := sel_implies_label_in hv1 h1 hsel_inner
-      exact absurd hlin hcond.2
+      exact absurd hlin hcond
   | dmrg_right hsel_inner ih =>
     cases hval with | vmrg hv1 hv2 =>
     cases helab with | edmrg _ A' B' _ _ ce1 ce2 h1 h2 =>
@@ -917,7 +921,7 @@ theorem sel_preservation
       exact ⟨vc', Core.RLookupV.vlandr hlookvc, helab_v'⟩
     | andl _ _ _ _ hrl hcond =>
       have hlin := sel_implies_label_in hv2 h2_weak hsel_inner
-      exact absurd hlin hcond.2
+      exact absurd hlin hcond
   | nmrg_left => cases hval
   | nmrg_right => cases hval
 
@@ -1552,10 +1556,10 @@ private theorem sel_deterministic
       | dmrg_right hsel₂' =>
         have hlin := sel_implies_label_in hv2
           (value_typing_weakening (Γ₂ := SCE.Typ.top) hv2 h2) hsel₂'
-        exact absurd hlin hcond.2
+        exact absurd hlin hcond
     | andr _ _ _ _ hrl hcond =>
       have hlin := sel_implies_label_in hv1 h1 hsel_inner
-      exact absurd hlin hcond.2
+      exact absurd hlin hcond
   | dmrg_right hsel_inner ih =>
     cases hval with | vmrg hv1 hv2 =>
     cases helab with | edmrg _ A' B' _ _ ce1 ce2 h1 h2 =>
@@ -1566,10 +1570,10 @@ private theorem sel_deterministic
       | dmrg_right hsel₂' => exact ih hv2 h2_weak hrl hsel₂'
       | dmrg_left hsel₂' =>
         have hlin := sel_implies_label_in hv1 h1 hsel₂'
-        exact absurd hlin hcond.2
+        exact absurd hlin hcond
     | andl _ _ _ _ hrl hcond =>
       have hlin := sel_implies_label_in hv2 h2_weak hsel_inner
-      exact absurd hlin hcond.2
+      exact absurd hlin hcond
   | nmrg_left   => cases hval
   | nmrg_right  => cases hval
 

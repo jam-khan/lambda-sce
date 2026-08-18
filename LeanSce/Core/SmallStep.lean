@@ -337,7 +337,7 @@ theorem rlookup_pres_aux {E l A} :
       | tmrg h1 h2 =>
         cases hv with
         | vmrg hv1 hv2 =>
-          have : False := notin_false h1 _ _ hlv' hnla.1
+          have : False := notin_false h1 _ _ hlv' hnla
           contradiction
     | vlandr hlv' =>
       cases ht with

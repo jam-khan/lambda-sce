@@ -164,7 +164,7 @@ theorem elab_rlookup_pres {Γ B : SCE.Typ} {l : String}
       exact ⟨_, elab_value_weaken hce' (sce_sel_value hsel' hv1) _⟩
     | dmrg_right hsel' =>
       rename_i hrl hnotin
-      exact (elab_notin_sel_false hsel' hv2 hnotin.2 (elab_value_weaken h2 hv2 _)).elim
+      exact (elab_notin_sel_false hsel' hv2 hnotin (elab_value_weaken h2 hv2 _)).elim
   | andr _ _ _ _ _ _ ih =>
     intro v ce v' hsel hv helab
     cases helab <;> cases hv
@@ -175,7 +175,12 @@ theorem elab_rlookup_pres {Γ B : SCE.Typ} {l : String}
       exact ⟨_, elab_value_weaken hce' (sce_sel_value hsel' hv2) _⟩
     | dmrg_left hsel' =>
       rename_i hrl hnotin
-      exact (elab_notin_sel_false hsel' hv1 hnotin.2 (elab_value_weaken h1 hv1 _)).elim
+      exact (elab_notin_sel_false hsel' hv1 hnotin (elab_value_weaken h1 hv1 _)).elim
+  -- No value elaborates at `sig` over an interface: every module-typed value is
+  -- an `mclos`, whose type is a `TyArrM`.  The case is vacuous.
+  | sig _ _ _ _ _ih =>
+    intro v ce v' hsel hv helab
+    cases helab <;> cases hv
 
 -- Lookup progress for elaboration
 theorem elab_lookup_prog {A B : SCE.Typ} {n : Nat}
@@ -220,6 +225,10 @@ theorem elab_rlookup_prog {A B : SCE.Typ} {l : String}
     rename_i v₁ v₂ ce₁ ce₂ h1 h2 hv1 hv2
     have ⟨v', hsel⟩ := ih (elab_value_weaken h2 hv2 _) hv2
     exact ⟨_, Sel.dmrg_right hsel⟩
+  -- Vacuous, as in `elab_rlookup_pres`.
+  | sig _ _ _ _ _ih =>
+    intro v ce helab hv
+    cases helab <;> cases hv
 
 -- Package extraction progress: every import of D can be selected from a
 -- well-elaborated module value
