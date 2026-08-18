@@ -8,17 +8,15 @@ open SCE
 ## Composition combinators: the linearized (bind‑once) spelling
 
 `,,` (`nmrg`), `link` and `linkall` each elaborate to a *composition term* that
-combines the elaborations of their operands.  Two spellings are possible.  The
-elaboration rules below emit the **linearized** one, which is what the
-implementation (`Elab.link_step`/`nmrg_core` in `lib/sce/elab.ml`) emits and what
-the toolchain linker (`lib/sepcomp.ml`) applies when composing compiled units;
-the older *boxed* spelling is kept, with its metatheory, in `Linearization.lean`,
-together with a proof that the two agree on every elaborated program.
+combines the elaborations of their operands.  The rules below emit the
+**linearized** term — the one the implementation (`Elab.link_step`/`nmrg_core`
+in `lib/sce/elab.ml`) emits and the toolchain linker (`lib/sepcomp.ml`) applies
+when composing compiled units.  An earlier version of this mechanization emitted
+a different, *boxed* term; the concrete diff, and why it was replaced, is at the
+end of this file.
 
 Notation: `?` is `query`, `?.n` is `proj query n`, `,,` is the dependent merge
 `mrg`, `box ρ in ε` is `Exp.box ρ ε`, `{ℓ = ε}` is `lrec ℓ ε`, `⟦·⟧` is `elabTyp`.
-
-### The linearized rules (emitted here)
 
     Γ ⊢ e₁ ⇒ A ⤳ ε₁     Γ ⊢ e₂ ⇒ B ⤳ ε₂
     ─────────────────────────────────────────────────────  E‑NMrg
@@ -36,52 +34,9 @@ on the left of the merge `?.1` is the provider; on the right — one slot deeper
 under the freshly merged provider copy — `?.1` is the functor and `?.0` the
 provider, which is what the wire projects from.  The wire never mentions `ε₁`;
 it projects out of the value the spine bound.  `link` is literally the
-single‑import instance of `linkall`.
-
-### The boxed rules (the previous elaboration; see `Linearization.lean`)
-
-    Γ ⊢ e₁ ,, e₂ ⇒ A & B   ⤳  (λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂)) ?
-    Γ ⊢ link e₁ e₂ ⇒ Γ₁ & B ⤳  (λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂ {ℓ = ε₁.ℓ})) ?
-    Γ ⊢ linkall e₁ e₂ ⇒ Γ₁ & B ⤳ (λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂ (wireArg ε₁ D))) ?
-
-        wireArg ε₁ {ℓ:A}       = {ℓ = ε₁.ℓ}
-        wireArg ε₁ (D & {ℓ:A}) = (λ⟦Γ⟧. (box ?.0 in wireArg ε₁ D) ,, (box ?.1 in {ℓ = ε₁.ℓ})) ?
-
-The premises are identical; only the emitted term differs.  The boxed spelling
-re‑enters the ambient environment (`λ⟦Γ⟧ … ?`, `box ?.0`, `box ?.1`) and *splices*
-the operand terms into the body — and that is its problem:
-
-* **Binary `link`.**  `ε₁` occurs twice: once as the left merge operand, once
-  inside the wire `{ℓ = ε₁.ℓ}`.  It is therefore *evaluated twice*, and the wire
-  projects from a re‑computation of the provider rather than from the provider
-  that was merged in.
-* **n‑ary `linkall`.**  `wireArg` re‑splices `ε₁` once per import, and wraps
-  each step in another ambient re‑entry with two more `box`es: for `n` imports
-  `ε₁` occurs and is evaluated `n + 1` times, and the term grows linearly in the
-  size of `ε₁` times `n`.
-
-    ┌───────────────────────────────┬──────────┬──────────┬──────────┬───────────────────────┐
-    │                               │ ε₁ occ.  │ ε₁ evals │ ε₂ evals │ operand order         │
-    ├───────────────────────────────┼──────────┼──────────┼──────────┼───────────────────────┤
-    │ boxed link                    │ 2        │ 2        │ 1        │ interleaved with merge│
-    │ boxed linkall (n imports)     │ n + 1    │ n + 1    │ 1        │ interleaved           │
-    │ linearized link / linkall     │ 1        │ 1        │ 1        │ ε₁, then ε₂, once each│
-    └───────────────────────────────┴──────────┴──────────┴──────────┴───────────────────────┘
-
-In the pure calculus this is unobservable: `Linearization.lean` proves that both
-spellings big‑step to the same value on every elaborated program
-(`linearization_coherent`, `linearization_coherent_n`).  The moment a provider
-unit can perform an effect while constructing its exports — the implementation's
-host capabilities `print`, `readfile`, `load` — the multiplicity is observable:
-under the boxed spelling a provider that prints on construction prints twice
-(`n + 1` times under `linkall`), a plugin `load` re‑reads and re‑executes the
-artifact once per wired import, and rollback logic branching on the loader's
-answer runs once per copy.  Bind‑once elaboration pins the semantics the
-toolchain documents — every operand of a merge or link is bound exactly once, so
-effects fire exactly once, in source order — and makes the verified term and the
-shipped term the same term.  Effects themselves stay outside the mechanization;
-the combinators here are the ones the linker replays its typing check on
-(`linkedCore_typed`, `nmrgCore_typed` in `Theories.lean`).
+single‑import instance of `linkall`.  Typing and evaluation of these terms are
+`linkedCore_typed`/`nmrgCore_typed` and `linkStep_eval`/`nmrgCore_eval`/`wire_eval`
+in `Theories.lean`.
 -/
 
 /-- `λ(x:a). λ(y:b). ?.1 ,, ?.1` — the bind‑once non‑dependent merge step
@@ -297,3 +252,93 @@ inductive elabExp : TyCtx → Exp → Typ → Core.Exp → Prop
     : elabExp ctx se (Typ.mu T) ce
     → A = substTyp 0 (Typ.mu T) T
     → elabExp ctx (Exp.unfold se) A (Core.Exp.unfold ce)
+
+/-!
+## Appendix: the previous (boxed) elaboration, and the concrete diff
+
+Before the linearized rules above, `enmrg`/`mlink`/`mlinkn` emitted the
+following *boxed* terms.  Premises were identical; only the emitted term differs.
+
+    -- OLD (boxed)
+    def nmrgCore (ctx : Core.Typ) (ce₁ ce₂ : Core.Exp) : Core.Exp :=
+      .app (.lam ctx (.mrg (.box (.proj .query 0) ce₁)
+                           (.box (.proj .query 1) ce₂)))
+           .query
+
+    def linkedCore (ctx : Core.Typ) (l : String) (ce₁ ce₂ : Core.Exp) : Core.Exp :=
+      .app (.lam ctx (.mrg (.box (.proj .query 0) ce₁)                    -- ε₁, evaluation #1
+                           (.box (.proj .query 1)
+                             (.app ce₂ (.lrec l (.rproj ce₁ l))))))       -- ε₁ again, evaluation #2
+           .query
+
+    def wireArg (ctx : Core.Typ) (ce₁ : Core.Exp) : SCE.Typ → Core.Exp
+      | .rcd l _          => .lrec l (.rproj ce₁ l)                       -- ε₁ spliced per import
+      | .and D (.rcd l _) => nmrgCore ctx (wireArg ctx ce₁ D) (.lrec l (.rproj ce₁ l))
+      | _                 => .unit
+
+    def linkedCoreN (ctx : Core.Typ) (D : SCE.Typ) (ce₁ ce₂ : Core.Exp) : Core.Exp :=
+      .app (.lam ctx (.mrg (.box (.proj .query 0) ce₁)                    -- ε₁, evaluation #1
+                           (.box (.proj .query 1)
+                             (.app ce₂ (wireArg ctx ce₁ D)))))            -- ε₁, evaluations #2..#n+1
+           .query
+
+    | enmrg  … → elabExp ctx (nmrg se1 se2)   (and A B)  (nmrgCore   (elabTyp ctx) ce1 ce2)
+    | mlink  … → elabExp ctx (mlink se1 se2)  (and Γ₁ B) (linkedCore (elabTyp ctx) l ce1 ce2)
+    | mlinkn … → elabExp ctx (mlinkn se1 se2) (and Γ₁ B) (linkedCoreN (elabTyp ctx) D ce1 ce2)
+
+    -- NEW (linearized; the definitions at the top of this file)
+    | enmrg  … → … (nmrgCore   (elabTyp A)  (elabTyp B) ce1 ce2)
+    | mlink  … → … (linkedCore (elabTyp Γ₁) (elabTyp (rcd l A)) (elabTyp B) ce1 ce2)
+    | mlinkn … → … (linkedCore (elabTyp Γ₁) (elabTyp D)         (elabTyp B) ce1 ce2)
+
+In rule notation:
+
+    OLD  e₁ ,, e₂      ⤳ (λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂)) ?
+    NEW  e₁ ,, e₂      ⤳ (λ⟦A⟧. λ⟦B⟧. ?.1 ,, ?.1) ε₁ ε₂
+
+    OLD  link e₁ e₂    ⤳ (λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂ {ℓ = ε₁.ℓ})) ?
+    NEW  link e₁ e₂    ⤳ (λ⟦Γ₁⟧. λ⟦{ℓ:A}⟧→⟦B⟧. ?.1 ,, (?.1 {ℓ = ?.0.ℓ})) ε₁ ε₂
+
+    OLD  linkall e₁ e₂ ⤳ (λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂ (wireArg ε₁ D))) ?
+           wireArg ε₁ {ℓ:A}       = {ℓ = ε₁.ℓ}
+           wireArg ε₁ (D & {ℓ:A}) = (λ⟦Γ⟧. (box ?.0 in wireArg ε₁ D) ,, (box ?.1 in {ℓ = ε₁.ℓ})) ?
+    NEW  linkall e₁ e₂ ⤳ (λ⟦Γ₁⟧. λ⟦D⟧→⟦B⟧. ?.1 ,, (?.1 (wire₀ ⟦D⟧))) ε₁ ε₂
+           wire_k {ℓ:A}       = {ℓ = ?.k.ℓ}
+           wire_k (D & {ℓ:A}) = wire_k D ,, {ℓ = ?.(k+1).ℓ}
+
+Point by point:
+
+    ┌────────────────────────┬──────────────────────────────────┬────────────────────────────────────┐
+    │                        │ OLD (boxed)                      │ NEW (linearized)                   │
+    ├────────────────────────┼──────────────────────────────────┼────────────────────────────────────┤
+    │ shape                  │ one λ⟦Γ⟧ applied to ?            │ two-λ spine applied to ε₁ ε₂       │
+    │ where ε₁ sits          │ spliced into the body: twice for │ once, first spine argument         │
+    │                        │ link, n+1 times for linkall      │                                    │
+    │ where ε₂ sits          │ spliced under box ?.1            │ once, second spine argument        │
+    │ provider inside body   │ recomputed: box ?.0 in ε₁        │ referenced: ?.1 / ?.0              │
+    │ wire                   │ {ℓ = ε₁.ℓ}: from a re-evaluation │ {ℓ = ?.k.ℓ}: from the bound value  │
+    │ box used               │ yes (box ?.0, box ?.1, per step) │ none                               │
+    │ λ annotations          │ ⟦Γ⟧ (ambient context)            │ ⟦Γ₁⟧, ⟦D⟧→⟦B⟧ (operand types)      │
+    │ needs ambient context  │ yes                              │ no (CoreLink carries none)         │
+    │ ε₁ evaluations         │ 2 (link) / n+1 (linkall)         │ 1                                  │
+    │ ε₂ evaluations         │ 1                                │ 1                                  │
+    │ order                  │ interleaved with the merge       │ ε₁, then ε₂, once each             │
+    │ term size              │ O(n · |ε₁|)                      │ O(|ε₁| + |ε₂| + n)                 │
+    └────────────────────────┴──────────────────────────────────┴────────────────────────────────────┘
+
+Why it was replaced.  In the pure calculus the two spellings big‑step to the same
+value on every elaborated program (this was mechanized as `linearization_coherent`
+/`linearization_coherent_n` — proved via source evaluation and
+`elaboration_uniqueness`, not core determinism, since `RLookupV` has no
+disjointness premise — and removed together with the boxed definitions once the
+switch was made).  The distinction is observable the moment a provider unit can
+perform an effect while constructing its exports, which the implementation's host
+capabilities `print`, `readfile`, `load` allow: under the boxed spelling a
+provider that prints on construction prints twice (`n + 1` times under `linkall`),
+a plugin `load` re‑reads and re‑executes its artifact once per wired import, and
+rollback logic branching on the loader's answer runs once per copy.  Bind‑once
+elaboration pins the documented semantics — every operand of a merge or link is
+bound exactly once, so effects fire exactly once, in source order (`--link sys
+counter app` is also the effect order) — and makes the verified term and the
+shipped term the same term.
+-/

@@ -14,5 +14,3 @@ import LeanSce.SCE.Progress
 import LeanSce.SCE.Equivalence
 import LeanSce.SCE.Capabilities
 import LeanSce.SCE.RecLinking
-
-import LeanSce.SCE.Linearization
