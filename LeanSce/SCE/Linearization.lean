@@ -4,341 +4,291 @@ import LeanSce.SCE.Theories
 open SCE Core
 
 /-!
-# Linearized link combinators — the implementation's spelling, verified
+# The boxed composition combinators, and coherence with the linearized rule
 
-The mechanization and the implementation each emit a *composition term* when they
-elaborate `link`/`linkall` (and the toolchain linker reuses the very same term to
-compose compiled units). The two spellings differ, deliberately, and this file
-proves that difference harmless where it must be harmless and states precisely
-why it exists.
+`Elaboration.lean` elaborates `,,`/`link`/`linkall` with the *linearized*
+(bind‑once) combinators — the spelling the implementation emits and the toolchain
+linker applies.  This file keeps the *boxed* spelling those rules previously
+emitted, re‑proves its metatheory (typing, evaluation, separate compilation), and
+proves the headline fact that justified the switch: **on every elaborated program
+the two spellings compute the same value**.
 
-Notation, used throughout this file's documentation:
+Notation, as in `Elaboration.lean`: `?`/`?.n` for `query`/`proj query n`, `,,`
+for the dependent merge, `box ρ in ε` for `Exp.box ρ ε`, `{ℓ = ε}` for `lrec`,
+`⟦·⟧` for `elabTyp`, `⟨D ⇛ B⟩` for the functor signature
+`sig (TyArrM D (TyIntf B))`.
 
-* `Γ ⊢ e ⇒ A ⤳ ε`  — elaboration (`elabExp Γ e A ε`): source `e` has type `A`
-  and elaborates to core term `ε`;
-* `?`, `?.n`        — `query` (the current environment as a value) and its n‑th
-  projection, counting from the right;
-* `box ρ in ε`      — evaluate `ε` under the environment `ρ` (`Exp.box`);
-* `ε₁ ,, ε₂`        — the core dependent merge (`Exp.mrg`): `ε₂` evaluates under
-  the ambient environment *extended with the value of* `ε₁`;
-* `{ℓ = ε}`         — a single‑field record (`Exp.lrec`);
-* `⟨{ℓ : A} ⇛ B⟩`   — a functor signature (`sig (TyArrM (rcd ℓ A) (TyIntf B))`);
-* `⟦·⟧`             — type elaboration (`elabTyp`).
+## The two spellings
 
-## The two spellings of `link`
+The premises of the rules are identical — only the emitted term differs.
 
-The premises of both rules are identical — only the emitted term differs.
+**Linearized** (the elaboration; `nmrgCore`/`linkedCore` in `Elaboration.lean`):
 
-**E‑Link** (this mechanization: rule `elabExp.mlink`, combinator `linkedCore`).
-The operands are *spliced* into the emitted term, re‑entered under the ambient
-environment through `box`:
+    Γ ⊢ e₁ ,, e₂   ⇒ A & B   ⤳  (λ⟦A⟧. λ⟦B⟧. ?.1 ,, ?.1) ε₁ ε₂
+    Γ ⊢ link e₁ e₂ ⇒ Γ₁ & B  ⤳  (λ⟦Γ₁⟧. λ⟦D⟧→⟦B⟧. ?.1 ,, (?.1 (wire₀ ⟦D⟧))) ε₁ ε₂
 
-    Γ ⊢ e₁ ⇒ Γ₁ ⤳ ε₁      Γ ⊢ e₂ ⇒ ⟨{ℓ : A} ⇛ B⟩ ⤳ ε₂      Γ₁ ∋ ℓ : A
-    ──────────────────────────────────────────────────────────────────── E‑Link
-    Γ ⊢ link e₁ e₂ ⇒ Γ₁ & B
-        ⤳  (λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂ {ℓ = ε₁.ℓ}))  ?
+**Boxed** (this file; `nmrgCoreBoxed`/`linkedCoreBoxed`/`linkedCoreNBoxed`):
 
-**E‑Link‑Lin** (the implementation: `Elab.link_step` in `lib/sce/elab.ml`,
-reused verbatim by the artifact linker in `lib/sepcomp.ml`; this file's
-`linkStep`). The operands are *bound once each* on an application spine, and the
-wire record projects from the bound provider:
+    Γ ⊢ e₁ ,, e₂      ⇒ A & B   ⤳  (λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂)) ?
+    Γ ⊢ link e₁ e₂    ⇒ Γ₁ & B  ⤳  (λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂ {ℓ = ε₁.ℓ})) ?
+    Γ ⊢ linkall e₁ e₂ ⇒ Γ₁ & B  ⤳  (λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂ (wireArg ε₁ D))) ?
 
-    Γ ⊢ e₁ ⇒ Γ₁ ⤳ ε₁      Γ ⊢ e₂ ⇒ ⟨{ℓ : A} ⇛ B⟩ ⤳ ε₂      Γ₁ ∋ ℓ : A
-    ──────────────────────────────────────────────────────────────── E‑Link‑Lin
-    Γ ⊢ link e₁ e₂ ⇒ Γ₁ & B
-        ⤳  (λ⟦Γ₁⟧. λ⟦{ℓ:A}⟧→⟦B⟧.  ?.1 ,, (?.1 {ℓ = ?.0.ℓ}))  ε₁  ε₂
+        wireArg ε₁ {ℓ:A}       = {ℓ = ε₁.ℓ}
+        wireArg ε₁ (D & {ℓ:A}) = (λ⟦Γ⟧. (box ?.0 in wireArg ε₁ D) ,, (box ?.1 in {ℓ = ε₁.ℓ})) ?
 
-Inside the double lambda: on the left of the merge `?.1` is the provider; on the
-right — one slot deeper, under the freshly merged provider copy — `?.1` is the
-functor and `?.0` the provider. The wire `{ℓ = ?.0.ℓ}` mentions `ε₁` *not at
-all*: it projects out of the value the spine bound.
+## Why the boxed spelling was replaced
 
-For `linkall` (import interface `D = {ℓ₁:A₁} & ⋯ & {ℓₙ:Aₙ}`) the contrast is
-starker. E‑Link's wire (`wireArg`) re‑splices `ε₁` once per import:
+The boxed term *splices* the operand terms into a body that re‑enters the
+ambient environment.  Under binary `link`, `ε₁` is spliced twice — once as the
+left merge operand and once inside the wire — so the provider is evaluated twice
+and the wire projects from a re‑computation, not from the provider that was
+merged in.  Under `linkall` with `n` imports, `wireArg` re‑splices `ε₁` per
+import and wraps each step in another ambient re‑entry: `ε₁` is evaluated
+`n + 1` times and the term is `O(n · |ε₁|)`.
 
-    wireArg(D & {ℓ:A}) = wireArg(D) ⊞ {ℓ = ε₁.ℓ}        (⊞ = boxed n‑ary merge)
+    | | `ε₁` occurrences | `ε₁` evaluations | `ε₂` evaluations | operand order |
+    |---|---|---|---|---|
+    | boxed `link` | 2 | 2 | 1 | interleaved with the merge |
+    | boxed `linkall` (n imports) | n + 1 | n + 1 | 1 | interleaved |
+    | linearized `link`/`linkall` | 1 | 1 | 1 | `ε₁` then `ε₂`, once each |
 
-while the linearized wire (`wireLin`, mirroring the OCaml `wire`) is pure
-projection at a de Bruijn shift, `ε₁` still occurring exactly once on the spine:
+The pure calculus cannot observe the difference — that is exactly
+`linearization_coherent`/`linearization_coherent_n` below.  The implementation's
+branch adds host capabilities (`print`, `readfile`, `load : String → (Sig | {err})`)
+that a provider unit may call *while constructing its exports*, and there the
+table is observable: a provider that prints on construction prints twice (`n + 1`
+times under `linkall`); a plugin `load` re‑reads and re‑executes the artifact
+once per wired import; rollback logic branching on the loader's answer runs once
+per copy, in an environment that already committed to the first copy's answer.
+Bind‑once elaboration pins the documented semantics — every operand of a merge
+or link is bound exactly once, so effects fire exactly once, in source order —
+and makes the verified term and the shipped term the same term.  Effects stay
+outside the mechanization; what is mechanized here is everything the pure
+calculus can say about the choice.
 
-    wire_k({ℓ:A})     = {ℓ = ?.k.ℓ}
-    wire_k(D & {ℓ:A}) = wire_k(D) ,, {ℓ = ?.(k+1).ℓ}
+## Why the coherence proof is subtle
 
-## Occurrence and evaluation multiplicity
-
-| | `ε₁` occurrences | `ε₁` evaluations | `ε₂` evaluations | operand order |
-|---|---|---|---|---|
-| E‑Link | 2 | 2 | 1 | interleaved with the merge |
-| E‑Link (linkall, n imports) | n + 1 | n + 1 | 1 | interleaved |
-| E‑Link‑Lin | 1 | 1 | 1 | `ε₁` then `ε₂`, once each |
-
-## Why the pure calculus cannot tell them apart — and why that proof is subtle
-
-On *elaborated programs* both spellings compute the same value; that is exactly
-`linearization_coherent`/`linearization_coherent_n` below. The proof is **not**
-by raw determinism of core evaluation: `RLookupV` carries no disjointness
-premise, so as a relation it selects either field of a duplicated label. Merges
-are not required to be label-disjoint, so such a value is well typed — it is the
-projection off it that `RLookup` refuses — and this is inherited from λE, not
-peculiar to us. λE discharges the ambiguity with a typing hypothesis; here the
-statement relates two already elaborated terms, so the two evaluations of `ε₁`
-inside an E‑Link term need not agree on arbitrary core terms. Determinism holds
-only on the image of elaboration. Accordingly, agreement is proved the same way everything
-else in this development is proved: both spellings are related to the *source*
-evaluation (`separate_compilation*` here and in `Theories.lean`), and their
-result values coincide because both elaborate the same source value
-(`elaboration_uniqueness`). The claim "the two linkers agree" is a statement
-about elaborated programs — precisely, and only, the terms the toolchain linker
-ever composes.
-
-## Why effects force the linearized spelling
-
-In the pure calculus the spelling is a matter of taste. The implementation's
-branch adds host capabilities — `print`, `readfile`, and crucially
-`load : String → (Sig | {err : String})` — as `Hostfn` values a provider unit
-may *call while constructing its exports*. The moment `ε₁` can carry an effect,
-the table above is observable:
-
-* under E‑Link, a provider that prints on construction prints **twice**; under
-  `linkall` with n imports, **n + 1 times**;
-* a provider that `load`s a plugin at construction would re‑read and re‑execute
-  the artifact once per wired import;
-* rollback logic branching on the loader's `inr` would run once per copy,
-  in an environment that already committed to the first copy's answer.
-
-Bind‑once elaboration pins the semantics the toolchain documents: *every operand
-of a merge or link is bound exactly once, so effects fire exactly once, in
-source order* — the link line `--link sys counter app` is also the effect order.
-That is why the implementation elaborates `,,`/`link`/`linkall` with the
-linearized combinators, and why the paper's elaboration figure shows
-E‑Link‑Lin. The theorems below re‑anchor the separate‑compilation results of
-`Theories.lean` on exactly those combinators, so the verified term and the
-shipped term are the same term.
-
-Effects themselves stay outside the mechanization (there is no `Hostfn` here);
-what is mechanized is everything the pure calculus can say about the choice:
-the linearized combinators are well‑typed (`linkedCoreLin_typed` — the check
-the OCaml linker replays on every link), they satisfy the same
-separate‑compilation theorems (`separate_compilation_lin*`), and they agree
-with the mechanized spelling on all elaborated programs
-(`linearization_coherent*`).
+The proof is **not** by raw determinism of core evaluation: `RLookupV` carries no
+disjointness premise, so as a relation it selects either field of a duplicated
+label.  Merges are not required to be label‑disjoint, so such a value is well
+typed — it is the projection off it that `RLookup` refuses — and this is inherited
+from λE.  Consequently the two evaluations of `ε₁` inside a boxed term need not
+agree on arbitrary core terms; determinism holds only on the image of
+elaboration.  So agreement is proved the way everything else in this development
+is proved: both spellings are related to the *source* evaluation
+(`separate_compilation*` in `Theories.lean` for the linearized term,
+`separate_compilation_boxed*` here for the boxed one), and their result values
+coincide because both elaborate the same source value (`elaboration_uniqueness`).
+The claim "the two linkers agree" is a statement about elaborated programs —
+precisely, and only, the terms the toolchain linker ever composes.
 -/
 
-/-! ## The combinators, mirrored from the implementation
+/-! ## The boxed combinators -/
 
-Each definition transcribes its OCaml counterpart from `lib/sce/elab.ml`
-(`nmrg_step`, `wire`, `link_step`) and `lib/sepcomp.ml` reuses the same terms as
-the artifact linker's step. Lambda annotations are irrelevant to evaluation
-(`EBig` ignores them) but are exactly what the typing theorems pin down. -/
+/-- `(λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂ {ℓ = ε₁.ℓ})) ?` — the boxed
+elaboration of binary `link`.  `ε₁` occurs twice. -/
+def linkedCoreBoxed (ctx : Core.Typ) (l : String) (ce₁ ce₂ : Core.Exp) : Core.Exp :=
+  .app
+    (.lam ctx
+      (.mrg
+        (.box (.proj .query 0) ce₁)
+        (.box (.proj .query 1)
+          (.app ce₂ (.lrec l (.rproj ce₁ l))))))
+    .query
 
-/-- `λ(x:a). λ(y:b). ?.1 ,, ?.1` — the bind‑once non‑dependent merge step
-(OCaml `nmrg_step`). On the left of the merge `?.1` is `x`; on the right, one
-slot deeper under the merged left value, `?.1` is `y`. -/
-def nmrgStep (a b : Core.Typ) : Core.Exp :=
-  .lam a (.lam b (.mrg (.proj .query 1) (.proj .query 1)))
+/-- `(λ⟦Γ⟧. (box ?.0 in ε₁) ,, (box ?.1 in ε₂)) ?` — the boxed elaboration of
+`e₁ ,, e₂`: both components evaluate under the same ambient environment. -/
+def nmrgCoreBoxed (ctx : Core.Typ) (ce₁ ce₂ : Core.Exp) : Core.Exp :=
+  .app
+    (.lam ctx
+      (.mrg
+        (.box (.proj .query 0) ce₁)
+        (.box (.proj .query 1) ce₂)))
+    .query
 
-/-- `(nmrgStep a b) ε₁ ε₂` — the linearized elaboration of `e₁ ,, e₂`
-(OCaml `nmrg_core`); also the toolchain's leaf link step (`link_step_leaf`). -/
-def nmrgCoreLin (a b : Core.Typ) (ce₁ ce₂ : Core.Exp) : Core.Exp :=
-  .app (.app (nmrgStep a b) ce₁) ce₂
-
-/-- The linearized wire (OCaml `wire`): the import package for interface `D`,
-built by *projection from the bound provider* at de Bruijn index `shift`. Each
-nested dependent merge shifts the provider one slot deeper, hence `shift + 1`
-on the right. Contrast `wireArg` (Elaboration.lean), which re‑splices the
-provider term `ce₁` once per import. -/
-def wireLin (shift : Nat) : SCE.Typ → Core.Exp
-  | .rcd l _ => .lrec l (.rproj (.proj .query shift) l)
+/-- The boxed wire: the import package for `D`, built by projecting each labeled
+import out of the *provider term* `ce₁` — re‑spliced once per import. -/
+def wireArgBoxed (ctx : Core.Typ) (ce₁ : Core.Exp) : SCE.Typ → Core.Exp
+  | .rcd l _ => .lrec l (.rproj ce₁ l)
   | .and D (.rcd l _) =>
-    .mrg (wireLin shift D) (.lrec l (.rproj (.proj .query (shift + 1)) l))
+    nmrgCoreBoxed ctx (wireArgBoxed ctx ce₁ D) (.lrec l (.rproj ce₁ l))
   | _ => .unit
 
-/-- `λ(p:g1). λ(f:tf). ?.1 ,, (?.1 (wire₀ D))` — the bind‑once link step
-(OCaml `link_step`). The provider is bound once; every import label projects
-from that binding. The artifact linker applies this same step term. -/
-def linkStep (g1 tf : Core.Typ) (D : SCE.Typ) : Core.Exp :=
-  .lam g1 (.lam tf (.mrg (.proj .query 1) (.app (.proj .query 1) (wireLin 0 D))))
+/-- The boxed elaboration of `linkall`.  `ε₁` occurs `n + 1` times for `n`
+imports. -/
+def linkedCoreNBoxed (ctx : Core.Typ) (D : SCE.Typ) (ce₁ ce₂ : Core.Exp) : Core.Exp :=
+  .app
+    (.lam ctx
+      (.mrg
+        (.box (.proj .query 0) ce₁)
+        (.box (.proj .query 1)
+          (.app ce₂ (wireArgBoxed ctx ce₁ D)))))
+    .query
 
-/-- `(linkStep g1 tf D) ε₁ ε₂` — the linearized elaboration of `link`/`linkall`
-(OCaml `linked_core`); `D := {ℓ:A}` is the binary `link`. -/
-def linkedCoreLin (g1 tf : Core.Typ) (D : SCE.Typ) (ce₁ ce₂ : Core.Exp) : Core.Exp :=
-  .app (.app (linkStep g1 tf D) ce₁) ce₂
+/-! ## Typing -/
 
-/-! ## Typing
+theorem nmrgCoreBoxed_typed {Γc a b : Core.Typ} {ce₁ ce₂ : Core.Exp}
+    (h₁ : HasType Γc ce₁ a) (h₂ : HasType Γc ce₂ b)
+    : HasType Γc (nmrgCoreBoxed Γc ce₁ ce₂) (.and a b) := by
+  simp only [nmrgCoreBoxed]
+  apply HasType.tapp
+  · apply HasType.tlam
+    apply HasType.tmrg
+    · exact HasType.tbox (HasType.tproj HasType.tquery Lookup.zero) h₁
+    · exact HasType.tbox (HasType.tproj HasType.tquery (Lookup.succ Lookup.zero)) h₂
+  · exact HasType.tquery
 
-The OCaml linker re‑typechecks its output on every link ("the linker is only
-right if its output is well‑typed λE"). These theorems are that check,
-discharged once and for all for the step terms it emits. -/
-
-/-- The linearized wire is well‑typed: under any context that reaches the
-provider type `⟦Γ₁⟧` at index `shift`, `wire_shift D` has the interface type
-`⟦D⟧`. -/
-theorem wireLin_typed {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D)
-    : ∀ {C : Core.Typ} {shift : Nat},
-      Core.Lookup C shift (elabTyp Γ₁)
-      → HasType C (wireLin shift D) (elabTyp D) := by
+/-- The boxed wire is well-typed at the interface type. -/
+theorem wireArgBoxed_typed {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D)
+    {Γc : Core.Typ} {ce₁ : Core.Exp}
+    (h₁ : HasType Γc ce₁ (elabTyp Γ₁))
+    : HasType Γc (wireArgBoxed Γc ce₁ D) (elabTyp D) := by
   induction hok with
   | one hrl =>
-    intro C shift hlook
-    simp only [wireLin, elabTyp]
-    exact HasType.trcd (HasType.trproj (HasType.tproj HasType.tquery hlook)
-      (type_safe_record_lookup hrl))
+    exact HasType.trcd (HasType.trproj h₁ (type_safe_record_lookup hrl))
   | more hok' hrl ih =>
-    intro C shift hlook
-    simp only [wireLin, elabTyp]
-    exact HasType.tmrg (ih hlook)
-      (HasType.trcd (HasType.trproj
-        (HasType.tproj HasType.tquery (Core.Lookup.succ hlook))
-        (type_safe_record_lookup hrl)))
+    simp only [wireArgBoxed, elabTyp]
+    exact nmrgCoreBoxed_typed ih
+      (HasType.trcd (HasType.trproj h₁ (type_safe_record_lookup hrl)))
 
-/-- The linearized link composition is well‑typed at `⟦Γ₁⟧ & ⟦B⟧` — the
-linearized counterpart of `core_link_typed`/`core_linkn_typed`, with the lambda
-annotations exactly as the OCaml elaborator writes them. -/
-theorem linkedCoreLin_typed
-    {Γ₁ D B : SCE.Typ} {Γc : Core.Typ} {ce₁ ce₂ : Core.Exp}
+theorem linkedCoreBoxed_typed
+    {Γc A₁ A B : Core.Typ} {l : String} {ce₁ ce₂ : Core.Exp}
+    (hrl : Core.RLookup A₁ l A)
+    (h₁ : HasType Γc ce₁ A₁)
+    (h₂ : HasType Γc ce₂ (.arr (.rcd l A) B))
+    : HasType Γc (linkedCoreBoxed Γc l ce₁ ce₂) (.and A₁ B) := by
+  simp only [linkedCoreBoxed]
+  apply HasType.tapp
+  · apply HasType.tlam
+    apply HasType.tmrg
+    · exact HasType.tbox (HasType.tproj HasType.tquery Lookup.zero) h₁
+    · exact HasType.tbox (HasType.tproj HasType.tquery (Lookup.succ Lookup.zero))
+        (HasType.tapp h₂ (HasType.trcd (HasType.trproj h₁ hrl)))
+  · exact HasType.tquery
+
+theorem linkedCoreNBoxed_typed
+    {Γ₁ D : SCE.Typ} {Γc B : Core.Typ} {ce₁ ce₂ : Core.Exp}
     (hok : LinkOk Γ₁ D)
     (h₁ : HasType Γc ce₁ (elabTyp Γ₁))
-    (h₂ : HasType Γc ce₂ (.arr (elabTyp D) (elabTyp B)))
-    : HasType Γc
-        (linkedCoreLin (elabTyp Γ₁) (.arr (elabTyp D) (elabTyp B)) D ce₁ ce₂)
-        (.and (elabTyp Γ₁) (elabTyp B)) := by
-  simp only [linkedCoreLin, linkStep]
-  apply HasType.tapp (HasType.tapp ?_ h₁) h₂
-  apply HasType.tlam
-  apply HasType.tlam
-  apply HasType.tmrg
-  · exact HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero)
-  · exact HasType.tapp
-      (HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero))
-      (wireLin_typed hok Core.Lookup.zero)
-
-/-- The linearized non‑dependent merge is well‑typed at `a & b`. -/
-theorem nmrgCoreLin_typed {Γc a b : Core.Typ} {ce₁ ce₂ : Core.Exp}
-    (h₁ : HasType Γc ce₁ a) (h₂ : HasType Γc ce₂ b)
-    : HasType Γc (nmrgCoreLin a b ce₁ ce₂) (.and a b) := by
-  simp only [nmrgCoreLin, nmrgStep]
-  apply HasType.tapp (HasType.tapp ?_ h₁) h₂
-  apply HasType.tlam
-  apply HasType.tlam
-  apply HasType.tmrg
-  · exact HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero)
-  · exact HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero)
+    (h₂ : HasType Γc ce₂ (.arr (elabTyp D) B))
+    : HasType Γc (linkedCoreNBoxed Γc D ce₁ ce₂) (.and (elabTyp Γ₁) B) := by
+  simp only [linkedCoreNBoxed]
+  apply HasType.tapp
+  · apply HasType.tlam
+    apply HasType.tmrg
+    · exact HasType.tbox (HasType.tproj HasType.tquery Lookup.zero) h₁
+    · exact HasType.tbox (HasType.tproj HasType.tquery (Lookup.succ Lookup.zero))
+        (HasType.tapp h₂ (wireArgBoxed_typed hok h₁))
+  · exact HasType.tquery
 
 /-! ## Evaluation
 
-Operational lemmas assembling `EBig` derivations for the linearized terms —
-the counterparts of `nmrg_core_eval`, `wireArg_eval`, and
-`linkedCore_eval`/`linkedCoreN_eval`. Note the premise shapes: each operand
-evaluation appears **once**, mirroring the terms themselves. -/
+Note the premise shapes, in contrast to `nmrgCore_eval`/`linkStep_eval`:
+`linkedCoreBoxed_eval` consumes `hbig1 : EBig ρc ce₁ vc₁` **twice** (once for the
+left operand, once inside the wire), and `wireArgBoxed_eval` needs the provider's
+evaluation as a premise because the wire re‑evaluates it. -/
 
-/-- Bind‑once merge: if each operand evaluates once under `ρ`, the linearized
-merge evaluates to the merged values. -/
-theorem nmrgCoreLin_eval
-    {ρc vc₁ vc₂ : Core.Exp} {a b : Core.Typ} {ce₁ ce₂ : Core.Exp}
+theorem nmrgCoreBoxed_eval
+    {ρc vc₁ vc₂ : Core.Exp} {ctx : Core.Typ} {ce₁ ce₂ : Core.Exp}
     (hρ : Core.Value ρc)
     (hbig1 : EBig ρc ce₁ vc₁)
     (hbig2 : EBig ρc ce₂ vc₂)
-    : EBig ρc (nmrgCoreLin a b ce₁ ce₂) (.mrg vc₁ vc₂) := by
+    : EBig ρc (nmrgCoreBoxed ctx ce₁ ce₂) (.mrg vc₁ vc₂) := by
   have hv1 := ebig_produces_value hρ hbig1
-  have hv2 := ebig_produces_value hρ hbig2
-  simp only [nmrgCoreLin, nmrgStep]
+  simp only [nmrgCoreBoxed]
   apply EBig.ebapp
-  · exact EBig.ebapp (EBig.ebclos hρ) hbig1 (EBig.ebclos (Core.Value.vmrg hρ hv1))
-  · exact hbig2
+  · exact EBig.ebclos hρ
+  · exact EBig.equery hρ
   · apply EBig.ebmrg
-    · exact EBig.ebproj
-        (EBig.equery (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hv2))
-        (Core.LookupV.lvsucc Core.LookupV.lvzero)
-    · exact EBig.ebproj
-        (EBig.equery
-          (Core.Value.vmrg (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hv2) hv1))
-        (Core.LookupV.lvsucc Core.LookupV.lvzero)
+    · exact EBig.ebbox
+        (EBig.ebproj (EBig.equery (Value.vmrg hρ hρ)) LookupV.lvzero) hbig1
+    · exact EBig.ebbox
+        (EBig.ebproj (EBig.equery (Value.vmrg (Value.vmrg hρ hρ) hv1))
+          (LookupV.lvsucc LookupV.lvzero))
+        hbig2
 
-/-- The linearized wire evaluates by projection alone. Generalized over the
-environment: wherever the provider *value* `vc₁` is reachable at index `shift`,
-`wire_shift D` evaluates to a package that elaborates the source package.
-No re‑evaluation of the provider term occurs — the only premise about `ce₁`'s
-evaluation is absent, because the wire never mentions `ce₁`. -/
-theorem wireLin_eval {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D)
-    : ∀ {v₁ pkg : SCE.Exp} {ρ' vc₁ : Core.Exp} {shift : Nat},
-      S_Sem.SelPkg v₁ D pkg
-      → SCE.Value v₁
-      → elabExp SCE.Typ.top v₁ Γ₁ vc₁
-      → Core.Value ρ'
-      → Core.LookupV ρ' shift vc₁
-      → ∃ cpkg, EBig ρ' (wireLin shift D) cpkg ∧ elabExp SCE.Typ.top pkg D cpkg := by
+theorem linkedCoreBoxed_eval
+    {ρc vc₁ vc₂ vc_l vc₃ : Core.Exp} {ctx : Core.Typ} {l : String}
+    {ce₁ ce₂ body : Core.Exp} {A : Core.Typ}
+    (hρ : Core.Value ρc)
+    (hbig1 : EBig ρc ce₁ vc₁)
+    (hbig2 : EBig ρc ce₂ (.clos vc₂ (.rcd l A) body))
+    (hsel : Core.RLookupV vc₁ l vc_l)
+    (hbig3 : EBig (.mrg vc₂ (.lrec l vc_l)) body vc₃)
+    : EBig ρc (linkedCoreBoxed ctx l ce₁ ce₂) (.mrg vc₁ vc₃) := by
+  have hv1 := ebig_produces_value hρ hbig1
+  simp only [linkedCoreBoxed]
+  apply EBig.ebapp
+  · exact EBig.ebclos hρ
+  · exact EBig.equery hρ
+  · apply EBig.ebmrg
+    · exact EBig.ebbox
+        (EBig.ebproj (EBig.equery (Value.vmrg hρ hρ)) LookupV.lvzero) hbig1
+    · exact EBig.ebbox
+        (EBig.ebproj (EBig.equery (Value.vmrg (Value.vmrg hρ hρ) hv1))
+          (LookupV.lvsucc LookupV.lvzero))
+        (EBig.ebapp hbig2 (EBig.ebrec (EBig.ebsel hbig1 hsel)) hbig3)
+
+/-- The boxed wire evaluates to a Core package that elaborates the source
+package — given the provider term's evaluation, which it repeats. -/
+theorem wireArgBoxed_eval {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
+    ∀ {v₁ pkg : SCE.Exp} {Γc : Core.Typ} {ρc ce₁ vc₁ : Core.Exp},
+    S_Sem.SelPkg v₁ D pkg
+    → SCE.Value v₁
+    → elabExp SCE.Typ.top v₁ Γ₁ vc₁
+    → Core.Value ρc
+    → EBig ρc ce₁ vc₁
+    → ∃ cpkg, EBig ρc (wireArgBoxed Γc ce₁ D) cpkg ∧ elabExp SCE.Typ.top pkg D cpkg := by
   induction hok with
   | one hrl =>
-    intro v₁ pkg ρ' vc₁ shift hsp hv₁ helab₁ hρ' hlook
+    intro v₁ pkg Γc ρc ce₁ vc₁ hsp hv1 helab1 hρ hbig1
     cases hsp with
     | one hsel =>
-      obtain ⟨vcl, hrlv, helab_vl⟩ := sel_preservation hv₁ helab₁ hsel hrl
-      exact ⟨_,
-        EBig.ebrec (EBig.ebsel (EBig.ebproj (EBig.equery hρ') hlook) hrlv),
-        elabExp.elrec _ _ _ _ _ helab_vl⟩
+      obtain ⟨vcl, hrlv, helab_vl⟩ := sel_preservation hv1 helab1 hsel hrl
+      exact ⟨_, EBig.ebrec (EBig.ebsel hbig1 hrlv),
+             elabExp.elrec _ _ _ _ _ helab_vl⟩
   | more hok' hrl ih =>
-    intro v₁ pkg ρ' vc₁ shift hsp hv₁ helab₁ hρ' hlook
+    intro v₁ pkg Γc ρc ce₁ vc₁ hsp hv1 helab1 hρ hbig1
     cases hsp with
     | more hsp' hsel =>
-      obtain ⟨cpkg', hbig', helab'⟩ := ih hsp' hv₁ helab₁ hρ' hlook
-      obtain ⟨vcl, hrlv, helab_vl⟩ := sel_preservation hv₁ helab₁ hsel hrl
-      have hvl := source_sel_value hv₁ hsel
-      have hcpkg' := ebig_produces_value hρ' hbig'
-      exact ⟨_,
-        EBig.ebmrg hbig'
-          (EBig.ebrec (EBig.ebsel
-            (EBig.ebproj (EBig.equery (Core.Value.vmrg hρ' hcpkg'))
-              (Core.LookupV.lvsucc hlook)) hrlv)),
-        elabExp.edmrg _ _ _ _ _ _ _ helab'
-          (value_typing_weakening (SCE.Value.vlrec hvl)
-            (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl))⟩
+      obtain ⟨cpkg', hbig', helab'⟩ := ih (Γc := Γc) hsp' hv1 helab1 hρ hbig1
+      obtain ⟨vcl, hrlv, helab_vl⟩ := sel_preservation hv1 helab1 hsel hrl
+      have hvl := source_sel_value hv1 hsel
+      exact ⟨_, nmrgCoreBoxed_eval hρ hbig' (EBig.ebrec (EBig.ebsel hbig1 hrlv)),
+             elabExp.edmrg _ _ _ _ _ _ _ helab'
+               (value_typing_weakening (SCE.Value.vlrec hvl)
+                 (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl))⟩
 
-/-- The assembly lemma for the linearized composition: one evaluation of each
-operand, one wire evaluation under the spine‑built environment
-`((ρ , v₁) , f) , v₁`, one closure‑body evaluation — exactly the derivation
-shape of the term. Shared by the binary and n‑ary theorems below. -/
-theorem linkStep_eval
-    {ρc vc₁ vc₂ cpkg vc₃ : Core.Exp} {g1 tf DT : Core.Typ} {D : SCE.Typ}
+theorem linkedCoreNBoxed_eval
+    {ρc vc₁ vc₂ cpkg vc₃ : Core.Exp} {ctx DT : Core.Typ} {D : SCE.Typ}
     {ce₁ ce₂ body : Core.Exp}
     (hρ : Core.Value ρc)
     (hbig1 : EBig ρc ce₁ vc₁)
     (hbig2 : EBig ρc ce₂ (.clos vc₂ DT body))
-    (hbigw : EBig (.mrg (.mrg (.mrg ρc vc₁) (.clos vc₂ DT body)) vc₁)
-               (wireLin 0 D) cpkg)
+    (hbigw : EBig ρc (wireArgBoxed ctx ce₁ D) cpkg)
     (hbig3 : EBig (.mrg vc₂ cpkg) body vc₃)
-    : EBig ρc (linkedCoreLin g1 tf D ce₁ ce₂) (.mrg vc₁ vc₃) := by
+    : EBig ρc (linkedCoreNBoxed ctx D ce₁ ce₂) (.mrg vc₁ vc₃) := by
   have hv1 := ebig_produces_value hρ hbig1
-  have hvf := ebig_produces_value hρ hbig2
-  simp only [linkedCoreLin, linkStep]
+  simp only [linkedCoreNBoxed]
   apply EBig.ebapp
-  · exact EBig.ebapp (EBig.ebclos hρ) hbig1 (EBig.ebclos (Core.Value.vmrg hρ hv1))
-  · exact hbig2
+  · exact EBig.ebclos hρ
+  · exact EBig.equery hρ
   · apply EBig.ebmrg
-    · exact EBig.ebproj
-        (EBig.equery (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hvf))
-        (Core.LookupV.lvsucc Core.LookupV.lvzero)
-    · exact EBig.ebapp
-        (EBig.ebproj
-          (EBig.equery
-            (Core.Value.vmrg (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hvf) hv1))
-          (Core.LookupV.lvsucc Core.LookupV.lvzero))
-        hbigw
-        hbig3
+    · exact EBig.ebbox
+        (EBig.ebproj (EBig.equery (Value.vmrg hρ hρ)) LookupV.lvzero) hbig1
+    · exact EBig.ebbox
+        (EBig.ebproj (EBig.equery (Value.vmrg (Value.vmrg hρ hρ) hv1))
+          (LookupV.lvsucc LookupV.lvzero))
+        (EBig.ebapp hbig2 hbigw hbig3)
 
-/-! ## Separate compilation, re‑anchored on the shipped combinators
+/-! ## Separate compilation with the boxed combinators
 
-The four theorems below restate `separate_compilation`,
-`separate_compilation_closed`, `separate_compilation_n`, and
-`separate_compilation_n_closed` (Theories.lean) with the **linearized**
-composition term in the conclusion — the term the OCaml elaborator emits and the
-artifact linker applies. The proofs mirror the `mlink`/`mlinkn` cases of
-`semantic_preservation`, replacing the boxed assembly lemmas with the
-linearized ones; each operand's evaluation is consumed exactly once. -/
+The boxed counterparts of `separate_compilation*` (Theories.lean).  The proofs
+mirror the `mlink`/`mlinkn` cases of `semantic_preservation`, with the boxed
+assembly lemmas in place of the linearized ones — and, tellingly, `hbig1` is
+consumed twice. -/
 
-/-- **Separate compilation, linearized (binary `link`).** Elaborate the provider
-and the functor separately, compose the compiled pieces with the implementation's
-`link_step`, and the result evaluates in lock‑step with source‑level `link`. -/
-theorem separate_compilation_lin
+theorem separate_compilation_boxed
     {Γ Γ₁ A B : SCE.Typ} {l : String}
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp}
     {ρs vs : SCE.Exp} {ρc : Core.Exp}
@@ -348,11 +298,8 @@ theorem separate_compilation_lin
     (heval : S_Sem.BStep ρs (.mlink es₁ es₂) vs)
     (henv : elabExp SCE.Typ.top ρs Γ ρc)
     (henv_val : SCE.Value ρs)
-    : ∃ vc,
-        EBig ρc
-          (linkedCoreLin (elabTyp Γ₁)
-            (.arr (elabTyp (SCE.Typ.rcd l A)) (elabTyp B)) (.rcd l A) ec₁ ec₂) vc
-        ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
+    : ∃ vc, EBig ρc (linkedCoreBoxed (elabTyp Γ) l ec₁ ec₂) vc
+           ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
   cases heval with
   | mlink h1 bstep1 bstep2 sel1 bstep3 =>
     obtain ⟨vc1, hbig1, helab_v1⟩ := semantic_preservation helab₁ bstep1 henv henv_val
@@ -361,8 +308,6 @@ theorem separate_compilation_lin
     | mclos _ ctx_inner _ _ _ _ ce_env ce_body hval_v2 h_env2 h_body =>
       have hρc := elab_value henv henv_val
       have hv1_val := eval_produces_value henv_val bstep1
-      have hv1c := ebig_produces_value hρc hbig1
-      have hvfc := ebig_produces_value hρc hbig2
       obtain ⟨vc_l, hrlookup_v, helab_vl⟩ :=
         sel_preservation hv1_val helab_v1 sel1 hlookup
       have hvl_val := source_sel_value hv1_val sel1
@@ -374,37 +319,24 @@ theorem separate_compilation_lin
       obtain ⟨vc3, hbig3, helab_v3⟩ :=
         semantic_preservation h_body bstep3 helab_env hval_env
       have hv3_val := eval_produces_value hval_env bstep3
-      refine ⟨.mrg vc1 vc3, linkStep_eval hρc hbig1 hbig2 ?_ hbig3,
+      exact ⟨.mrg vc1 vc3,
+        linkedCoreBoxed_eval hρc hbig1 hbig2 hrlookup_v hbig3,
         elabExp.edmrg SCE.Typ.top _ _ _ _ _ _ helab_v1
           (value_typing_weakening hv3_val helab_v3)⟩
-      simp only [wireLin]
-      exact EBig.ebrec (EBig.ebsel
-        (EBig.ebproj
-          (EBig.equery
-            (Core.Value.vmrg (Core.Value.vmrg (Core.Value.vmrg hρc hv1c) hvfc) hv1c))
-          Core.LookupV.lvzero)
-        hrlookup_v)
 
-/-- **Separate compilation, linearized, closed** — the toolchain's actual case:
-closed compiled units, empty initial environment. -/
-theorem separate_compilation_lin_closed
+theorem separate_compilation_boxed_closed
     {Γ₁ A B : SCE.Typ} {l : String}
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp} {vs : SCE.Exp}
     (helab₁ : elabExp SCE.Typ.top es₁ Γ₁ ec₁)
     (helab₂ : elabExp SCE.Typ.top es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ec₂)
     (hlookup : SRLookup Γ₁ l A)
     (heval : S_Sem.BStep .unit (.mlink es₁ es₂) vs)
-    : ∃ vc,
-        EBig .unit
-          (linkedCoreLin (elabTyp Γ₁)
-            (.arr (elabTyp (SCE.Typ.rcd l A)) (elabTyp B)) (.rcd l A) ec₁ ec₂) vc
-        ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc :=
-  separate_compilation_lin helab₁ helab₂ hlookup heval
+    : ∃ vc, EBig .unit (linkedCoreBoxed Core.Typ.top l ec₁ ec₂) vc
+           ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc :=
+  separate_compilation_boxed helab₁ helab₂ hlookup heval
     (elabExp.eunit SCE.Typ.top) SCE.Value.vunit
 
-/-- **Separate compilation, linearized (n‑ary `linkall`).** As above, with a
-whole import interface `D` wired by projection from the once‑bound provider. -/
-theorem separate_compilation_lin_n
+theorem separate_compilation_boxed_n
     {Γ Γ₁ D B : SCE.Typ}
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp}
     {ρs vs : SCE.Exp} {ρc : Core.Exp}
@@ -414,10 +346,8 @@ theorem separate_compilation_lin_n
     (heval : S_Sem.BStep ρs (.mlinkn es₁ es₂) vs)
     (henv : elabExp SCE.Typ.top ρs Γ ρc)
     (henv_val : SCE.Value ρs)
-    : ∃ vc,
-        EBig ρc
-          (linkedCoreLin (elabTyp Γ₁) (.arr (elabTyp D) (elabTyp B)) D ec₁ ec₂) vc
-        ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
+    : ∃ vc, EBig ρc (linkedCoreNBoxed (elabTyp Γ) D ec₁ ec₂) vc
+           ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
   cases heval with
   | mlinkn h1 bstep1 bstep2 hsp bstep3 =>
     obtain ⟨vc1, hbig1, helab_v1⟩ := semantic_preservation helab₁ bstep1 henv henv_val
@@ -426,11 +356,8 @@ theorem separate_compilation_lin_n
     | mclos _ ctx_inner _ _ _ _ ce_env ce_body hval_v2 h_env2 h_body =>
       have hρc := elab_value henv henv_val
       have hv1_val := eval_produces_value henv_val bstep1
-      have hv1c := ebig_produces_value hρc hbig1
-      have hvfc := ebig_produces_value hρc hbig2
-      obtain ⟨cpkg, hbigw, helab_pkg⟩ := wireLin_eval hok hsp hv1_val helab_v1
-        (Core.Value.vmrg (Core.Value.vmrg (Core.Value.vmrg hρc hv1c) hvfc) hv1c)
-        Core.LookupV.lvzero
+      obtain ⟨cpkg, hbigw, helab_pkg⟩ :=
+        wireArgBoxed_eval hok hsp hv1_val helab_v1 hρc hbig1
       have hvpkg := S_Sem.selpkg_value hsp hv1_val
       have hval_env := SCE.Value.vmrg hval_v2 hvpkg
       have helab_env := elabExp.edmrg SCE.Typ.top _ _ _ _ _ _ h_env2
@@ -438,28 +365,25 @@ theorem separate_compilation_lin_n
       obtain ⟨vc3, hbig3, helab_v3⟩ :=
         semantic_preservation h_body bstep3 helab_env hval_env
       have hv3_val := eval_produces_value hval_env bstep3
-      exact ⟨.mrg vc1 vc3, linkStep_eval hρc hbig1 hbig2 hbigw hbig3,
+      exact ⟨.mrg vc1 vc3,
+        linkedCoreNBoxed_eval hρc hbig1 hbig2 hbigw hbig3,
         elabExp.edmrg SCE.Typ.top _ _ _ _ _ _ helab_v1
           (value_typing_weakening hv3_val helab_v3)⟩
 
-/-- **Separate compilation, linearized, n‑ary, closed.** -/
-theorem separate_compilation_lin_n_closed
+theorem separate_compilation_boxed_n_closed
     {Γ₁ D B : SCE.Typ}
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp} {vs : SCE.Exp}
     (helab₁ : elabExp SCE.Typ.top es₁ Γ₁ ec₁)
     (helab₂ : elabExp SCE.Typ.top es₂ (.sig (.TyArrM D (.TyIntf B))) ec₂)
     (hok : LinkOk Γ₁ D)
     (heval : S_Sem.BStep .unit (.mlinkn es₁ es₂) vs)
-    : ∃ vc,
-        EBig .unit
-          (linkedCoreLin (elabTyp Γ₁) (.arr (elabTyp D) (elabTyp B)) D ec₁ ec₂) vc
-        ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc :=
-  separate_compilation_lin_n helab₁ helab₂ hok heval
+    : ∃ vc, EBig .unit (linkedCoreNBoxed Core.Typ.top D ec₁ ec₂) vc
+           ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc :=
+  separate_compilation_boxed_n helab₁ helab₂ hok heval
     (elabExp.eunit SCE.Typ.top) SCE.Value.vunit
 
-/-- The linearized elaboration of a non‑dependent merge `e₁ ,, e₂` agrees with
-source evaluation — the leaf case of the toolchain linker (`link_step_leaf`). -/
-theorem nmrg_lin
+/-- The boxed non-dependent merge agrees with source evaluation. -/
+theorem nmrg_boxed
     {Γ A B : SCE.Typ} {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp}
     {ρs vs : SCE.Exp} {ρc : Core.Exp}
     (helab₁ : elabExp Γ es₁ A ec₁)
@@ -467,7 +391,7 @@ theorem nmrg_lin
     (heval : S_Sem.BStep ρs (.nmrg es₁ es₂) vs)
     (henv : elabExp SCE.Typ.top ρs Γ ρc)
     (henv_val : SCE.Value ρs)
-    : ∃ vc, EBig ρc (nmrgCoreLin (elabTyp A) (elabTyp B) ec₁ ec₂) vc
+    : ∃ vc, EBig ρc (nmrgCoreBoxed (elabTyp Γ) ec₁ ec₂) vc
            ∧ elabExp SCE.Typ.top vs (.and A B) vc := by
   cases heval with
   | nmrg h1 bstep1 bstep2 =>
@@ -475,21 +399,20 @@ theorem nmrg_lin
     obtain ⟨vc2, hbig2, helab_v2⟩ := semantic_preservation helab₂ bstep2 henv henv_val
     have hρc := elab_value henv henv_val
     have hv2_val := eval_produces_value henv_val bstep2
-    exact ⟨.mrg vc1 vc2, nmrgCoreLin_eval hρc hbig1 hbig2,
+    exact ⟨.mrg vc1 vc2, nmrgCoreBoxed_eval hρc hbig1 hbig2,
       elabExp.edmrg SCE.Typ.top _ _ _ _ _ _ helab_v1
         (value_typing_weakening hv2_val helab_v2)⟩
 
 /-! ## Coherence: the two spellings compute the same value
 
-The headline: on every elaborated program, the mechanized composition term
-(`linkedCore`) and the implementation's linearized one (`linkedCoreLin`)
-big‑step to the **same** core value. Per the module documentation, the proof
-goes through the source: both spellings track the same source evaluation, and
-`elaboration_uniqueness` pins their results to the same elaborated value —
-raw core determinism is neither available (`RLookupV` relates either field of a
-duplicated label) nor needed. -/
+On every elaborated program, the linearized composition term (the elaboration)
+and the boxed one big‑step to the **same** core value.  Per the module
+documentation, the proof goes through the source: both spellings track the same
+source evaluation, and `elaboration_uniqueness` pins their results to the same
+elaborated value — raw core determinism is neither available (`RLookupV` relates
+either field of a duplicated label) nor needed. -/
 
-/-- **Linearization coherence (binary).** Both spellings of `link` evaluate to
+/-- **Linearization coherence (binary).**  Both spellings of `link` evaluate to
 one and the same value, the elaboration of the source result. -/
 theorem linearization_coherent
     {Γ₁ A B : SCE.Typ} {l : String}
@@ -499,20 +422,18 @@ theorem linearization_coherent
     (hlookup : SRLookup Γ₁ l A)
     (heval : S_Sem.BStep .unit (.mlink es₁ es₂) vs)
     : ∃ vc,
-        EBig .unit (linkedCore Core.Typ.top l ec₁ ec₂) vc
-        ∧ EBig .unit
-            (linkedCoreLin (elabTyp Γ₁)
-              (.arr (elabTyp (SCE.Typ.rcd l A)) (elabTyp B)) (.rcd l A) ec₁ ec₂) vc
+        EBig .unit (linkedCore (elabTyp Γ₁) (elabTyp (SCE.Typ.rcd l A)) (elabTyp B) ec₁ ec₂) vc
+        ∧ EBig .unit (linkedCoreBoxed Core.Typ.top l ec₁ ec₂) vc
         ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
-  obtain ⟨vc, hbox, helab_vs⟩ :=
+  obtain ⟨vc, hlin, helab_vs⟩ :=
     separate_compilation_closed helab₁ helab₂ hlookup heval
-  obtain ⟨vc', hlin, helab_vs'⟩ :=
-    separate_compilation_lin_closed helab₁ helab₂ hlookup heval
+  obtain ⟨vc', hbox, helab_vs'⟩ :=
+    separate_compilation_boxed_closed helab₁ helab₂ hlookup heval
   have heq : vc' = vc := elaboration_uniqueness helab_vs' helab_vs
   subst heq
-  exact ⟨vc', hbox, hlin, helab_vs'⟩
+  exact ⟨vc', hlin, hbox, helab_vs'⟩
 
-/-- **Linearization coherence (n‑ary).** As above for `linkall`, where the boxed
+/-- **Linearization coherence (n‑ary).**  As above for `linkall`, where the boxed
 wire re‑evaluates the provider once per import and the linearized wire never
 re‑evaluates it — and the values still coincide. -/
 theorem linearization_coherent_n
@@ -523,14 +444,32 @@ theorem linearization_coherent_n
     (hok : LinkOk Γ₁ D)
     (heval : S_Sem.BStep .unit (.mlinkn es₁ es₂) vs)
     : ∃ vc,
-        EBig .unit (linkedCoreN Core.Typ.top D ec₁ ec₂) vc
-        ∧ EBig .unit
-            (linkedCoreLin (elabTyp Γ₁) (.arr (elabTyp D) (elabTyp B)) D ec₁ ec₂) vc
+        EBig .unit (linkedCore (elabTyp Γ₁) (elabTyp D) (elabTyp B) ec₁ ec₂) vc
+        ∧ EBig .unit (linkedCoreNBoxed Core.Typ.top D ec₁ ec₂) vc
         ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
-  obtain ⟨vc, hbox, helab_vs⟩ :=
+  obtain ⟨vc, hlin, helab_vs⟩ :=
     separate_compilation_n_closed helab₁ helab₂ hok heval
-  obtain ⟨vc', hlin, helab_vs'⟩ :=
-    separate_compilation_lin_n_closed helab₁ helab₂ hok heval
+  obtain ⟨vc', hbox, helab_vs'⟩ :=
+    separate_compilation_boxed_n_closed helab₁ helab₂ hok heval
   have heq : vc' = vc := elaboration_uniqueness helab_vs' helab_vs
   subst heq
-  exact ⟨vc', hbox, hlin, helab_vs'⟩
+  exact ⟨vc', hlin, hbox, helab_vs'⟩
+
+/-- **Merge coherence.**  Both spellings of `,,` evaluate to the same value. -/
+theorem nmrg_coherent
+    {A B : SCE.Typ} {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp} {vs : SCE.Exp}
+    (helab₁ : elabExp SCE.Typ.top es₁ A ec₁)
+    (helab₂ : elabExp SCE.Typ.top es₂ B ec₂)
+    (heval : S_Sem.BStep .unit (.nmrg es₁ es₂) vs)
+    : ∃ vc,
+        EBig .unit (nmrgCore (elabTyp A) (elabTyp B) ec₁ ec₂) vc
+        ∧ EBig .unit (nmrgCoreBoxed Core.Typ.top ec₁ ec₂) vc
+        ∧ elabExp SCE.Typ.top vs (.and A B) vc := by
+  obtain ⟨vc, hlin, helab_vs⟩ :=
+    semantic_preservation (elabExp.enmrg _ _ _ _ _ _ _ helab₁ helab₂) heval
+      (elabExp.eunit SCE.Typ.top) SCE.Value.vunit
+  obtain ⟨vc', hbox, helab_vs'⟩ :=
+    nmrg_boxed helab₁ helab₂ heval (elabExp.eunit SCE.Typ.top) SCE.Value.vunit
+  have heq : vc' = vc := elaboration_uniqueness helab_vs' helab_vs
+  subst heq
+  exact ⟨vc', hlin, hbox, helab_vs'⟩

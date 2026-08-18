@@ -7,12 +7,16 @@ import LeanSce.SCE.Elaboration
 
 open SCE Core
 
+/-- The linker's binary step, as a relation on compiled units: given a provider
+`ec₁ : A₁` and a functor `ec₂ : {l:A} → B` with `A₁ ∋ l : A`, the linked unit is
+`linkedCore A₁ {l:A} B ec₁ ec₂`.  The linearized step is closed — it does not
+mention the ambient context — so the relation carries none. -/
 inductive CoreLink
-    : Core.Typ → String → Core.Typ → Core.Typ → Core.Typ
+    : String → Core.Typ → Core.Typ → Core.Typ
     → Core.Exp → Core.Exp → Core.Exp → Prop where
-  | link (Γ A₁ A B : Core.Typ) (l : String) (ec₁ ec₂ : Core.Exp)
+  | link (A₁ A B : Core.Typ) (l : String) (ec₁ ec₂ : Core.Exp)
     : Core.RLookup A₁ l A
-    → CoreLink Γ l A₁ A B ec₁ ec₂ (linkedCore Γ l ec₁ ec₂)
+    → CoreLink l A₁ A B ec₁ ec₂ (linkedCore A₁ (.rcd l A) B ec₁ ec₂)
 
 theorem index_lookup_uniqueness
     {T T₁ T₂ : SCE.Typ} {n : Nat}
@@ -350,13 +354,15 @@ theorem elaboration_uniqueness
       rw [← hA] at h2'
       have hce2 := ih2 h2'
       rw [hce1, hce2]
-  | enmrg ctx A B se1 se2 ce1 ce2 _ _ ih1 ih2 =>
+  | enmrg ctx A B se1 se2 ce1 ce2 h1_orig h2_orig ih1 ih2 =>
     intro ce₂ T₂ h₂
     cases h₂ with
     | enmrg _ a' b' _ _ ce1' ce2' h1' h2' =>
       have hce1 := ih1 h1'
       have hce2 := ih2 h2'
-      rw [hce1, hce2]
+      have hA := inference_uniqueness h1_orig h1'
+      have hB := inference_uniqueness h2_orig h2'
+      rw [hce1, hce2, hA, hB]
   | elam ctx A B se ce _ ih =>
     intro ce₂ T₂ h₂
     cases h₂ with
@@ -448,7 +454,8 @@ theorem elaboration_uniqueness
       have hce2 := ih2 h2'
       have htyp := inference_uniqueness h2_orig h2'
       cases htyp
-      rw [hce1, hce2]
+      have hΓ := inference_uniqueness h1_orig h1'
+      rw [hce1, hce2, hΓ]
   | mlinkn ctx Γ₁ D B se1 se2 ce1 ce2 h1_orig h2_orig _ ih1 ih2 =>
     intro ce₂ T₂ h₂
     cases h₂ with
@@ -457,7 +464,8 @@ theorem elaboration_uniqueness
       have hce2 := ih2 h2'
       have htyp := inference_uniqueness h2_orig h2'
       cases htyp
-      rw [hce1, hce2]
+      have hΓ := inference_uniqueness h1_orig h1'
+      rw [hce1, hce2, hΓ]
   | einl ctx A B se ce _ ih =>
     intro ce₂ T₂ h₂
     cases h₂ with
@@ -555,26 +563,67 @@ theorem elab_value
     | efold _ _ _ ce h =>
       exact Core.Value.vfold (ih h)
 
--- the wired import package is well-typed at the interface type
-theorem wireArg_typed {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D)
-    {Γc : Core.Typ} {ce₁ : Core.Exp}
-    (h₁ : HasType Γc ce₁ (elabTyp Γ₁))
-    : HasType Γc (wireArg Γc ce₁ D) (elabTyp D) := by
+/-- The linearized wire is well-typed: under any context that reaches the
+provider type `⟦Γ₁⟧` at index `shift`, `wire_shift ⟦D⟧` has the interface type
+`⟦D⟧`. -/
+theorem wire_typed {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D)
+    : ∀ {C : Core.Typ} {shift : Nat},
+      Core.Lookup C shift (elabTyp Γ₁)
+      → HasType C (wire shift (elabTyp D)) (elabTyp D) := by
   induction hok with
   | one hrl =>
-    exact HasType.trcd (HasType.trproj h₁ (type_safe_record_lookup hrl))
+    intro C shift hlook
+    simp only [wire, elabTyp]
+    exact HasType.trcd (HasType.trproj (HasType.tproj HasType.tquery hlook)
+      (type_safe_record_lookup hrl))
   | more hok' hrl ih =>
-    simp only [wireArg, nmrgCore, elabTyp]
-    apply HasType.tapp
-    · apply HasType.tlam
-      apply HasType.tmrg
-      · apply HasType.tbox
-        · exact HasType.tproj HasType.tquery Lookup.zero
-        · exact ih
-      · apply HasType.tbox
-        · exact HasType.tproj HasType.tquery (Lookup.succ Lookup.zero)
-        · exact HasType.trcd (HasType.trproj h₁ (type_safe_record_lookup hrl))
-    · exact HasType.tquery
+    intro C shift hlook
+    simp only [wire, elabTyp]
+    exact HasType.tmrg (ih hlook)
+      (HasType.trcd (HasType.trproj
+        (HasType.tproj HasType.tquery (Core.Lookup.succ hlook))
+        (type_safe_record_lookup hrl)))
+
+/-- The single-import wire, stated purely at the target: `wire_shift {l:A}` is
+well-typed whenever the provider type reachable at `shift` has an `l : A` field. -/
+theorem wire_typed_rcd {A₁ A : Core.Typ} {l : String} (hrl : Core.RLookup A₁ l A)
+    : ∀ {C : Core.Typ} {shift : Nat},
+      Core.Lookup C shift A₁ → HasType C (wire shift (.rcd l A)) (.rcd l A) := by
+  intro C shift hlook
+  simp only [wire]
+  exact HasType.trcd (HasType.trproj (HasType.tproj HasType.tquery hlook) hrl)
+
+/-- The linearized link composition is well-typed at `g1 & B` — the check the
+OCaml linker replays on every link, discharged once and for all for the step
+term it emits.  The wire hypothesis is supplied by `wire_typed` (interface
+`LinkOk`) or `wire_typed_rcd` (single import). -/
+theorem linkedCore_typed
+    {Γc g1 D B : Core.Typ} {ce₁ ce₂ : Core.Exp}
+    (h₁ : HasType Γc ce₁ g1)
+    (h₂ : HasType Γc ce₂ (.arr D B))
+    (hw : ∀ {C : Core.Typ} {shift : Nat}, Core.Lookup C shift g1 → HasType C (wire shift D) D)
+    : HasType Γc (linkedCore g1 D B ce₁ ce₂) (.and g1 B) := by
+  simp only [linkedCore, linkStep]
+  apply HasType.tapp (HasType.tapp ?_ h₁) h₂
+  apply HasType.tlam
+  apply HasType.tlam
+  apply HasType.tmrg
+  · exact HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero)
+  · exact HasType.tapp
+      (HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero))
+      (hw Core.Lookup.zero)
+
+/-- The linearized non-dependent merge is well-typed at `a & b`. -/
+theorem nmrgCore_typed {Γc a b : Core.Typ} {ce₁ ce₂ : Core.Exp}
+    (h₁ : HasType Γc ce₁ a) (h₂ : HasType Γc ce₂ b)
+    : HasType Γc (nmrgCore a b ce₁ ce₂) (.and a b) := by
+  simp only [nmrgCore, nmrgStep]
+  apply HasType.tapp (HasType.tapp ?_ h₁) h₂
+  apply HasType.tlam
+  apply HasType.tlam
+  apply HasType.tmrg
+  · exact HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero)
+  · exact HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero)
 
 theorem type_preservation
     {Γ A : SCE.Typ} {es : SCE.Exp} {ec : Core.Exp}
@@ -599,17 +648,7 @@ theorem type_preservation
       simp [elabTyp]
       exact HasType.tmrg ih1 ih2
     | enmrg ctx A B se1 se2 ce1 ce2 _ _ ih1 ih2 =>
-      simp [elabTyp]
-      apply HasType.tapp
-      · apply HasType.tlam
-        apply HasType.tmrg
-        · apply HasType.tbox
-          · exact HasType.tproj HasType.tquery Lookup.zero
-          · exact ih1
-        · apply HasType.tbox
-          · exact HasType.tproj HasType.tquery (Lookup.succ Lookup.zero)
-          · exact ih2
-      · exact HasType.tquery
+      exact nmrgCore_typed ih1 ih2
     | elam ctx A B se ce _ ih =>
       simp [elabTyp]
       exact HasType.tlam ih
@@ -655,30 +694,9 @@ theorem type_preservation
     | mapp ctx A B se1 se2 ce1 ce2 _ _ ih1 ih2 =>
       exact HasType.tapp ih1 ih2
     | mlink ctx Γ₁ A mt l se1 se2 ce1 ce2 _ _ hlookup ih1 ih2 =>
-      simp [elabTyp, linkedCore]
-      apply HasType.tapp
-      · apply HasType.tlam
-        apply HasType.tmrg
-        · apply HasType.tbox
-          · exact HasType.tproj HasType.tquery Lookup.zero
-          · exact ih1
-        · apply HasType.tbox
-          · exact HasType.tproj HasType.tquery (Lookup.succ Lookup.zero)
-          · exact HasType.tapp ih2
-              (HasType.trcd (HasType.trproj ih1 (type_safe_record_lookup hlookup)))
-      · exact HasType.tquery
+      exact linkedCore_typed ih1 ih2 (wire_typed_rcd (type_safe_record_lookup hlookup))
     | mlinkn ctx Γ₁ D B se1 se2 ce1 ce2 _ _ hok ih1 ih2 =>
-      simp [elabTyp, linkedCoreN]
-      apply HasType.tapp
-      · apply HasType.tlam
-        apply HasType.tmrg
-        · apply HasType.tbox
-          · exact HasType.tproj HasType.tquery Lookup.zero
-          · exact ih1
-        · apply HasType.tbox
-          · exact HasType.tproj HasType.tquery (Lookup.succ Lookup.zero)
-          · exact HasType.tapp ih2 (wireArg_typed hok ih1)
-      · exact HasType.tquery
+      exact linkedCore_typed ih1 ih2 (wire_typed hok)
     | einl ctx A B se ce _ ih =>
       simp [elabTyp]
       exact HasType.tinl ih
@@ -925,60 +943,34 @@ theorem sel_preservation
   | nmrg_left => cases hval
   | nmrg_right => cases hval
 
-theorem linkedCore_eval
-    {ρc vc1 vc2 vc_l vc3 : Core.Exp} {ctx : Core.Typ} {l : String}
-    {ce1 ce2 body : Core.Exp} {A : Core.Typ}
-    (hval_ρ : Core.Value ρc)
-    (hbig1 : EBig ρc ce1 vc1)
-    (hbig2 : EBig ρc ce2 (Core.Exp.clos vc2 (.rcd l A) body))
-    (hsel : Core.RLookupV vc1 l vc_l)
-    (hbig3 : EBig (.mrg vc2 (.lrec l vc_l)) body vc3)
-    : EBig ρc (linkedCore ctx l ce1 ce2) (.mrg vc1 vc3) := by
-  have hval_vc1 := ebig_produces_value hval_ρ hbig1
-  simp [linkedCore]
-  apply EBig.ebapp
-  · exact EBig.ebclos hval_ρ
-  · exact EBig.equery hval_ρ
-  · apply EBig.ebmrg
-    · apply EBig.ebbox
-      · exact EBig.ebproj (EBig.equery (Value.vmrg hval_ρ hval_ρ)) LookupV.lvzero
-      · exact hbig1
-    · apply EBig.ebbox
-      · exact EBig.ebproj
-          (EBig.equery (Value.vmrg (Value.vmrg hval_ρ hval_ρ) hval_vc1))
-          (LookupV.lvsucc LookupV.lvzero)
-      · exact EBig.ebapp
-          hbig2
-          (EBig.ebrec (EBig.ebsel hbig1 hsel))
-          hbig3
+/-! ### Evaluation of the linearized combinators
 
-theorem nmrg_core_eval
-    {ρc vc1 vc2 : Core.Exp} {ctx : Core.Typ}
-    {ce1 ce2 : Core.Exp}
-    (hval_ρ : Core.Value ρc)
-    (hbig1 : EBig ρc ce1 vc1)
-    (hbig2 : EBig ρc ce2 vc2)
-    : EBig ρc
-        (Core.Exp.app
-          (Core.Exp.lam ctx
-            (Core.Exp.mrg
-              (Core.Exp.box (Core.Exp.proj Core.Exp.query 0) ce1)
-              (Core.Exp.box (Core.Exp.proj Core.Exp.query 1) ce2)))
-          Core.Exp.query)
-        (.mrg vc1 vc2) := by
-  have hval_vc1 := ebig_produces_value hval_ρ hbig1
+Operational lemmas assembling `EBig` derivations for the linearized terms.  Note
+the premise shapes: each operand evaluation appears **once**, mirroring the terms
+themselves. -/
+
+/-- Bind-once merge: if each operand evaluates once under `ρ`, the linearized
+merge evaluates to the merged values. -/
+theorem nmrgCore_eval
+    {ρc vc₁ vc₂ : Core.Exp} {a b : Core.Typ} {ce₁ ce₂ : Core.Exp}
+    (hρ : Core.Value ρc)
+    (hbig1 : EBig ρc ce₁ vc₁)
+    (hbig2 : EBig ρc ce₂ vc₂)
+    : EBig ρc (nmrgCore a b ce₁ ce₂) (.mrg vc₁ vc₂) := by
+  have hv1 := ebig_produces_value hρ hbig1
+  have hv2 := ebig_produces_value hρ hbig2
+  simp only [nmrgCore, nmrgStep]
   apply EBig.ebapp
-  · exact EBig.ebclos hval_ρ
-  · exact EBig.equery hval_ρ
+  · exact EBig.ebapp (EBig.ebclos hρ) hbig1 (EBig.ebclos (Core.Value.vmrg hρ hv1))
+  · exact hbig2
   · apply EBig.ebmrg
-    · apply EBig.ebbox
-      · exact EBig.ebproj (EBig.equery (Value.vmrg hval_ρ hval_ρ)) LookupV.lvzero
-      · exact hbig1
-    · apply EBig.ebbox
-      · exact EBig.ebproj
-          (EBig.equery (Value.vmrg (Value.vmrg hval_ρ hval_ρ) hval_vc1))
-          (LookupV.lvsucc LookupV.lvzero)
-      · exact hbig2
+    · exact EBig.ebproj
+        (EBig.equery (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hv2))
+        (Core.LookupV.lvsucc Core.LookupV.lvzero)
+    · exact EBig.ebproj
+        (EBig.equery
+          (Core.Value.vmrg (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hv2) hv1))
+        (Core.LookupV.lvsucc Core.LookupV.lvzero)
 
 -- the extracted package elaborates at the interface type
 theorem selpkg_elab {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
@@ -1005,59 +997,89 @@ theorem selpkg_elab {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
         (value_typing_weakening (SCE.Value.vlrec hvl)
           (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl))⟩
 
--- the wired import package evaluates to a Core package that elaborates
--- the source package
-theorem wireArg_eval {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
-    ∀ {v₁ pkg : SCE.Exp} {Γc : Core.Typ} {ρc ce1 vc1 : Core.Exp},
-    S_Sem.SelPkg v₁ D pkg
-    → SCE.Value v₁
-    → elabExp SCE.Typ.top v₁ Γ₁ vc1
-    → Core.Value ρc
-    → EBig ρc ce1 vc1
-    → ∃ cpkg, EBig ρc (wireArg Γc ce1 D) cpkg ∧ elabExp SCE.Typ.top pkg D cpkg := by
+/-- The linearized wire evaluates by projection alone.  Generalized over the
+environment: wherever the provider *value* `vc₁` is reachable at index `shift`,
+`wire_shift ⟦D⟧` evaluates to a package that elaborates the source package.  No
+premise about the provider *term* appears, because the wire never mentions it. -/
+theorem wire_eval {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D)
+    : ∀ {v₁ pkg : SCE.Exp} {ρ' vc₁ : Core.Exp} {shift : Nat},
+      S_Sem.SelPkg v₁ D pkg
+      → SCE.Value v₁
+      → elabExp SCE.Typ.top v₁ Γ₁ vc₁
+      → Core.Value ρ'
+      → Core.LookupV ρ' shift vc₁
+      → ∃ cpkg, EBig ρ' (wire shift (elabTyp D)) cpkg ∧ elabExp SCE.Typ.top pkg D cpkg := by
   induction hok with
   | one hrl =>
-    intro v₁ pkg Γc ρc ce1 vc1 hsp hv1 helab1 hρ hbig1
+    intro v₁ pkg ρ' vc₁ shift hsp hv₁ helab₁ hρ' hlook
     cases hsp with
     | one hsel =>
-      obtain ⟨vcl, hrlv, helab_vl⟩ := sel_preservation hv1 helab1 hsel hrl
-      exact ⟨_, EBig.ebrec (EBig.ebsel hbig1 hrlv),
-             elabExp.elrec _ _ _ _ _ helab_vl⟩
+      obtain ⟨vcl, hrlv, helab_vl⟩ := sel_preservation hv₁ helab₁ hsel hrl
+      exact ⟨_,
+        EBig.ebrec (EBig.ebsel (EBig.ebproj (EBig.equery hρ') hlook) hrlv),
+        elabExp.elrec _ _ _ _ _ helab_vl⟩
   | more hok' hrl ih =>
-    intro v₁ pkg Γc ρc ce1 vc1 hsp hv1 helab1 hρ hbig1
+    intro v₁ pkg ρ' vc₁ shift hsp hv₁ helab₁ hρ' hlook
     cases hsp with
     | more hsp' hsel =>
-      obtain ⟨cpkg', hbig', helab'⟩ := ih (Γc := Γc) hsp' hv1 helab1 hρ hbig1
-      obtain ⟨vcl, hrlv, helab_vl⟩ := sel_preservation hv1 helab1 hsel hrl
-      have hvl := source_sel_value hv1 hsel
-      exact ⟨_, nmrg_core_eval hρ hbig' (EBig.ebrec (EBig.ebsel hbig1 hrlv)),
-             elabExp.edmrg _ _ _ _ _ _ _ helab'
-               (value_typing_weakening (SCE.Value.vlrec hvl)
-                 (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl))⟩
+      obtain ⟨cpkg', hbig', helab'⟩ := ih hsp' hv₁ helab₁ hρ' hlook
+      obtain ⟨vcl, hrlv, helab_vl⟩ := sel_preservation hv₁ helab₁ hsel hrl
+      have hvl := source_sel_value hv₁ hsel
+      have hcpkg' := ebig_produces_value hρ' hbig'
+      exact ⟨_,
+        EBig.ebmrg hbig'
+          (EBig.ebrec (EBig.ebsel
+            (EBig.ebproj (EBig.equery (Core.Value.vmrg hρ' hcpkg'))
+              (Core.LookupV.lvsucc hlook)) hrlv)),
+        elabExp.edmrg _ _ _ _ _ _ _ helab'
+          (value_typing_weakening (SCE.Value.vlrec hvl)
+            (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl))⟩
 
-theorem linkedCoreN_eval
-    {ρc vc1 vc2 cpkg vc3 : Core.Exp} {ctx DT : Core.Typ} {D : SCE.Typ}
-    {ce1 ce2 body : Core.Exp}
-    (hval_ρ : Core.Value ρc)
-    (hbig1 : EBig ρc ce1 vc1)
-    (hbig2 : EBig ρc ce2 (Core.Exp.clos vc2 DT body))
-    (hbigw : EBig ρc (wireArg ctx ce1 D) cpkg)
-    (hbig3 : EBig (.mrg vc2 cpkg) body vc3)
-    : EBig ρc (linkedCoreN ctx D ce1 ce2) (.mrg vc1 vc3) := by
-  have hval_vc1 := ebig_produces_value hval_ρ hbig1
-  simp [linkedCoreN]
+/-- The assembly lemma for the linearized composition: one evaluation of each
+operand, one wire evaluation under the spine-built environment
+`((ρ , v₁) , f) , v₁`, one closure-body evaluation — exactly the derivation
+shape of the term.  Shared by `link` and `linkall`. -/
+theorem linkStep_eval
+    {ρc vc₁ vc₂ cpkg vc₃ : Core.Exp} {g1 D B DT : Core.Typ}
+    {ce₁ ce₂ body : Core.Exp}
+    (hρ : Core.Value ρc)
+    (hbig1 : EBig ρc ce₁ vc₁)
+    (hbig2 : EBig ρc ce₂ (.clos vc₂ DT body))
+    (hbigw : EBig (.mrg (.mrg (.mrg ρc vc₁) (.clos vc₂ DT body)) vc₁)
+               (wire 0 D) cpkg)
+    (hbig3 : EBig (.mrg vc₂ cpkg) body vc₃)
+    : EBig ρc (linkedCore g1 D B ce₁ ce₂) (.mrg vc₁ vc₃) := by
+  have hv1 := ebig_produces_value hρ hbig1
+  have hvf := ebig_produces_value hρ hbig2
+  simp only [linkedCore, linkStep]
   apply EBig.ebapp
-  · exact EBig.ebclos hval_ρ
-  · exact EBig.equery hval_ρ
+  · exact EBig.ebapp (EBig.ebclos hρ) hbig1 (EBig.ebclos (Core.Value.vmrg hρ hv1))
+  · exact hbig2
   · apply EBig.ebmrg
-    · apply EBig.ebbox
-      · exact EBig.ebproj (EBig.equery (Value.vmrg hval_ρ hval_ρ)) LookupV.lvzero
-      · exact hbig1
-    · apply EBig.ebbox
-      · exact EBig.ebproj
-          (EBig.equery (Value.vmrg (Value.vmrg hval_ρ hval_ρ) hval_vc1))
-          (LookupV.lvsucc LookupV.lvzero)
-      · exact EBig.ebapp hbig2 hbigw hbig3
+    · exact EBig.ebproj
+        (EBig.equery (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hvf))
+        (Core.LookupV.lvsucc Core.LookupV.lvzero)
+    · exact EBig.ebapp
+        (EBig.ebproj
+          (EBig.equery
+            (Core.Value.vmrg (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hvf) hv1))
+          (Core.LookupV.lvsucc Core.LookupV.lvzero))
+        hbigw
+        hbig3
+
+/-- The single-import wire evaluated in the spine-built environment: the
+`link` instance of `wire_eval`, stated directly at the target. -/
+theorem wire_eval_rcd
+    {ρc vc₁ f vc_l : Core.Exp} {l : String} {A : Core.Typ}
+    (hρ : Core.Value ρc) (hv1 : Core.Value vc₁) (hf : Core.Value f)
+    (hsel : Core.RLookupV vc₁ l vc_l)
+    : EBig (.mrg (.mrg (.mrg ρc vc₁) f) vc₁) (wire 0 (.rcd l A)) (.lrec l vc_l) := by
+  simp only [wire]
+  exact EBig.ebrec (EBig.ebsel
+    (EBig.ebproj
+      (EBig.equery (Core.Value.vmrg (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hf) hv1))
+      Core.LookupV.lvzero)
+    hsel)
 
 theorem semantic_preservation
     {Γ A : SCE.Typ} {es : SCE.Exp} {ec : Core.Exp}
@@ -1178,7 +1200,7 @@ theorem semantic_preservation
       have helab_result := elabExp.edmrg .top _ _ _ _ _ _
         helab_v1 (value_typing_weakening hv2_val helab_v2)
       exact ⟨.mrg vc1 vc2,
-             nmrg_core_eval (elab_value henv henv_val) hbig1 hbig2,
+             nmrgCore_eval (elab_value henv henv_val) hbig1 hbig2,
              helab_result⟩
   | openm hval_ρ hstep1 hstep2 ih1 ih2 =>
     cases helab with
@@ -1287,8 +1309,12 @@ theorem semantic_preservation
           value_typing_weakening (Γ₂ := SCE.Typ.and .top Γ₁) hv3_val helab_v3
         have helab_result := elabExp.edmrg .top _ _ _ _ _ _
           helab_v1 helab_v3_weak
+        have hρc := elab_value henv henv_val
         exact ⟨.mrg vc1 vc3,
-               linkedCore_eval (elab_value henv henv_val) hbig1 hbig2 hrlookup_v hbig3,
+               linkStep_eval hρc hbig1 hbig2
+                 (wire_eval_rcd hρc (ebig_produces_value hρc hbig1)
+                   (ebig_produces_value hρc hbig2) hrlookup_v)
+                 hbig3,
                helab_result⟩
   | mlinkn h1 bstep1 bstep2 hsp bstep3 ih1 ih2 ih3 =>
     cases helab with
@@ -1298,8 +1324,14 @@ theorem semantic_preservation
       cases helab_v2 with
       | mclos _ ctx_inner _ _ _ _ ce_env ce_body hval_v2 h_env2 h_body =>
         have hv1_val := eval_produces_value henv_val bstep1
+        have hρc := elab_value henv henv_val
         obtain ⟨cpkg, hbigw, helab_pkg⟩ :=
-          wireArg_eval hok hsp hv1_val helab_v1 (elab_value henv henv_val) hbig1
+          wire_eval hok hsp hv1_val helab_v1
+            (Core.Value.vmrg
+              (Core.Value.vmrg (Core.Value.vmrg hρc (ebig_produces_value hρc hbig1))
+                (ebig_produces_value hρc hbig2))
+              (ebig_produces_value hρc hbig1))
+            Core.LookupV.lvzero
         have hvpkg := S_Sem.selpkg_value hsp hv1_val
         have hval_env := SCE.Value.vmrg hval_v2 hvpkg
         have helab_env := elabExp.edmrg .top _ _ _ _ _ _ h_env2
@@ -1309,7 +1341,7 @@ theorem semantic_preservation
         have helab_result := elabExp.edmrg .top _ _ _ _ _ _
           helab_v1 (value_typing_weakening hv3_val helab_v3)
         exact ⟨.mrg vc1 vc3,
-               linkedCoreN_eval (elab_value henv henv_val) hbig1 hbig2 hbigw hbig3,
+               linkStep_eval hρc hbig1 hbig2 hbigw hbig3,
                helab_result⟩
   | inl hval_ρ hstep ih =>
     cases helab with
@@ -1407,26 +1439,20 @@ theorem whole_program_correctness
 def linkSCE (e₁ e₂ : SCE.Exp) : SCE.Exp :=
   .mlink e₁ e₂
 
+/-- The linker's binary step produces a well-typed unit at `A₁ & B`. -/
 theorem core_link_typed
     {Γ A₁ A B : Core.Typ} {l : String} {ec₁ ec₂ ec : Core.Exp}
-    (hlink : CoreLink Γ l A₁ A B ec₁ ec₂ ec)
+    (hlink : CoreLink l A₁ A B ec₁ ec₂ ec)
     (h₁ : HasType Γ ec₁ A₁)
     (h₂ : HasType Γ ec₂ (.arr (.rcd l A) B))
     : HasType Γ ec (.and A₁ B) := by
   cases hlink with
   | link _ _ _ _ _ _ hrlookup =>
-    simp [linkedCore]
-    apply HasType.tapp
-    · apply HasType.tlam
-      apply HasType.tmrg
-      · apply HasType.tbox
-        · exact HasType.tproj HasType.tquery Lookup.zero
-        · exact h₁
-      · apply HasType.tbox
-        · exact HasType.tproj HasType.tquery (Lookup.succ Lookup.zero)
-        · exact HasType.tapp h₂ (HasType.trcd (HasType.trproj h₁ hrlookup))
-    · exact HasType.tquery
+    exact linkedCore_typed h₁ h₂ (wire_typed_rcd hrlookup)
 
+/-- **Separate compilation (binary `link`).**  Elaborate the provider and the
+functor separately, compose the compiled pieces with the linker's step, and the
+result evaluates in lock-step with source-level `link`. -/
 theorem separate_compilation
     {Γ Γ₁ A B : SCE.Typ} {l : String}
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ ec : Core.Exp}
@@ -1434,7 +1460,7 @@ theorem separate_compilation
     (helab₁ : elabExp Γ es₁ Γ₁ ec₁)
     (helab₂ : elabExp Γ es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ec₂)
     (hlookup : SRLookup Γ₁ l A)
-    (hlink : CoreLink (elabTyp Γ) l (elabTyp Γ₁) (elabTyp A) (elabTyp B) ec₁ ec₂ ec)
+    (hlink : CoreLink l (elabTyp Γ₁) (elabTyp A) (elabTyp B) ec₁ ec₂ ec)
     (heval : S_Sem.BStep ρs (.mlink es₁ es₂) vs)
     (henv : elabExp SCE.Typ.top ρs Γ ρc)
     (henv_val : SCE.Value ρs)
@@ -1445,6 +1471,8 @@ theorem separate_compilation
     have hmlink := elabExp.mlink Γ Γ₁ A B l es₁ es₂ ec₁ ec₂ helab₁ helab₂ hlookup
     exact semantic_preservation hmlink heval henv henv_val
 
+/-- **Separate compilation, closed** — the toolchain's actual case: closed
+compiled units, empty initial environment. -/
 theorem separate_compilation_closed
     {Γ₁ A B : SCE.Typ} {l : String}
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp}
@@ -1453,41 +1481,34 @@ theorem separate_compilation_closed
     (helab₂ : elabExp SCE.Typ.top es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ec₂)
     (hlookup : SRLookup Γ₁ l A)
     (heval : S_Sem.BStep .unit (.mlink es₁ es₂) vs)
-    : ∃ vc, EBig .unit (linkedCore Core.Typ.top l ec₁ ec₂) vc
+    : ∃ vc, EBig .unit (linkedCore (elabTyp Γ₁) (elabTyp (SCE.Typ.rcd l A)) (elabTyp B) ec₁ ec₂) vc
            ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
-  have hlink : CoreLink Core.Typ.top l (elabTyp Γ₁) (elabTyp A) (elabTyp B) ec₁ ec₂
-      (linkedCore Core.Typ.top l ec₁ ec₂) :=
-    CoreLink.link _ _ _ _ _ _ _ (type_safe_record_lookup hlookup)
+  have hlink : CoreLink l (elabTyp Γ₁) (elabTyp A) (elabTyp B) ec₁ ec₂
+      (linkedCore (elabTyp Γ₁) (elabTyp (SCE.Typ.rcd l A)) (elabTyp B) ec₁ ec₂) :=
+    CoreLink.link _ _ _ _ _ _ (type_safe_record_lookup hlookup)
   exact separate_compilation helab₁ helab₂ hlookup hlink heval (elabExp.eunit .top) SCE.Value.vunit
 
 -- N-ary linking and separate compilation
 
+/-- The linker's n-ary step: the provider is wired to every import of the
+elaborated interface `⟦D⟧` by projection from its single binding. -/
 inductive CoreLinkN
-    : Core.Typ → SCE.Typ → Core.Exp → Core.Exp → Core.Exp → Prop where
-  | link (Γ : Core.Typ) (D : SCE.Typ) (ec₁ ec₂ : Core.Exp)
-    : CoreLinkN Γ D ec₁ ec₂ (linkedCoreN Γ D ec₁ ec₂)
+    : SCE.Typ → Core.Typ → Core.Typ → Core.Exp → Core.Exp → Core.Exp → Prop where
+  | link (D : SCE.Typ) (A₁ B : Core.Typ) (ec₁ ec₂ : Core.Exp)
+    : CoreLinkN D A₁ B ec₁ ec₂ (linkedCore A₁ (elabTyp D) B ec₁ ec₂)
 
 theorem core_linkn_typed
     {Γ₁ D : SCE.Typ} {Γc B : Core.Typ} {ec₁ ec₂ ec : Core.Exp}
-    (hlink : CoreLinkN Γc D ec₁ ec₂ ec)
+    (hlink : CoreLinkN D (elabTyp Γ₁) B ec₁ ec₂ ec)
     (hok : LinkOk Γ₁ D)
     (h₁ : HasType Γc ec₁ (elabTyp Γ₁))
     (h₂ : HasType Γc ec₂ (.arr (elabTyp D) B))
     : HasType Γc ec (.and (elabTyp Γ₁) B) := by
   cases hlink with
-  | link =>
-    simp [linkedCoreN]
-    apply HasType.tapp
-    · apply HasType.tlam
-      apply HasType.tmrg
-      · apply HasType.tbox
-        · exact HasType.tproj HasType.tquery Lookup.zero
-        · exact h₁
-      · apply HasType.tbox
-        · exact HasType.tproj HasType.tquery (Lookup.succ Lookup.zero)
-        · exact HasType.tapp h₂ (wireArg_typed hok h₁)
-    · exact HasType.tquery
+  | link => exact linkedCore_typed h₁ h₂ (wire_typed hok)
 
+/-- **Separate compilation (n-ary `linkall`).**  As above, with a whole import
+interface `D` wired by projection from the once-bound provider. -/
 theorem separate_compilation_n
     {Γ Γ₁ D B : SCE.Typ}
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ ec : Core.Exp}
@@ -1495,7 +1516,7 @@ theorem separate_compilation_n
     (helab₁ : elabExp Γ es₁ Γ₁ ec₁)
     (helab₂ : elabExp Γ es₂ (.sig (.TyArrM D (.TyIntf B))) ec₂)
     (hok : LinkOk Γ₁ D)
-    (hlink : CoreLinkN (elabTyp Γ) D ec₁ ec₂ ec)
+    (hlink : CoreLinkN D (elabTyp Γ₁) (elabTyp B) ec₁ ec₂ ec)
     (heval : S_Sem.BStep ρs (.mlinkn es₁ es₂) vs)
     (henv : elabExp SCE.Typ.top ρs Γ ρc)
     (henv_val : SCE.Value ρs)
@@ -1505,6 +1526,7 @@ theorem separate_compilation_n
     have hn := elabExp.mlinkn Γ Γ₁ D B es₁ es₂ ec₁ ec₂ helab₁ helab₂ hok
     exact semantic_preservation hn heval henv henv_val
 
+/-- **Separate compilation, n-ary, closed.** -/
 theorem separate_compilation_n_closed
     {Γ₁ D B : SCE.Typ}
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp}
@@ -1513,10 +1535,11 @@ theorem separate_compilation_n_closed
     (helab₂ : elabExp SCE.Typ.top es₂ (.sig (.TyArrM D (.TyIntf B))) ec₂)
     (hok : LinkOk Γ₁ D)
     (heval : S_Sem.BStep .unit (.mlinkn es₁ es₂) vs)
-    : ∃ vc, EBig .unit (linkedCoreN Core.Typ.top D ec₁ ec₂) vc
+    : ∃ vc, EBig .unit (linkedCore (elabTyp Γ₁) (elabTyp D) (elabTyp B) ec₁ ec₂) vc
            ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
-  have hlink : CoreLinkN Core.Typ.top D ec₁ ec₂ (linkedCoreN Core.Typ.top D ec₁ ec₂) :=
-    CoreLinkN.link _ _ _ _
+  have hlink : CoreLinkN D (elabTyp Γ₁) (elabTyp B) ec₁ ec₂
+      (linkedCore (elabTyp Γ₁) (elabTyp D) (elabTyp B) ec₁ ec₂) :=
+    CoreLinkN.link _ _ _ _ _
   exact separate_compilation_n helab₁ helab₂ hok hlink heval (elabExp.eunit .top) SCE.Value.vunit
 
 -- Determinism
