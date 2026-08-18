@@ -4,6 +4,7 @@ import LeanSce.Core.Typing
 import LeanSce.SCE.Syntax
 import LeanSce.SCE.Semantics
 import LeanSce.SCE.Elaboration
+import LeanSce.SCE.Preservation
 
 open SCE Core
 
@@ -722,51 +723,6 @@ theorem type_preservation
       simp [elabTyp] at ih ⊢
       exact HasType.tunfold ih rfl
 
-theorem value_typing_weakening
-    {v : SCE.Exp} {cv : Core.Exp} {A Γ₁ Γ₂ : SCE.Typ}
-    (hval : SCE.Value v)
-    (helab : elabExp Γ₁ v A cv)
-    : elabExp Γ₂ v A cv := by
-  induction hval generalizing Γ₁ Γ₂ A cv with
-  | vint =>
-    cases helab
-    exact elabExp.elit Γ₂ _
-  | vunit =>
-    cases helab
-    exact elabExp.eunit Γ₂
-  | vclos hv ih =>
-    cases helab with
-    | eclos _ _ _ _ _ _ _ _ hval' h1 h2 =>
-      exact elabExp.eclos Γ₂ _ _ _ _ _ _ _ hval' h1 h2
-  | vmclos hv ih =>
-    cases helab with
-    | mclos _ _ _ _ _ _ _ _ hval' h1 h2 =>
-      exact elabExp.mclos Γ₂ _ _ _ _ _ _ _ hval' h1 h2
-  | vmrg hv1 hv2 ih1 ih2 =>
-    cases helab with
-    | edmrg _ _ _ _ _ _ _ h1 h2 =>
-      exact elabExp.edmrg Γ₂ _ _ _ _ _ _ (ih1 h1) (ih2 h2)
-  | vlrec hv ih =>
-    cases helab with
-    | elrec _ _ _ _ _ h =>
-      exact elabExp.elrec Γ₂ _ _ _ _ (ih h)
-  | vinl hv ih =>
-    cases helab with
-    | einl _ _ _ _ _ h =>
-      exact elabExp.einl Γ₂ _ _ _ _ (ih h)
-  | vinr hv ih =>
-    cases helab with
-    | einr _ _ _ _ _ h =>
-      exact elabExp.einr Γ₂ _ _ _ _ (ih h)
-  | vfclos hv ih =>
-    cases helab with
-    | efclos _ _ _ _ _ _ _ _ hval' h1 h2 =>
-      exact elabExp.efclos Γ₂ _ _ _ _ _ _ _ hval' h1 h2
-  | vfold hv ih =>
-    cases helab with
-    | efold _ _ _ _ h =>
-      exact elabExp.efold Γ₂ _ _ _ (ih h)
-
 theorem source_lookupv_value
     {v v' : SCE.Exp} {n : Nat}
     (hval : SCE.Value v)
@@ -878,7 +834,7 @@ theorem sel_implies_label_in
   | dmrg_right _ ih =>
     cases hval with | vmrg hv1 hv2 =>
     cases helab with | edmrg _ A' B' _ _ ce1 ce2 h1 h2 =>
-    exact SCE.LabelIn.andr _ _ _ (ih hv2 (value_typing_weakening hv2 h2))
+    exact SCE.LabelIn.andr _ _ _ (ih hv2 (elab_value_weaken h2 hv2 _))
   | nmrg_left => cases hval
   | nmrg_right => cases hval
 
@@ -894,7 +850,7 @@ theorem lookup_preservation
     cases hval with | vmrg hv1 hv2 =>
     cases helab with | edmrg _ _ _ _ _ ce1 ce2 h1 h2 =>
     cases htyp_look with | zero =>
-    exact ⟨ce2, Core.LookupV.lvzero, value_typing_weakening hv2 h2⟩
+    exact ⟨ce2, Core.LookupV.lvzero, elab_value_weaken h2 hv2 _⟩
   | dmrg_succ _ ih =>
     cases hval with | vmrg hv1 hv2 =>
     cases helab with | edmrg _ _ _ _ _ ce1 ce2 h1 h2 =>
@@ -932,7 +888,7 @@ theorem sel_preservation
     cases helab with | edmrg _ A' B' _ _ ce1 ce2 h1 h2 =>
     rename_i v1 v2 v3 l'
     have h2_weak : elabExp SCE.Typ.top v2 B' ce2 :=
-      value_typing_weakening (Γ₂ := SCE.Typ.top) hv2 h2
+      elab_value_weaken h2 hv2 (SCE.Typ.top)
     cases htyp_look with
     | andr _ _ _ _ hrl hcond =>
       obtain ⟨vc', hlookvc, helab_v'⟩ := ih hv2 h2_weak hrl
@@ -994,8 +950,8 @@ theorem selpkg_elab {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
       obtain ⟨vcl, _, helab_vl⟩ := sel_preservation hv helab hsel hrl
       have hvl := source_sel_value hv hsel
       exact ⟨_, elabExp.edmrg _ _ _ _ _ _ _ helab'
-        (value_typing_weakening (SCE.Value.vlrec hvl)
-          (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl))⟩
+        (elab_value_weaken (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl)
+          (SCE.Value.vlrec hvl) _)⟩
 
 /-- The linearized wire evaluates by projection alone.  Generalized over the
 environment: wherever the provider *value* `vc₁` is reachable at index `shift`,
@@ -1032,8 +988,8 @@ theorem wire_eval {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D)
             (EBig.ebproj (EBig.equery (Core.Value.vmrg hρ' hcpkg'))
               (Core.LookupV.lvsucc hlook)) hrlv)),
         elabExp.edmrg _ _ _ _ _ _ _ helab'
-          (value_typing_weakening (SCE.Value.vlrec hvl)
-            (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl))⟩
+          (elab_value_weaken (elabExp.elrec SCE.Typ.top _ _ _ _ helab_vl)
+            (SCE.Value.vlrec hvl) _)⟩
 
 /-- The assembly lemma for the linearized composition: one evaluation of each
 operand, one wire evaluation under the spine-built environment
@@ -1154,7 +1110,7 @@ theorem semantic_preservation
           have hv2_val := eval_produces_value henv_val hstep2
           have hval_body_env := SCE.Value.vmrg hval_inner hv2_val
           have helab_body_env := elabExp.edmrg .top _ _ _ _ _ _
-            h_env_v1 (value_typing_weakening (Γ₂ := SCE.Typ.and .top ctx_clos) hv2_val helab_v2)
+            h_env_v1 (elab_value_weaken helab_v2 hv2_val (SCE.Typ.and .top ctx_clos))
           obtain ⟨vc_result, hbig3, helab_result⟩ := ih3 h_body_elab helab_body_env hval_body_env
           exact ⟨vc_result,
                  EBig.ebapp hbig1 hbig2 hbig3,
@@ -1172,7 +1128,7 @@ theorem semantic_preservation
           have hv2_val := eval_produces_value henv_val hstep2
           have hval_body_env := SCE.Value.vmrg hval_inner hv2_val
           have helab_body_env := elabExp.edmrg .top _ _ _ _ _ _
-            h_env_v1 (value_typing_weakening hv2_val helab_v2)
+            h_env_v1 (elab_value_weaken helab_v2 hv2_val _)
           obtain ⟨vc_result, hbig3, helab_result⟩ := ih3 h_body_elab helab_body_env hval_body_env
           exact ⟨vc_result,
                  EBig.ebapp hbig1 hbig2 hbig3,
@@ -1184,11 +1140,11 @@ theorem semantic_preservation
       have hv1_val := eval_produces_value henv_val hstep1
       have hval_mrg := SCE.Value.vmrg henv_val hv1_val
       have helab_mrg_env := elabExp.edmrg .top _ _ _ _ _ _
-        henv (value_typing_weakening hv1_val helab_v1)
+        henv (elab_value_weaken helab_v1 hv1_val _)
       obtain ⟨vc2, hbig2, helab_v2⟩ := ih2 h_elab2 helab_mrg_env hval_mrg
       have hv2_val := eval_produces_value hval_mrg hstep2
       have helab_result := elabExp.edmrg .top _ _ _ _ _ _
-        helab_v1 (value_typing_weakening hv2_val helab_v2)
+        helab_v1 (elab_value_weaken helab_v2 hv2_val _)
       exact ⟨.mrg vc1 vc2, EBig.ebmrg hbig1 hbig2, helab_result⟩
   | nmrg hval_ρ hstep1 hstep2 ih1 ih2 =>
     cases helab with
@@ -1198,7 +1154,7 @@ theorem semantic_preservation
       have hv1_val := eval_produces_value henv_val hstep1
       have hv2_val := eval_produces_value henv_val hstep2
       have helab_result := elabExp.edmrg .top _ _ _ _ _ _
-        helab_v1 (value_typing_weakening hv2_val helab_v2)
+        helab_v1 (elab_value_weaken helab_v2 hv2_val _)
       exact ⟨.mrg vc1 vc2,
              nmrgCore_eval (elab_value henv henv_val) hbig1 hbig2,
              helab_result⟩
@@ -1216,7 +1172,7 @@ theorem semantic_preservation
         | vlrec hval_inner =>
           have hval_mrg := SCE.Value.vmrg henv_val hval_inner
           have helab_mrg_env := elabExp.edmrg .top _ _ _ _ _ _
-            henv (value_typing_weakening hval_inner helab_inner)
+            henv (elab_value_weaken helab_inner hval_inner _)
           -- IH on e₂
           obtain ⟨vc_result, hbig2, helab_result⟩ := ih2 h_elab2 helab_mrg_env hval_mrg
           -- core big-step: app (lam ce2) (rproj ce1 l)
@@ -1233,7 +1189,7 @@ theorem semantic_preservation
       have hv1_val := eval_produces_value henv_val hstep1
       have hval_mrg := SCE.Value.vmrg henv_val hv1_val
       have helab_mrg_env := elabExp.edmrg .top _ _ _ _ _ _
-        henv (value_typing_weakening hv1_val helab_v1)
+        henv (elab_value_weaken helab_v1 hv1_val _)
       obtain ⟨vc_result, hbig2, helab_result⟩ := ih2 h_elab2 helab_mrg_env hval_mrg
       exact ⟨vc_result,
              EBig.ebapp (EBig.ebclos (elab_value henv henv_val)) hbig1 hbig2,
@@ -1301,12 +1257,12 @@ theorem semantic_preservation
         have hval_env := SCE.Value.vmrg hval_v2 hval_lrec
         have helab_lrec := elabExp.elrec .top _ _ _ l_name helab_vl
         have helab_lrec_weak :=
-          value_typing_weakening (Γ₂ := SCE.Typ.and .top ctx_inner) hval_lrec helab_lrec
+          elab_value_weaken helab_lrec hval_lrec (SCE.Typ.and .top ctx_inner)
         have helab_env := elabExp.edmrg .top _ _ _ _ _ _ h_env2 helab_lrec_weak
         obtain ⟨vc3, hbig3, helab_v3⟩ := ih2 h_body helab_env hval_env
         have hv3_val := eval_produces_value hval_env step2
         have helab_v3_weak :=
-          value_typing_weakening (Γ₂ := SCE.Typ.and .top Γ₁) hv3_val helab_v3
+          elab_value_weaken helab_v3 hv3_val (SCE.Typ.and .top Γ₁)
         have helab_result := elabExp.edmrg .top _ _ _ _ _ _
           helab_v1 helab_v3_weak
         have hρc := elab_value henv henv_val
@@ -1335,11 +1291,11 @@ theorem semantic_preservation
         have hvpkg := S_Sem.selpkg_value hsp hv1_val
         have hval_env := SCE.Value.vmrg hval_v2 hvpkg
         have helab_env := elabExp.edmrg .top _ _ _ _ _ _ h_env2
-          (value_typing_weakening hvpkg helab_pkg)
+          (elab_value_weaken helab_pkg hvpkg _)
         obtain ⟨vc3, hbig3, helab_v3⟩ := ih3 h_body helab_env hval_env
         have hv3_val := eval_produces_value hval_env bstep3
         have helab_result := elabExp.edmrg .top _ _ _ _ _ _
-          helab_v1 (value_typing_weakening hv3_val helab_v3)
+          helab_v1 (elab_value_weaken helab_v3 hv3_val _)
         exact ⟨.mrg vc1 vc3,
                linkStep_eval hρc hbig1 hbig2 hbigw hbig3,
                helab_result⟩
@@ -1364,7 +1320,7 @@ theorem semantic_preservation
         | vinl hv1 =>
           have hval_mrg := SCE.Value.vmrg henv_val hv1
           have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _
-            henv (value_typing_weakening hv1 h_v)
+            henv (elab_value_weaken h_v hv1 _)
           obtain ⟨vc, hbig2, helab_v⟩ := ih2 h_elab1 helab_mrg hval_mrg
           exact ⟨vc, EBig.ebcasel hbig1 hbig2, helab_v⟩
   | case_inr hval_ρ hstep1 hstep2 ih1 ih2 =>
@@ -1378,7 +1334,7 @@ theorem semantic_preservation
         | vinr hv1 =>
           have hval_mrg := SCE.Value.vmrg henv_val hv1
           have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _
-            henv (value_typing_weakening hv1 h_v)
+            henv (elab_value_weaken h_v hv1 _)
           obtain ⟨vc, hbig2, helab_v⟩ := ih2 h_elab2 helab_mrg hval_mrg
           exact ⟨vc, EBig.ebcaser hbig1 hbig2, helab_v⟩
   | fclos_val henv_src hval =>
@@ -1407,7 +1363,7 @@ theorem semantic_preservation
           have helab_body_env := elabExp.edmrg .top _ _ _ _ _ _
             (elabExp.edmrg .top _ _ _ _ _ _ h_env_v1
               (elabExp.efclos _ _ _ _ _ _ _ _ hval_inner h_env_v1 h_body_elab))
-            (value_typing_weakening hv2_val helab_v2)
+            (elab_value_weaken helab_v2 hv2_val _)
           obtain ⟨vc_result, hbig3, helab_result⟩ := ih3 h_body_elab helab_body_env
             (SCE.Value.vmrg (SCE.Value.vmrg hval_inner (SCE.Value.vfclos hval_inner)) hv2_val)
           exact ⟨vc_result,
@@ -1578,7 +1534,7 @@ private theorem sel_deterministic
       | dmrg_left hsel₂' => exact ih hv1 h1 hrl hsel₂'
       | dmrg_right hsel₂' =>
         have hlin := sel_implies_label_in hv2
-          (value_typing_weakening (Γ₂ := SCE.Typ.top) hv2 h2) hsel₂'
+          (elab_value_weaken h2 hv2 (SCE.Typ.top)) hsel₂'
         exact absurd hlin hcond
     | andr _ _ _ _ hrl hcond =>
       have hlin := sel_implies_label_in hv1 h1 hsel_inner
@@ -1586,7 +1542,7 @@ private theorem sel_deterministic
   | dmrg_right hsel_inner ih =>
     cases hval with | vmrg hv1 hv2 =>
     cases helab with | edmrg _ A' B' _ _ ce1 ce2 h1 h2 =>
-    have h2_weak := value_typing_weakening (Γ₂ := SCE.Typ.top) hv2 h2
+    have h2_weak := elab_value_weaken h2 hv2 (SCE.Typ.top)
     cases hlookup with
     | andr _ _ _ _ hrl hcond =>
       cases hsel₂ with
@@ -1683,7 +1639,7 @@ theorem bigstep_deterministic_gen
             have ⟨_, _, helab_arg⟩ := semantic_preservation h_elab2 hstep₁a henv henv_val
             have hval_body_env := SCE.Value.vmrg hval_inner hva
             have helab_body_env := elabExp.edmrg .top _ _ _ _ _ _ h_env_inner
-              (value_typing_weakening hva helab_arg)
+              (elab_value_weaken helab_arg hva _)
             exact ih₁b h_body helab_body_env hval_body_env hstep₂b
       | app_fclos _ hstep₂f hstep₂a hstep₂b =>
         have heq_f := ih₁f h_elab1 henv henv_val hstep₂f
@@ -1707,7 +1663,7 @@ theorem bigstep_deterministic_gen
             have ⟨_, _, helab_arg⟩ := semantic_preservation h_elab2 hstep₁a henv henv_val
             have hval_body_env := SCE.Value.vmrg hval_inner hva
             have helab_body_env := elabExp.edmrg .top _ _ _ _ _ _ h_env_inner
-              (value_typing_weakening hva helab_arg)
+              (elab_value_weaken helab_arg hva _)
             exact ih₁b h_body helab_body_env hval_body_env hstep₂b
   | dmrg hval₁ hstep₁a hstep₁b ih₁a ih₁b =>
     cases helab with
@@ -1720,7 +1676,7 @@ theorem bigstep_deterministic_gen
         have ⟨_, _, helab_v1⟩ := semantic_preservation h_elab1 hstep₁a henv henv_val
         have hval_mrg := SCE.Value.vmrg henv_val hv1_val
         have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _ henv
-          (value_typing_weakening hv1_val helab_v1)
+          (elab_value_weaken helab_v1 hv1_val _)
         have heq_b := ih₁b h_elab2 helab_mrg hval_mrg hstep₂b
         rw [heq_a, heq_b]
   | nmrg hval₁ hstep₁a hstep₁b ih₁a ih₁b =>
@@ -1759,7 +1715,7 @@ theorem bigstep_deterministic_gen
         have ⟨_, _, helab_v1⟩ := semantic_preservation h_elab1 hstep₁a henv henv_val
         have hval_mrg := SCE.Value.vmrg henv_val hv1_val
         have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _ henv
-          (value_typing_weakening hv1_val helab_v1)
+          (elab_value_weaken helab_v1 hv1_val _)
         exact ih₁b h_elab2 helab_mrg hval_mrg hstep₂b
   | openm hval₁ hstep₁a hstep₁b ih₁a ih₁b =>
     cases helab with
@@ -1776,7 +1732,7 @@ theorem bigstep_deterministic_gen
           | elrec _ _ _ _ _ helab_inner =>
             have hval_mrg := SCE.Value.vmrg henv_val hval_inner
             have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _ henv
-              (value_typing_weakening hval_inner helab_inner)
+              (elab_value_weaken helab_inner hval_inner _)
             exact ih₁b h_elab2 helab_mrg hval_mrg hstep₂b
   | mstruct_sandboxed hval₁ hstep₁ ih₁ =>
     cases helab with
@@ -1830,7 +1786,7 @@ theorem bigstep_deterministic_gen
           have hval_lrec := SCE.Value.vlrec (l := l_bstep) hvl_val
           have hval_env := SCE.Value.vmrg hval_v2 hval_lrec
           have helab_lrec_weak :=
-            value_typing_weakening (Γ₂ := SCE.Typ.and .top ctx_inner) hval_lrec helab_lrec
+            elab_value_weaken helab_lrec hval_lrec (SCE.Typ.and .top ctx_inner)
           have helab_env := elabExp.edmrg .top _ _ _ _ _ _ h_env2 helab_lrec_weak
           have heq_c := ih₁c h_body helab_env hval_env hstep₂c
           rw [heq_a, heq_c]
@@ -1854,7 +1810,7 @@ theorem bigstep_deterministic_gen
           have ⟨_, helab_pkg⟩ := selpkg_elab hok hsp₁ hv1_val helab_v1
           have hval_env := SCE.Value.vmrg hval_v2 hvpkg
           have helab_env := elabExp.edmrg .top _ _ _ _ _ _ h_env2
-            (value_typing_weakening hvpkg helab_pkg)
+            (elab_value_weaken helab_pkg hvpkg _)
           have heq_c := ih₁c h_body helab_env hval_env hstep₂c
           rw [heq_a, heq_c]
   | inl hval₁ hstep₁ ih₁ =>
@@ -1886,7 +1842,7 @@ theorem bigstep_deterministic_gen
           | einl _ _ _ _ _ h_v =>
             have hval_mrg := SCE.Value.vmrg henv_val hv1
             have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _
-              henv (value_typing_weakening hv1 h_v)
+              henv (elab_value_weaken h_v hv1 _)
             exact ih₁b h_elab1 helab_mrg hval_mrg hstep₂b
       | case_inr _ hstep₂a hstep₂b =>
         have heq_a := ih₁a h_elab henv henv_val hstep₂a
@@ -1906,7 +1862,7 @@ theorem bigstep_deterministic_gen
           | einr _ _ _ _ _ h_v =>
             have hval_mrg := SCE.Value.vmrg henv_val hv1
             have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _
-              henv (value_typing_weakening hv1 h_v)
+              henv (elab_value_weaken h_v hv1 _)
             exact ih₁b h_elab2 helab_mrg hval_mrg hstep₂b
       | case_inl _ hstep₂a hstep₂b =>
         have heq_a := ih₁a h_elab henv henv_val hstep₂a
@@ -1940,7 +1896,7 @@ theorem bigstep_deterministic_gen
             have helab_body_env := elabExp.edmrg .top _ _ _ _ _ _
               (elabExp.edmrg .top _ _ _ _ _ _ h_env_inner
                 (elabExp.efclos _ _ _ _ _ _ _ _ hval_inner h_env_inner h_body))
-              (value_typing_weakening hva helab_arg)
+              (elab_value_weaken helab_arg hva _)
             exact ih₁b h_body helab_body_env
               (SCE.Value.vmrg (SCE.Value.vmrg hval_inner (SCE.Value.vfclos hval_inner)) hva)
               hstep₂b
