@@ -20,6 +20,7 @@ import LeanSce.Seal.Sealing
 import LeanSce.Seal.Elaboration
 import LeanSce.Seal.Correctness
 import LeanSce.Seal.Linearization
+import LeanSce.Seal.Abstraction
 import LeanSce.Seal.Examples
 
 import LeanSce.SCE.Semantics
