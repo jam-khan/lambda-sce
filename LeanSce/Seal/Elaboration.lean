@@ -59,8 +59,14 @@ theorem sealStore_some {n : Nat} {R : SCE.Typ} (h : Δ n = some R)
     : sealStore Δ n = some (sealTyp R) := by
   simp [sealStore, h]
 
-theorem sealStore_noBrands : sealStore SCE.noBrands = noBrands := by
-  funext n; rfl
+theorem sealStore_noBrands : sealStore SCE.noBrands = noBrands := rfl
+
+theorem sealStore_le {Δ Δ' : SCE.BrandStore} (h : SCE.StoreLe Δ Δ')
+    : StoreLe (sealStore Δ) (sealStore Δ') := by
+  intro n R hn
+  simp only [sealStore, Option.map_eq_some_iff] at hn ⊢
+  obtain ⟨R₀, h₀, rfl⟩ := hn
+  exact ⟨R₀, h _ _ h₀, rfl⟩
 
 -- sealTyp commutes with brand substitution (the representation view of a signature is
 -- sealed pointwise).
@@ -353,6 +359,40 @@ theorem elabSeal_value {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce : Seal.Ex
   | ewrap _ hv' _ ih => exact Value.vwrap (ih hv')
   | emseal _ _ _ _ _ => nomatch hv
   | emunseal _ _ _ _ _ _ => nomatch hv
+
+-- ── Store weakening: an elaboration derivation survives extending the store ──────────
+
+-- Only ewrap/emseal/emunseal consult Δ, and each just needs its entry to be present.
+-- (This is what lets a client compiled with no knowledge of a representation be composed
+-- with the provider that has it.)
+theorem elabSeal_weaken_store {Δ' : SCE.BrandStore} (hle : SCE.StoreLe Δ Δ')
+    {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce : Seal.Exp}
+    (h : elabSeal Δ Γ es A ce) : elabSeal Δ' Γ es A ce := by
+  induction h with
+  | equery => exact elabSeal.equery
+  | elit _ _ => exact elabSeal.elit _ _
+  | eunit _ => exact elabSeal.eunit _
+  | eapp _ _ ih₁ ih₂ => exact elabSeal.eapp ih₁ ih₂
+  | eproj _ hl ih => exact elabSeal.eproj ih hl
+  | ebox _ _ ih₁ ih₂ => exact elabSeal.ebox ih₁ ih₂
+  | edmrg _ _ hd₁ hd₂ ih₁ ih₂ => exact elabSeal.edmrg ih₁ ih₂ hd₁ hd₂
+  | evmrg hv₁ hv₂ _ _ hd ih₁ ih₂ => exact elabSeal.evmrg hv₁ hv₂ ih₁ ih₂ hd
+  | enmrg _ _ hd₁ hd₂ ih₁ ih₂ => exact elabSeal.enmrg ih₁ ih₂ hd₁ hd₂
+  | elam _ hd ih => exact elabSeal.elam ih hd
+  | erproj _ hl ih => exact elabSeal.erproj ih hl
+  | eclos hv _ _ hd ih₁ ih₂ => exact elabSeal.eclos hv ih₁ ih₂ hd
+  | elrec _ ih => exact elabSeal.elrec ih
+  | eletb _ _ hd ih₁ ih₂ => exact elabSeal.eletb ih₁ ih₂ hd
+  | eopenm _ _ hd ih₁ ih₂ => exact elabSeal.eopenm ih₁ ih₂ hd
+  | emstruct hsb hop _ ih => exact elabSeal.emstruct hsb hop ih
+  | emfunctor hsb hop hdop _ ih => exact elabSeal.emfunctor hsb hop hdop ih
+  | emclos hv _ _ hd ih₁ ih₂ => exact elabSeal.emclos hv ih₁ ih₂ hd
+  | emapp _ _ ih₁ ih₂ => exact elabSeal.emapp ih₁ ih₂
+  | emlink _ _ hl hd₁ hd₂ ih₁ ih₂ => exact elabSeal.emlink ih₁ ih₂ hl hd₁ hd₂
+  | emlinkn _ _ hw hd₁ hd₂ ih₁ ih₂ => exact elabSeal.emlinkn ih₁ ih₂ hw hd₁ hd₂
+  | ewrap hΔ hv _ ih => exact elabSeal.ewrap (hle _ _ hΔ) hv ih
+  | emseal hΔ hnr hwf _ ih => exact elabSeal.emseal (hle _ _ hΔ) hnr hwf ih
+  | emunseal hΔ hnr hwf _ heq ih => exact elabSeal.emunseal (hle _ _ hΔ) hnr hwf ih heq
 
 -- ── Type preservation: elaborated code is well-typed λE^≤ ────────────────────────────
 

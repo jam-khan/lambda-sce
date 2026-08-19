@@ -1335,8 +1335,9 @@ theorem seal_separate_compilation_n_closed
 -- Evaluation of elaborated programs is deterministic on the λE^≤ side: two terminating
 -- runs of a well-typed term agree (the analogue of SCE's bigstep_deterministic, via
 -- gdeterminism + gpreservation).
-theorem mstep_value_determinism {venv e v₁ : Seal.Exp} (h₁ : MStep venv e v₁)
-    : ∀ {Γ A : Seal.Typ}, Seal.HasType (sealStore Δ) Γ e A → Seal.HasType (sealStore Δ) .top venv Γ → Value v₁
+theorem mstep_value_determinism {Δ' : Seal.BrandStore} {venv e v₁ : Seal.Exp}
+    (h₁ : MStep venv e v₁)
+    : ∀ {Γ A : Seal.Typ}, Seal.HasType Δ' Γ e A → Seal.HasType Δ' .top venv Γ → Value v₁
     → ∀ {v₂ : Seal.Exp}, MStep venv e v₂ → Value v₂ → v₁ = v₂ := by
   induction h₁ with
   | refl =>
@@ -1350,5 +1351,92 @@ theorem mstep_value_determinism {venv e v₁ : Seal.Exp} (h₁ : MStep venv e v�
       have heq := gdeterminism hs ht henv hs₂
       rw [← heq] at h₂'
       exact ih (gpreservation hs ht henv) henv hv₁ h₂' hv₂
+
+-- ── Sealed compilation units ─────────────────────────────────────────────────────────
+
+-- Sealed separate compilation: the provider unit is a *sealed* module `mseal n R Γ₁ es₁`
+-- (implementation es₁ at the representation view Γ₁[n:=R] of its interface Γ₁), the
+-- client a functor over the abstract interface, compiled in a store Δc that need not
+-- know the representation (`StoreLe Δc Δ`).  Both are elaborated separately; the target
+-- links the sealed provider exactly as `seal_separate_compilation` links a plain one.
+theorem seal_separate_compilation_sealed {Δc : SCE.BrandStore}
+    {Γ Γ₁ R A B : SCE.Typ} {n : Nat} {l : String} {es₁ es₂ : SCE.Exp} {ce₁ ce₂ : Seal.Exp}
+    {ρs vs : SCE.Exp} {ρc : Seal.Exp}
+    (hΔ : Δ n = some R) (hnr : NoRes (sealTyp R)) (hwf : WfSig n (sealTyp R) (sealTyp Γ₁))
+    (helab₁ : elabSeal Δ Γ es₁ (SCE.substBrand n R Γ₁) ce₁)
+    (hle : SCE.StoreLe Δc Δ)
+    (helab₂ : elabSeal Δc Γ es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ce₂)
+    (hlookup : SCE.SRLookup Γ₁ l A)
+    (hd₁ : Seal.Disj (sealTyp Γ₁) (sealTyp Γ))
+    (hd₂ : Seal.Disj (sealTyp Γ₁) (sealTyp B))
+    (heval : S_Sem.BStep ρs (.mlink (.mseal n R Γ₁ es₁) es₂) vs)
+    (henv_val : SCE.Value ρs) (henv : EVal Δ Γ ρs ρc)
+    : ∃ vc, MStep ρc
+        (.mrg (.seal n (sealTyp R) (sealTyp Γ₁) ce₁)
+          (.box (.anno .query (sealTyp Γ))
+            (.app ce₂ (.lrec l (.rproj (.seal n (sealTyp R) (sealTyp Γ₁) ce₁) l))))) vc
+      ∧ EVal Δ (.and Γ₁ B) vs vc :=
+  seal_semantic_preservation heval
+    (elabSeal.emlink (elabSeal.emseal hΔ hnr hwf helab₁)
+      (elabSeal_weaken_store hle helab₂) hlookup hd₁ hd₂) henv_val henv
+
+-- Related values at Int are the same literal on both sides.
+theorem eval_int {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ .int vs vc)
+    : ∃ i, vs = .lit i ∧ vc = .lit i := by
+  cases h with
+  | lit => exact ⟨_, rfl, rfl⟩
+  | gen htl _ _ => nomatch htl
+
+-- Source-level representation independence.  Two source providers p₁, p₂ of a signature
+-- S with abstract type α_n, over representations R₁, R₂, whose elaborations are related
+-- as implementations (LRg at the open brand, cf. Abstraction.lean); a source client c
+-- typed against S with every brand opaque (store noBrands), observing at Int.  Then the
+-- two sealed source programs `box (mseal n Rᵢ S pᵢ) c` compute the same literal — by
+-- semantic preservation, target-level representation independence, and determinism.
+theorem source_representation_independence
+    {Δ₁ Δ₂ : SCE.BrandStore} {η : Nat → Exp → Exp → Prop} {n : Nat} {R₁ R₂ : SCE.Typ}
+    (hb : OpenBrand (sealStore Δ₁) (sealStore Δ₂) η n (sealTyp R₁) (sealTyp R₂))
+    (hΔ₁ : Δ₁ n = some R₁) (hΔ₂ : Δ₂ n = some R₂)
+    {S : SCE.Typ} (hwf₁ : WfSig n (sealTyp R₁) (sealTyp S)) (hwf₂ : WfSig n (sealTyp R₂) (sealTyp S))
+    {p₁ p₂ : SCE.Exp} {pc₁ pc₂ : Seal.Exp}
+    (hp₁ : elabSeal Δ₁ .top p₁ (SCE.substBrand n R₁ S) pc₁)
+    (hp₂ : elabSeal Δ₂ .top p₂ (SCE.substBrand n R₂ S) pc₂)
+    (hrel : LRg (sealStore Δ₁) (sealStore Δ₂) η (some (n, sealTyp R₁, sealTyp R₂))
+      (sealTyp S) pc₁ pc₂)
+    {c : SCE.Exp} {cc : Seal.Exp} (hc : elabSeal SCE.noBrands S c .int cc)
+    {v₁ v₂ : SCE.Exp}
+    (hev₁ : S_Sem.BStep .unit (.box (.mseal n R₁ S p₁) c) v₁)
+    (hev₂ : S_Sem.BStep .unit (.box (.mseal n R₂ S p₂) c) v₂)
+    : ∃ i, v₁ = .lit i ∧ v₂ = .lit i := by
+  -- the client types with every brand opaque
+  have hcl : HasType noBrands (sealTyp S) cc .int := seal_type_preservation hc
+  obtain ⟨i, r₁, r₂⟩ := representation_independence hb hwf₁ hwf₂ hrel hcl
+  -- the two sealed programs elaborate and are simulated
+  have helab₁ : elabSeal Δ₁ .top (.box (.mseal n R₁ S p₁) c) .int
+      (.box (.seal n (sealTyp R₁) (sealTyp S) pc₁) cc) :=
+    elabSeal.ebox (elabSeal.emseal hΔ₁ hb.nores₁ hwf₁ hp₁)
+      (elabSeal_weaken_store (SCE.storele_noBrands Δ₁) hc)
+  have helab₂ : elabSeal Δ₂ .top (.box (.mseal n R₂ S p₂) c) .int
+      (.box (.seal n (sealTyp R₂) (sealTyp S) pc₂) cc) :=
+    elabSeal.ebox (elabSeal.emseal hΔ₂ hb.nores₂ hwf₂ hp₂)
+      (elabSeal_weaken_store (SCE.storele_noBrands Δ₂) hc)
+  obtain ⟨vc₁, run₁, hEV₁⟩ :=
+    seal_semantic_preservation hev₁ helab₁ SCE.Value.vunit EVal.unit
+  obtain ⟨vc₂, run₂, hEV₂⟩ :=
+    seal_semantic_preservation hev₂ helab₂ SCE.Value.vunit EVal.unit
+  -- determinism pins the simulated results to the RI literal
+  have heq₁ : vc₁ = .lit i :=
+    mstep_value_determinism run₁ (seal_type_preservation helab₁) HasType.tunit
+      (eval_value hEV₁) r₁ Value.vint
+  have heq₂ : vc₂ = .lit i :=
+    mstep_value_determinism run₂ (seal_type_preservation helab₂) HasType.tunit
+      (eval_value hEV₂) r₂ Value.vint
+  obtain ⟨i₁, hv₁, hc₁⟩ := eval_int hEV₁
+  obtain ⟨i₂, hv₂, hc₂⟩ := eval_int hEV₂
+  rw [heq₁] at hc₁
+  rw [heq₂] at hc₂
+  cases hc₁
+  cases hc₂
+  exact ⟨i, hv₁, hv₂⟩
 
 end Seal

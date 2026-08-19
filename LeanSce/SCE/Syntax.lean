@@ -71,6 +71,11 @@ def BrandStore := Nat → Option Typ
 
 def noBrands : BrandStore := fun _ => none
 
+-- Store extension: Δ' knows every representation Δ knows.
+def StoreLe (Δ Δ' : BrandStore) : Prop := ∀ n R, Δ n = some R → Δ' n = some R
+
+theorem storele_noBrands (Δ : BrandStore) : StoreLe noBrands Δ := fun _ _ h => nomatch h
+
 inductive Sandbox where
   | sandboxed : Sandbox
   | open_ : Sandbox
