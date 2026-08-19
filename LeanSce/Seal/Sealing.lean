@@ -21,38 +21,190 @@ namespace Seal
 
 variable {Δ Δ₁ Δ₂ : BrandStore} {η : Nat → Exp → Exp → Prop}
 
+-- ── Brand views ─────────────────────────────────────────────────────────────────────
+-- The relation is parametrized by an *open brand* `o`.  With `o = none` every brand is
+-- abstract: values at `brand m` are wrappers whose payloads are η-related.  With
+-- `o = some (n, R₁, R₂)` brand n is open: values at `brand n` are raw representations
+-- (typed at R₁ on the left, R₂ on the right) related by η n, and every type is read
+-- through the corresponding substitution.  `LR := LRg none` is the relation clients are
+-- reasoned about in; `LRg (some …)` is the relation the *implementations* of a sealed
+-- unit stand in before sealing.  The sealing coercion maps one to the other
+-- (Abstraction.lean), and `cast_lr` is proved once for both.
+abbrev BrandOpen := Option (Nat × Typ × Typ)
+
+def viewL : BrandOpen → Typ → Typ
+  | none, T => T
+  | some (n, R₁, _), T => substBrand n R₁ T
+
+def viewR : BrandOpen → Typ → Typ
+  | none, T => T
+  | some (n, _, R₂), T => substBrand n R₂ T
+
+-- Values related at an abstract brand: both wrappers, payloads η-related.
+def WrapRel (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (m : Nat) (v₁ v₂ : Exp) : Prop :=
+  HasType Δ₁ .top v₁ (.brand m) ∧ HasType Δ₂ .top v₂ (.brand m) ∧
+  ∃ w₁ w₂, v₁ = .wrap m w₁ ∧ v₂ = .wrap m w₂ ∧ η m w₁ w₂
+
+-- Values related at an open brand: raw representations, η-related.
+def RawRel (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (n : Nat) (R₁ R₂ : Typ)
+    (v₁ v₂ : Exp) : Prop :=
+  Value v₁ ∧ Value v₂ ∧ HasType Δ₁ .top v₁ R₁ ∧ HasType Δ₂ .top v₂ R₂ ∧ η n v₁ v₂
+
 -- The relation, by structural recursion on the type.  Every clause that cannot re-derive
 -- the values' typing carries it (& needs the consistency baked into the typing; arrows
 -- carry their closure typing; brands carry it because the payload's typing lives in the
 -- respective store).  The arrow clause is extensional and phrased at the application
 -- level with existential runs, over arbitrary value environments: the semantics' internal
 -- argument-cast at the closure's annotation input is thereby absorbed.
-def LR (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) : Typ → Exp → Exp → Prop
+def LRg (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (o : BrandOpen)
+    : Typ → Exp → Exp → Prop
   | .int, v₁, v₂ => ∃ i, v₁ = .lit i ∧ v₂ = .lit i
   | .top, v₁, v₂ => v₁ = .unit ∧ v₂ = .unit
-  | .brand n, v₁, v₂ =>
-      HasType Δ₁ .top v₁ (.brand n) ∧ HasType Δ₂ .top v₂ (.brand n) ∧
-      ∃ w₁ w₂, v₁ = .wrap n w₁ ∧ v₂ = .wrap n w₂ ∧ η n w₁ w₂
+  | .brand m, v₁, v₂ =>
+      match o with
+      | some (n, R₁, R₂) =>
+          if m = n then RawRel Δ₁ Δ₂ η n R₁ R₂ v₁ v₂ else WrapRel Δ₁ Δ₂ η m v₁ v₂
+      | none => WrapRel Δ₁ Δ₂ η m v₁ v₂
   | .and A B, v₁, v₂ =>
-      HasType Δ₁ .top v₁ (.and A B) ∧ HasType Δ₂ .top v₂ (.and A B) ∧
-      ∃ a₁ b₁ a₂ b₂, v₁ = .mrg a₁ b₁ ∧ v₂ = .mrg a₂ b₂ ∧ LR Δ₁ Δ₂ η A a₁ a₂ ∧ LR Δ₁ Δ₂ η B b₁ b₂
+      HasType Δ₁ .top v₁ (viewL o (.and A B)) ∧ HasType Δ₂ .top v₂ (viewR o (.and A B)) ∧
+      ∃ a₁ b₁ a₂ b₂, v₁ = .mrg a₁ b₁ ∧ v₂ = .mrg a₂ b₂ ∧
+        LRg Δ₁ Δ₂ η o A a₁ a₂ ∧ LRg Δ₁ Δ₂ η o B b₁ b₂
   | .rcd l A, v₁, v₂ =>
-      ∃ w₁ w₂, v₁ = .lrec l w₁ ∧ v₂ = .lrec l w₂ ∧ LR Δ₁ Δ₂ η A w₁ w₂
+      ∃ w₁ w₂, v₁ = .lrec l w₁ ∧ v₂ = .lrec l w₂ ∧ LRg Δ₁ Δ₂ η o A w₁ w₂
   | .arr A B, v₁, v₂ =>
       Value v₁ ∧ Value v₂ ∧
-      HasType Δ₁ .top v₁ (.arr A B) ∧ HasType Δ₂ .top v₂ (.arr A B) ∧
-      ∀ u₁ u₂, LR Δ₁ Δ₂ η A u₁ u₂ →
+      HasType Δ₁ .top v₁ (viewL o (.arr A B)) ∧ HasType Δ₂ .top v₂ (viewR o (.arr A B)) ∧
+      ∀ u₁ u₂, LRg Δ₁ Δ₂ η o A u₁ u₂ →
         ∀ ρ₁ ρ₂, Value ρ₁ → Value ρ₂ →
-          ∃ w₁ w₂, MStep ρ₁ (.app v₁ u₁) w₁ ∧ MStep ρ₂ (.app v₂ u₂) w₂ ∧ LR Δ₁ Δ₂ η B w₁ w₂
+          ∃ w₁ w₂, MStep ρ₁ (.app v₁ u₁) w₁ ∧ MStep ρ₂ (.app v₂ u₂) w₂ ∧
+            LRg Δ₁ Δ₂ η o B w₁ w₂
 
-theorem lr_value : {T : Typ} → {v₁ v₂ : Exp} → LR Δ₁ Δ₂ η T v₁ v₂ → Value v₁ ∧ Value v₂
+-- The client-facing relation: every brand abstract.
+abbrev LR (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) : Typ → Exp → Exp → Prop :=
+  LRg Δ₁ Δ₂ η none
+
+-- What an open brand must satisfy for casting to respect the relation: the
+-- representations are not top-like (so top-likeness of a type is the same in the abstract
+-- and the representation views), and η n is closed under casting the representations at
+-- their own types (self-casts are the identity up to top-like collapse, so this is a mild
+-- admissibility condition; it is what beta's argument-cast at a proxy's annotation needs).
+def OpenAdm (η : Nat → Exp → Exp → Prop) (o : BrandOpen) : Prop :=
+  ∀ n R₁ R₂, o = some (n, R₁, R₂) →
+    ¬ TopLike R₁ ∧ ¬ TopLike R₂ ∧
+    ∀ w₁ w₂, η n w₁ w₂ → ∀ w₁' w₂', Cast w₁ R₁ w₁' → Cast w₂ R₂ w₂' → η n w₁' w₂'
+
+theorem openadm_none : OpenAdm η none := fun _ _ _ h => nomatch h
+
+-- View lemmas: the views commute with every type former (only brands are affected).
+theorem viewL_int {o : BrandOpen} : viewL o .int = .int := by cases o with | none => rfl | some p => rfl
+theorem viewR_int {o : BrandOpen} : viewR o .int = .int := by cases o with | none => rfl | some p => rfl
+theorem viewL_top {o : BrandOpen} : viewL o .top = .top := by cases o with | none => rfl | some p => rfl
+theorem viewR_top {o : BrandOpen} : viewR o .top = .top := by cases o with | none => rfl | some p => rfl
+theorem viewL_arr {o : BrandOpen} {A B : Typ} : viewL o (.arr A B) = .arr (viewL o A) (viewL o B) := by
+  cases o with | none => rfl | some p => rfl
+theorem viewR_arr {o : BrandOpen} {A B : Typ} : viewR o (.arr A B) = .arr (viewR o A) (viewR o B) := by
+  cases o with | none => rfl | some p => rfl
+theorem viewL_and {o : BrandOpen} {A B : Typ} : viewL o (.and A B) = .and (viewL o A) (viewL o B) := by
+  cases o with | none => rfl | some p => rfl
+theorem viewR_and {o : BrandOpen} {A B : Typ} : viewR o (.and A B) = .and (viewR o A) (viewR o B) := by
+  cases o with | none => rfl | some p => rfl
+theorem viewL_rcd {o : BrandOpen} {l : String} {A : Typ} : viewL o (.rcd l A) = .rcd l (viewL o A) := by
+  cases o with | none => rfl | some p => rfl
+theorem viewR_rcd {o : BrandOpen} {l : String} {A : Typ} : viewR o (.rcd l A) = .rcd l (viewR o A) := by
+  cases o with | none => rfl | some p => rfl
+
+-- Substitution preserves subtyping (brands are subtypes only of themselves and ε).
+theorem sub_subst {n : Nat} {R : Typ} {A B : Typ} (h : Sub A B)
+    : Sub (substBrand n R A) (substBrand n R B) := by
+  induction h with
+  | sint => exact Sub.sint
+  | stop => exact Sub.stop
+  | sarr _ _ ih₁ ih₂ => exact Sub.sarr ih₁ ih₂
+  | sandl _ ih => exact Sub.sandl ih
+  | sandr _ ih => exact Sub.sandr ih
+  | sand _ _ ih₁ ih₂ => exact Sub.sand ih₁ ih₂
+  | srcd _ ih => exact Sub.srcd ih
+  | sbrand => exact sub_refl _
+
+theorem sub_viewL {o : BrandOpen} {A B : Typ} (h : Sub A B) : Sub (viewL o A) (viewL o B) := by
+  cases o with
+  | none => exact h
+  | some p => obtain ⟨n, R₁, R₂⟩ := p; exact sub_subst h
+
+theorem sub_viewR {o : BrandOpen} {A B : Typ} (h : Sub A B) : Sub (viewR o A) (viewR o B) := by
+  cases o with
+  | none => exact h
+  | some p => obtain ⟨n, R₁, R₂⟩ := p; exact sub_subst h
+
+-- Top-likeness under substitution: preserved always; reflected when the representation
+-- is not top-like.
+theorem toplike_subst {n : Nat} {R : Typ} {A : Typ} (h : TopLike A)
+    : TopLike (substBrand n R A) := by
+  induction h with
+  | tltop => exact TopLike.tltop
+  | tland _ _ ih₁ ih₂ => exact TopLike.tland ih₁ ih₂
+  | tlarr _ ih => exact TopLike.tlarr ih
+  | tlrcd _ ih => exact TopLike.tlrcd ih
+
+theorem toplike_subst_inv {n : Nat} {R : Typ} (hR : ¬ TopLike R) : {A : Typ}
+    → TopLike (substBrand n R A) → TopLike A
+  | .int, h => nomatch h
+  | .top, _ => TopLike.tltop
+  | .brand m, h => by
+    by_cases hm : m = n
+    · simp only [substBrand, hm, if_true] at h; exact absurd h hR
+    · simp only [substBrand, hm, if_false] at h; nomatch h
+  | .arr A B, h => by
+    cases h with | tlarr h' => exact TopLike.tlarr (toplike_subst_inv hR h')
+  | .and A B, h => by
+    cases h with | tland h₁ h₂ => exact TopLike.tland (toplike_subst_inv hR h₁) (toplike_subst_inv hR h₂)
+  | .rcd l A, h => by
+    cases h with | tlrcd h' => exact TopLike.tlrcd (toplike_subst_inv hR h')
+
+theorem toplike_viewL {o : BrandOpen} {A : Typ} (h : TopLike A) : TopLike (viewL o A) := by
+  cases o with
+  | none => exact h
+  | some p => obtain ⟨n, R₁, R₂⟩ := p; exact toplike_subst h
+
+theorem toplike_viewR {o : BrandOpen} {A : Typ} (h : TopLike A) : TopLike (viewR o A) := by
+  cases o with
+  | none => exact h
+  | some p => obtain ⟨n, R₁, R₂⟩ := p; exact toplike_subst h
+
+theorem toplike_viewL_inv {o : BrandOpen} (hadm : OpenAdm η o) {A : Typ}
+    (h : TopLike (viewL o A)) : TopLike A := by
+  cases o with
+  | none => exact h
+  | some p =>
+    obtain ⟨n, R₁, R₂⟩ := p
+    exact toplike_subst_inv (hadm n R₁ R₂ rfl).1 h
+
+theorem toplike_viewR_inv {o : BrandOpen} (hadm : OpenAdm η o) {A : Typ}
+    (h : TopLike (viewR o A)) : TopLike A := by
+  cases o with
+  | none => exact h
+  | some p =>
+    obtain ⟨n, R₁, R₂⟩ := p
+    exact toplike_subst_inv (hadm n R₁ R₂ rfl).2.1 h
+
+theorem lr_value {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁ Δ₂ η o T v₁ v₂
+    → Value v₁ ∧ Value v₂
   | .int, _, _, ⟨_, h₁, h₂⟩ => by subst h₁; subst h₂; exact ⟨Value.vint, Value.vint⟩
   | .top, _, _, ⟨h₁, h₂⟩ => by subst h₁; subst h₂; exact ⟨Value.vunit, Value.vunit⟩
-  | .brand _, _, _, ⟨ht₁, ht₂, _, _, h₁, h₂, _⟩ => by
-    subst h₁; subst h₂
-    cases ht₁ with | twrap _ hv₁ _ =>
-    cases ht₂ with | twrap _ hv₂ _ =>
-    exact ⟨Value.vwrap hv₁, Value.vwrap hv₂⟩
+  | .brand m, v₁, v₂, h => by
+    have wrap_val : WrapRel Δ₁ Δ₂ η m v₁ v₂ → Value v₁ ∧ Value v₂ := by
+      intro ⟨ht₁, ht₂, _, _, h₁, h₂, _⟩
+      subst h₁; subst h₂
+      cases ht₁ with | twrap _ hv₁ _ =>
+      cases ht₂ with | twrap _ hv₂ _ =>
+      exact ⟨Value.vwrap hv₁, Value.vwrap hv₂⟩
+    cases o with
+    | none => exact wrap_val h
+    | some p =>
+      obtain ⟨n, R₁, R₂⟩ := p
+      by_cases hm : m = n
+      · simp only [LRg, hm, if_true] at h; exact ⟨h.1, h.2.1⟩
+      · simp only [LRg, hm, if_false] at h; exact wrap_val h
   | .and A B, _, _, ⟨_, _, a₁, b₁, a₂, b₂, h₁, h₂, hA, hB⟩ => by
     subst h₁; subst h₂
     exact ⟨Value.vmrg (lr_value hA).1 (lr_value hB).1,
@@ -62,14 +214,28 @@ theorem lr_value : {T : Typ} → {v₁ v₂ : Exp} → LR Δ₁ Δ₂ η T v₁ 
     exact ⟨Value.vrcd (lr_value hA).1, Value.vrcd (lr_value hA).2⟩
   | .arr A B, _, _, ⟨hv₁, hv₂, _, _, _⟩ => ⟨hv₁, hv₂⟩
 
-theorem lr_typed : {T : Typ} → {v₁ v₂ : Exp} → LR Δ₁ Δ₂ η T v₁ v₂
-    → HasType Δ₁ .top v₁ T ∧ HasType Δ₂ .top v₂ T
-  | .int, _, _, ⟨_, h₁, h₂⟩ => by subst h₁; subst h₂; exact ⟨HasType.tint, HasType.tint⟩
-  | .top, _, _, ⟨h₁, h₂⟩ => by subst h₁; subst h₂; exact ⟨HasType.tunit, HasType.tunit⟩
-  | .brand _, _, _, ⟨ht₁, ht₂, _⟩ => ⟨ht₁, ht₂⟩
+theorem lr_typed {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁ Δ₂ η o T v₁ v₂
+    → HasType Δ₁ .top v₁ (viewL o T) ∧ HasType Δ₂ .top v₂ (viewR o T)
+  | .int, _, _, ⟨_, h₁, h₂⟩ => by
+    subst h₁; subst h₂; rw [viewL_int, viewR_int]; exact ⟨HasType.tint, HasType.tint⟩
+  | .top, _, _, ⟨h₁, h₂⟩ => by
+    subst h₁; subst h₂; rw [viewL_top, viewR_top]; exact ⟨HasType.tunit, HasType.tunit⟩
+  | .brand m, v₁, v₂, h => by
+    cases o with
+    | none => exact ⟨h.1, h.2.1⟩
+    | some p =>
+      obtain ⟨n, R₁, R₂⟩ := p
+      by_cases hm : m = n
+      · simp only [LRg, hm, if_true] at h
+        simp only [viewL, viewR, substBrand, hm, if_true]
+        exact ⟨h.2.2.1, h.2.2.2.1⟩
+      · simp only [LRg, hm, if_false] at h
+        simp only [viewL, viewR, substBrand, hm, if_false]
+        exact ⟨h.1, h.2.1⟩
   | .and _ _, _, _, ⟨ht₁, ht₂, _⟩ => ⟨ht₁, ht₂⟩
   | .rcd l A, _, _, ⟨w₁, w₂, h₁, h₂, hA⟩ => by
     subst h₁; subst h₂
+    rw [viewL_rcd, viewR_rcd]
     exact ⟨HasType.trcd (lr_typed hA).1, HasType.trcd (lr_typed hA).2⟩
   | .arr _ _, _, _, ⟨_, _, ht₁, ht₂, _⟩ => ⟨ht₁, ht₂⟩
 
@@ -330,54 +496,74 @@ theorem cast_merge_eq_r {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' :
 
 -- ── The generator is self-related at top-like types ──────────────────────────────────
 
-theorem toplike_lr_gen {D : Typ} (htl : TopLike D) : LR Δ₁ Δ₂ η D (genVal D) (genVal D) := by
+theorem toplike_lr_gen {o : BrandOpen} (hadm : OpenAdm η o) {D : Typ} (htl : TopLike D)
+    : LRg Δ₁ Δ₂ η o D (genVal (viewL o D)) (genVal (viewR o D)) := by
   induction htl with
-  | tltop => exact ⟨rfl, rfl⟩
+  | tltop => rw [viewL_top, viewR_top]; exact ⟨rfl, rfl⟩
   | tland h₁ h₂ ih₁ ih₂ =>
-    exact ⟨genVal_typed (TopLike.tland h₁ h₂) .top, genVal_typed (TopLike.tland h₁ h₂) .top,
+    rw [viewL_and, viewR_and]
+    exact ⟨by rw [viewL_and]; exact genVal_typed (TopLike.tland (toplike_viewL h₁) (toplike_viewL h₂)) .top,
+      by rw [viewR_and]; exact genVal_typed (TopLike.tland (toplike_viewR h₁) (toplike_viewR h₂)) .top,
       _, _, _, _, rfl, rfl, ih₁, ih₂⟩
-  | tlrcd h ih => exact ⟨_, _, rfl, rfl, ih⟩
+  | tlrcd h ih => rw [viewL_rcd, viewR_rcd]; exact ⟨_, _, rfl, rfl, ih⟩
   | tlarr h ih =>
     rename_i A₀ D'
+    rw [viewL_arr, viewR_arr]
     refine ⟨genVal_value _, genVal_value _,
-      genVal_typed (TopLike.tlarr h) .top, genVal_typed (TopLike.tlarr h) .top,
+      by rw [viewL_arr]; exact genVal_typed (TopLike.tlarr (toplike_viewL h)) .top,
+      by rw [viewR_arr]; exact genVal_typed (TopLike.tlarr (toplike_viewR h)) .top,
       ?_⟩
     intro u₁ u₂ hu ρ₁ ρ₂ hρ₁ hρ₂
     -- both applications run: beta (cast the argument at A₀), body is the generator of D',
     -- reseal at D' collapses to the generator again
     have hvu := lr_value hu
     have htu := lr_typed hu
-    obtain ⟨u₁', hc₁⟩ := cast_progress hvu.1 htu.1 (sub_refl A₀)
-    obtain ⟨u₂', hc₂⟩ := cast_progress hvu.2 htu.2 (sub_refl A₀)
-    obtain ⟨g', hcg⟩ := cast_progress (genVal_value D') (genVal_typed (Δ := Δ₁) h .top) (sub_refl D')
-    have hg' : g' = genVal D' := (toplike_gen_cast h hcg).1
-    have hrun : ∀ (ρ u u' : Exp), Value ρ → Value u → Cast u A₀ u' →
-        MStep ρ (.app (genVal (.arr A₀ D')) u) g' := by
-      intro ρ u u' hρ hvu' hc
+    obtain ⟨u₁', hc₁⟩ := cast_progress hvu.1 htu.1 (sub_refl _)
+    obtain ⟨u₂', hc₂⟩ := cast_progress hvu.2 htu.2 (sub_refl _)
+    have hrun : ∀ (T : Typ) (ρ u u' : Exp), TopLike T → Value ρ → Value u → Cast u (viewL o A₀) u' →
+        MStep ρ (.app (genVal (.arr (viewL o A₀) T)) u) (genVal T) := by
+      intro T ρ u u' hT hρ hvu' hc
+      obtain ⟨g', hcg⟩ := cast_progress (genVal_value T) (genVal_typed (Δ := Δ₁) hT .top) (sub_refl T)
+      have hg' : g' = genVal T := (toplike_gen_cast hT hcg).1
+      subst hg'
       refine MStep.step (Step.sbeta hρ Value.vunit hvu' hc) ?_
       have hvm : Value (.mrg .unit u') := Value.vmrg Value.vunit (cast_value hvu' hc)
-      refine MStep.step (Step.sboxr hρ hvm (Step.sannov hvm (genVal_value D') hcg)) ?_
-      exact MStep.step (Step.sboxv hρ hvm (cast_value (genVal_value D') hcg)) MStep.refl
-    rw [hg'] at hrun
-    exact ⟨genVal D', genVal D', hrun ρ₁ u₁ u₁' hρ₁ hvu.1 hc₁,
-      hrun ρ₂ u₂ u₂' hρ₂ hvu.2 hc₂, ih⟩
+      refine MStep.step (Step.sboxr hρ hvm (Step.sannov hvm (genVal_value T) hcg)) ?_
+      exact MStep.step (Step.sboxv hρ hvm (cast_value (genVal_value T) hcg)) MStep.refl
+    have hrun' : ∀ (T : Typ) (ρ u u' : Exp), TopLike T → Value ρ → Value u → Cast u (viewR o A₀) u' →
+        MStep ρ (.app (genVal (.arr (viewR o A₀) T)) u) (genVal T) := by
+      intro T ρ u u' hT hρ hvu' hc
+      obtain ⟨g', hcg⟩ := cast_progress (genVal_value T) (genVal_typed (Δ := Δ₁) hT .top) (sub_refl T)
+      have hg' : g' = genVal T := (toplike_gen_cast hT hcg).1
+      subst hg'
+      refine MStep.step (Step.sbeta hρ Value.vunit hvu' hc) ?_
+      have hvm : Value (.mrg .unit u') := Value.vmrg Value.vunit (cast_value hvu' hc)
+      refine MStep.step (Step.sboxr hρ hvm (Step.sannov hvm (genVal_value T) hcg)) ?_
+      exact MStep.step (Step.sboxv hρ hvm (cast_value (genVal_value T) hcg)) MStep.refl
+    exact ⟨genVal (viewL o D'), genVal (viewR o D'),
+      hrun _ ρ₁ u₁ u₁' (toplike_viewL h) hρ₁ hvu.1 hc₁,
+      hrun' _ ρ₂ u₂ u₂' (toplike_viewR h) hρ₂ hvu.2 hc₂, ih⟩
 
 -- ── Casting is a coercion between the relations ──────────────────────────────────────
 -- The semantic content of sealing.  Single structural induction on the subtyping
 -- derivation: sandl/sandr reconcile the merge-peeling casts via cast_merge_eq;
 -- the arrow case rebuilds the applications' runs, using cast transitivity to identify
--- the argument casts and to compose the reseal at the wider codomain.
-theorem cast_lr {B A : Typ} (hs : Sub B A) {v₁ v₂ w₁ w₂ : Exp} (hlr : LR Δ₁ Δ₂ η B v₁ v₂)
-    (c₁ : Cast v₁ A w₁) (c₂ : Cast v₂ A w₂) : LR Δ₁ Δ₂ η A w₁ w₂ := by
+-- the argument casts and to compose the reseal at the wider codomain.  Stated for any
+-- open brand: the casts happen at the *viewed* types (that is what the semantics does).
+theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
+    {v₁ v₂ w₁ w₂ : Exp} (hlr : LRg Δ₁ Δ₂ η o B v₁ v₂)
+    (c₁ : Cast v₁ (viewL o A) w₁) (c₂ : Cast v₂ (viewR o A) w₂) : LRg Δ₁ Δ₂ η o A w₁ w₂ := by
   induction hs generalizing v₁ v₂ w₁ w₂ with
   | sint =>
     obtain ⟨i, e₁, e₂⟩ := hlr
     subst e₁; subst e₂
+    rw [viewL_int] at c₁; rw [viewR_int] at c₂
     cases c₁ with
     | cint =>
       cases c₂ with
       | cint => exact ⟨i, rfl, rfl⟩
   | stop =>
+    rw [viewL_top] at c₁; rw [viewR_top] at c₂
     cases c₁ with
     | ctop =>
       cases c₂ with
@@ -389,12 +575,13 @@ theorem cast_lr {B A : Typ} (hs : Sub B A) {v₁ v₂ w₁ w₂ : Exp} (hlr : LR
   | sand hs₁ hs₂ ih₁ ih₂ =>
     have hv := lr_value hlr
     have ht := lr_typed hlr
+    rw [viewL_and] at c₁; rw [viewR_and] at c₂
     cases c₁ with
     | cand c₁ₗ c₁ᵣ =>
       cases c₂ with
       | cand c₂ₗ c₂ᵣ =>
-        exact ⟨cast_preservation (Cast.cand c₁ₗ c₁ᵣ) hv.1 ht.1,
-          cast_preservation (Cast.cand c₂ₗ c₂ᵣ) hv.2 ht.2,
+        exact ⟨by rw [viewL_and]; exact cast_preservation (Cast.cand c₁ₗ c₁ᵣ) hv.1 ht.1,
+          by rw [viewR_and]; exact cast_preservation (Cast.cand c₂ₗ c₂ᵣ) hv.2 ht.2,
           _, _, _, _, rfl, rfl, ih₁ hlr c₁ₗ c₂ₗ, ih₂ hlr c₁ᵣ c₂ᵣ⟩
       | cmrgl hord _ => nomatch hord
       | cmrgr hord _ => nomatch hord
@@ -403,65 +590,93 @@ theorem cast_lr {B A : Typ} (hs : Sub B A) {v₁ v₂ w₁ w₂ : Exp} (hlr : LR
   | sandl hs' ih =>
     obtain ⟨htm₁, htm₂, a₁, b₁, a₂, b₂, e₁, e₂, hA₁, hA₂⟩ := hlr
     subst e₁; subst e₂
+    rw [viewL_and] at htm₁; rw [viewR_and] at htm₂
     have hva := lr_value hA₁
     have hta := lr_typed hA₁
     have hvb := lr_value hA₂
-    obtain ⟨w₁', c₁'⟩ := cast_progress hva.1 hta.1 hs'
-    obtain ⟨w₂', c₂'⟩ := cast_progress hva.2 hta.2 hs'
+    obtain ⟨w₁', c₁'⟩ := cast_progress hva.1 hta.1 (sub_viewL hs')
+    obtain ⟨w₂', c₂'⟩ := cast_progress hva.2 hta.2 (sub_viewR hs')
     rw [cast_merge_eq_l (Value.vmrg hva.1 hvb.1) htm₁ c₁ c₁',
         cast_merge_eq_l (Value.vmrg hva.2 hvb.2) htm₂ c₂ c₂']
     exact ih hA₁ c₁' c₂'
   | sandr hs' ih =>
     obtain ⟨htm₁, htm₂, a₁, b₁, a₂, b₂, e₁, e₂, hA₁, hA₂⟩ := hlr
     subst e₁; subst e₂
+    rw [viewL_and] at htm₁; rw [viewR_and] at htm₂
     have hva := lr_value hA₁
     have hvb := lr_value hA₂
     have htb := lr_typed hA₂
-    obtain ⟨w₁', c₁'⟩ := cast_progress hvb.1 htb.1 hs'
-    obtain ⟨w₂', c₂'⟩ := cast_progress hvb.2 htb.2 hs'
+    obtain ⟨w₁', c₁'⟩ := cast_progress hvb.1 htb.1 (sub_viewL hs')
+    obtain ⟨w₂', c₂'⟩ := cast_progress hvb.2 htb.2 (sub_viewR hs')
     rw [cast_merge_eq_r (Value.vmrg hva.1 hvb.1) htm₁ c₁ c₁',
         cast_merge_eq_r (Value.vmrg hva.2 hvb.2) htm₂ c₂ c₂']
     exact ih hA₂ c₁' c₂'
   | srcd hs' ih =>
     obtain ⟨u₁, u₂, e₁, e₂, hInner⟩ := hlr
     subst e₁; subst e₂
+    rw [viewL_rcd] at c₁; rw [viewR_rcd] at c₂
     cases c₁ with
     | crcd d₁ =>
       cases c₂ with
       | crcd d₂ => exact ⟨_, _, rfl, rfl, ih hInner d₁ d₂⟩
   | sbrand =>
-    obtain ⟨ht₁, ht₂, u₁, u₂, e₁, e₂, hη⟩ := hlr
-    subst e₁; subst e₂
-    cases c₁ with
-    | cwrap =>
-      cases c₂ with
-      | cwrap => exact ⟨ht₁, ht₂, u₁, u₂, rfl, rfl, hη⟩
+    rename_i m
+    -- abstract brand: casts are the identity on wrappers; open brand: η is cast-closed
+    have wrap_case : ∀ {v₁ v₂ w₁ w₂ : Exp}, WrapRel Δ₁ Δ₂ η m v₁ v₂
+        → Cast v₁ (.brand m) w₁ → Cast v₂ (.brand m) w₂ → WrapRel Δ₁ Δ₂ η m w₁ w₂ := by
+      intro v₁ v₂ w₁ w₂ ⟨ht₁, ht₂, u₁, u₂, e₁, e₂, hη⟩ c₁ c₂
+      subst e₁; subst e₂
+      cases c₁ with
+      | cwrap =>
+        cases c₂ with
+        | cwrap => exact ⟨ht₁, ht₂, u₁, u₂, rfl, rfl, hη⟩
+    cases o with
+    | none => exact wrap_case hlr c₁ c₂
+    | some p =>
+      obtain ⟨n, R₁, R₂⟩ := p
+      by_cases hm : m = n
+      · simp only [LRg, hm, if_true] at hlr ⊢
+        simp only [viewL, viewR, substBrand, hm, if_true] at c₁ c₂
+        obtain ⟨hv₁, hv₂, ht₁, ht₂, hη⟩ := hlr
+        exact ⟨cast_value hv₁ c₁, cast_value hv₂ c₂, cast_preservation c₁ hv₁ ht₁,
+          cast_preservation c₂ hv₂ ht₂, (hadm n R₁ R₂ rfl).2.2 _ _ hη _ _ c₁ c₂⟩
+      · simp only [LRg, hm, if_false] at hlr ⊢
+        simp only [viewL, viewR, substBrand, hm, if_false] at c₁ c₂
+        exact wrap_case hlr c₁ c₂
   | @sarr C' D' C D hsC hsD ihC ihD =>
     obtain ⟨hv₁, hv₂, ht₁, ht₂, CL⟩ := hlr
+    rw [viewL_arr] at ht₁; rw [viewR_arr] at ht₂
     obtain ⟨u₁env, A₁₀, B₁₀, e₁b, hc₁eq⟩ := canonical_arr hv₁ ht₁
     obtain ⟨u₂env, A₂₀, B₂₀, e₂b, hc₂eq⟩ := canonical_arr hv₂ ht₂
     subst hc₁eq; subst hc₂eq
     have hvenv₁ : Value u₁env := by cases hv₁ with | vclos h => exact h
     have hvenv₂ : Value u₂env := by cases hv₂ with | vclos h => exact h
+    rw [viewL_arr] at c₁; rw [viewR_arr] at c₂
     cases c₁ with
     | carrowtl htlD hsc₁ hsb₁ =>
       cases c₂ with
-      | carrow hntlD _ _ => exact absurd htlD hntlD
-      | carrowtl _ _ _ => exact toplike_lr_gen (TopLike.tlarr htlD)
+      | carrow hntlD _ _ =>
+        exact absurd (toplike_viewR (toplike_viewL_inv hadm htlD)) hntlD
+      | carrowtl _ _ _ =>
+        have := toplike_lr_gen hadm (TopLike.tlarr (toplike_viewL_inv hadm htlD))
+          (Δ₁ := Δ₁) (Δ₂ := Δ₂) (o := o) (D := .arr C D) (η := η)
+        rw [viewL_arr, viewR_arr] at this
+        exact this
     | carrow hntlD hsc₁ hsb₁ =>
       cases c₂ with
-      | carrowtl htlD _ _ => exact absurd htlD hntlD
-      | carrow _ hsc₂ hsb₂ =>
+      | carrowtl htlD _ _ =>
+        exact absurd (toplike_viewL (toplike_viewR_inv hadm htlD)) hntlD
+      | carrow hntlD₂ hsc₂ hsb₂ =>
         refine ⟨Value.vclos hvenv₁, Value.vclos hvenv₂,
-          cast_preservation (Cast.carrow hntlD hsc₁ hsb₁) hv₁ ht₁,
-          cast_preservation (Cast.carrow hntlD hsc₂ hsb₂) hv₂ ht₂, ?_⟩
+          by rw [viewL_arr]; exact cast_preservation (Cast.carrow hntlD hsc₁ hsb₁) hv₁ ht₁,
+          by rw [viewR_arr]; exact cast_preservation (Cast.carrow hntlD₂ hsc₂ hsb₂) hv₂ ht₂, ?_⟩
         intro u₁ u₂ hu ρ₁ ρ₂ hρ₁ hρ₂
         have hvu := lr_value hu
         have htu := lr_typed hu
         -- cast the arguments at the source domain and relate them there
-        obtain ⟨u₁c, cu₁⟩ := cast_progress hvu.1 htu.1 hsC
-        obtain ⟨u₂c, cu₂⟩ := cast_progress hvu.2 htu.2 hsC
-        have huc : LR Δ₁ Δ₂ η C' u₁c u₂c := ihC hu cu₁ cu₂
+        obtain ⟨u₁c, cu₁⟩ := cast_progress hvu.1 htu.1 (sub_viewL hsC)
+        obtain ⟨u₂c, cu₂⟩ := cast_progress hvu.2 htu.2 (sub_viewR hsC)
+        have huc : LRg Δ₁ Δ₂ η o C' u₁c u₂c := ihC hu cu₁ cu₂
         -- the old behavior at the cast arguments
         obtain ⟨r₁, r₂, run₁, run₂, hr⟩ := CL u₁c u₂c huc ρ₁ ρ₂ hρ₁ hρ₂
         have hvr := lr_value hr
@@ -480,17 +695,17 @@ theorem cast_lr {B A : Typ} (hs : Sub B A) {v₁ v₂ w₁ w₂ : Exp} (hlr : LR
         obtain ⟨b₁, runb₁, hvb₁, hcb₁⟩ := mstep_anno_inv runbody₁ hvrr₁
         obtain ⟨b₂, runb₂, hvb₂, hcb₂⟩ := mstep_anno_inv runbody₂ hvrr₂
         -- reseal the old results at the wider codomain and relate them there
-        obtain ⟨s₁, cs₁⟩ := cast_progress hvr.1 htr.1 hsD
-        obtain ⟨s₂, cs₂⟩ := cast_progress hvr.2 htr.2 hsD
-        have hcs₁' : Cast b₁ D s₁ := cast_trans hcb₁ (hreq₁ ▸ cs₁)
-        have hcs₂' : Cast b₂ D s₂ := cast_trans hcb₂ (hreq₂ ▸ cs₂)
+        obtain ⟨s₁, cs₁⟩ := cast_progress hvr.1 htr.1 (sub_viewL hsD)
+        obtain ⟨s₂, cs₂⟩ := cast_progress hvr.2 htr.2 (sub_viewR hsD)
+        have hcs₁' : Cast b₁ (viewL o D) s₁ := cast_trans hcb₁ (hreq₁ ▸ cs₁)
+        have hcs₂' : Cast b₂ (viewR o D) s₂ := cast_trans hcb₂ (hreq₂ ▸ cs₂)
         -- rebuild the runs of the recast closures
-        have newrun₁ : MStep ρ₁ (.app (.clos u₁env A₁₀ D e₁b) u₁) s₁ := by
+        have newrun₁ : MStep ρ₁ (.app (.clos u₁env A₁₀ (viewL o D) e₁b) u₁) s₁ := by
           refine MStep.step (Step.sbeta hρ₁ hvenv₁ hvu.1 (cast_trans cu₁ cu₁s)) ?_
           refine mstep_trans (mstep_boxr hρ₁ hvm₁ (mstep_anno hvm₁ runb₁)) ?_
           refine MStep.step (Step.sboxr hρ₁ hvm₁ (Step.sannov hvm₁ hvb₁ hcs₁')) ?_
           exact MStep.step (Step.sboxv hρ₁ hvm₁ (cast_value hvb₁ hcs₁')) MStep.refl
-        have newrun₂ : MStep ρ₂ (.app (.clos u₂env A₂₀ D e₂b) u₂) s₂ := by
+        have newrun₂ : MStep ρ₂ (.app (.clos u₂env A₂₀ (viewR o D) e₂b) u₂) s₂ := by
           refine MStep.step (Step.sbeta hρ₂ hvenv₂ hvu.2 (cast_trans cu₂ cu₂s)) ?_
           refine mstep_trans (mstep_boxr hρ₂ hvm₂ (mstep_anno hvm₂ runb₂)) ?_
           refine MStep.step (Step.sboxr hρ₂ hvm₂ (Step.sannov hvm₂ hvb₂ hcs₂')) ?_
@@ -660,7 +875,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     have htu := lr_typed hu
     obtain ⟨u₁', cu₁⟩ := cast_progress hvu.1 htu.1 (sub_refl _)
     obtain ⟨u₂', cu₂⟩ := cast_progress hvu.2 htu.2 (sub_refl _)
-    have hu' := cast_lr (sub_refl _) hu cu₁ cu₂
+    have hu' := cast_lr openadm_none (sub_refl _) hu cu₁ cu₂
     have hvu' := lr_value hu'
     have htu' := lr_typed hu'
     have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ u₁') (.mrg ρ₂ u₂') :=
@@ -676,7 +891,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     obtain ⟨s₂, cs₂⟩ := cast_progress hvb.2 htb.2 (sub_refl _)
     have hvm₁ : Value (.mrg ρ₁ u₁') := Value.vmrg hvρ.1 hvu'.1
     have hvm₂ : Value (.mrg ρ₂ u₂') := Value.vmrg hvρ.2 hvu'.2
-    refine ⟨s₁, s₂, ?_, ?_, cast_lr (sub_refl _) hbb cs₁ cs₂⟩
+    refine ⟨s₁, s₂, ?_, ?_, cast_lr openadm_none (sub_refl _) hbb cs₁ cs₂⟩
     · refine MStep.step (Step.sbeta hσ₁ hvρ.1 hvu.1 cu₁) ?_
       refine mstep_trans (mstep_boxr hσ₁ hvm₁ (mstep_anno hvm₁ rb₁)) ?_
       refine MStep.step (Step.sboxr hσ₁ hvm₁ (Step.sannov hvm₁ hvb.1 cs₁)) ?_
@@ -699,7 +914,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     have htu := lr_typed hu
     obtain ⟨u₁', cu₁⟩ := cast_progress hvu.1 htu.1 hs₂
     obtain ⟨u₂', cu₂⟩ := cast_progress hvu.2 htu.2 hs₂
-    have hu' := cast_lr hs₂ hu cu₁ cu₂
+    have hu' := cast_lr openadm_none hs₂ hu cu₁ cu₂
     have hvu' := lr_value hu'
     have htu' := lr_typed hu'
     have hgv := lr_value hgg
@@ -717,7 +932,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     obtain ⟨s₂, cs₂⟩ := cast_progress hvb.2 htb.2 hs₁
     have hvm₁ : Value (.mrg _ u₁') := Value.vmrg hv hvu'.1
     have hvm₂ : Value (.mrg _ u₂') := Value.vmrg hv hvu'.2
-    refine ⟨s₁, s₂, ?_, ?_, cast_lr hs₁ hbb cs₁ cs₂⟩
+    refine ⟨s₁, s₂, ?_, ?_, cast_lr openadm_none hs₁ hbb cs₁ cs₂⟩
     · refine MStep.step (Step.sbeta hσ₁ hv hvu.1 cu₁) ?_
       refine mstep_trans (mstep_boxr hσ₁ hvm₁ (mstep_anno hvm₁ rb₁)) ?_
       refine MStep.step (Step.sboxr hσ₁ hvm₁ (Step.sannov hvm₁ hvb.1 cs₁)) ?_
@@ -734,7 +949,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     have htr := lr_typed hr
     obtain ⟨s₁, cs₁⟩ := cast_progress hvr.1 htr.1 hsub
     obtain ⟨s₂, cs₂⟩ := cast_progress hvr.2 htr.2 hsub
-    refine ⟨s₁, s₂, ?_, ?_, cast_lr hsub hr cs₁ cs₂⟩
+    refine ⟨s₁, s₂, ?_, ?_, cast_lr openadm_none hsub hr cs₁ cs₂⟩
     · exact mstep_trans (mstep_anno hvρ.1 rr₁) (mstep_one (Step.sannov hvρ.1 hvr.1 cs₁))
     · exact mstep_trans (mstep_anno hvρ.2 rr₂) (mstep_one (Step.sannov hvρ.2 hvr.2 cs₂))
   -- Clients cannot brand, seal or unseal: these rules need a known representation.
