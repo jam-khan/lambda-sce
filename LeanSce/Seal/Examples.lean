@@ -52,7 +52,7 @@ example : HasType Δ (.rcd "x" .int) (.rproj .query "x") .int :=
 
 -- SCE's non-capturing merge elaborates into λE^≤ via sealing — the (? : Γ) restriction
 -- replaces Core's λ-self-application combinator (which λE^≤'s Disj Γ Γ premise forbids).
-example : elabSeal .top (.nmrg (.lrec "x" (.lit 1)) (.lrec "y" (.lit 2)))
+example : elabSeal SCE.noBrands .top (.nmrg (.lrec "x" (.lit 1)) (.lrec "y" (.lit 2)))
     (.and (.rcd "x" .int) (.rcd "y" .int))
     (.mrg (.lrec "x" (.lit 1))
       (.box (.anno .query .top) (.lrec "y" (.lit 2)))) :=
@@ -60,12 +60,13 @@ example : elabSeal .top (.nmrg (.lrec "x" (.lit 1)) (.lrec "y" (.lit 2)))
     (elabSeal.elrec (elabSeal.elit .top 2))
     disj_top_r (disj_rcd_ne (by decide))
 
--- ... and the elaborated code is well-typed λE^≤ by the preservation theorem.
-example : Seal.HasType Δ .top
+-- ... and the elaborated code is well-typed λE^≤ by the preservation theorem (in the
+-- brand-free store — this unit seals nothing).
+example : Seal.HasType noBrands .top
     (.mrg (.lrec "x" (.lit 1)) (.box (.anno .query .top) (.lrec "y" (.lit 2))))
     (.and (.rcd "x" .int) (.rcd "y" .int)) :=
-  seal_type_preservation
-    (elabSeal.enmrg (elabSeal.elrec (elabSeal.elit .top 1))
+  sealStore_noBrands ▸ seal_type_preservation
+    (elabSeal.enmrg (Δ := SCE.noBrands) (elabSeal.elrec (elabSeal.elit .top 1))
       (elabSeal.elrec (elabSeal.elit .top 2))
       disj_top_r (disj_rcd_ne (by decide)))
 

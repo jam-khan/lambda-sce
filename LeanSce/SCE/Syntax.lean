@@ -64,6 +64,13 @@ def substBrandModTyp (n : Nat) (R : Typ) : ModTyp → ModTyp
   | .TyArrM T mt => .TyArrM (substBrand n R T) (substBrandModTyp n R mt)
 end
 
+-- Source-level brand store: the representation type of each brand a compilation unit
+-- knows (mirrors Seal.BrandStore; the target store is its image under sealTyp, see
+-- Seal/Elaboration.lean).
+def BrandStore := Nat → Option Typ
+
+def noBrands : BrandStore := fun _ => none
+
 inductive Sandbox where
   | sandboxed : Sandbox
   | open_ : Sandbox

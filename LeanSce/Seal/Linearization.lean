@@ -21,6 +21,8 @@ import LeanSce.Seal.Correctness
 -- top-like arrow collapses closures to generators asymmetrically.
 namespace Seal
 
+variable {Δ : SCE.BrandStore}
+
 
 -- ── Freshness gives disjointness ─────────────────────────────────────────────────────
 
@@ -61,15 +63,15 @@ def linkedSealLin (Γ' Γ₁' B' : Seal.Typ) (x l : String) (ce₁ ce₂ : Seal.
 
 -- Well-typedness of the composition term, from the units' typings alone.
 theorem linkedSealLin_typed {Γ Γ₁ A B : SCE.Typ} {x l : String} {ce₁ ce₂ : Seal.Exp}
-    (ht₁ : Seal.HasType noBrands (sealTyp Γ) ce₁ (sealTyp Γ₁))
-    (ht₂ : Seal.HasType noBrands (sealTyp Γ) ce₂
+    (ht₁ : Seal.HasType (sealStore Δ) (sealTyp Γ) ce₁ (sealTyp Γ₁))
+    (ht₂ : Seal.HasType (sealStore Δ) (sealTyp Γ) ce₂
       (.arr (.rcd l (sealTyp A)) (sealTyp B)))
     (hlookup : SCE.SRLookup Γ₁ l A)
     (hd₁ : Seal.Disj (sealTyp Γ₁) (sealTyp Γ))
     (hd₂ : Seal.Disj (sealTyp Γ₁) (sealTyp B))
     (hfrΓ : ¬ Seal.Lin x (sealTyp Γ))
     (hfrΓ₁ : ¬ Seal.Lin x (sealTyp Γ₁))
-    : Seal.HasType noBrands (sealTyp Γ)
+    : Seal.HasType (sealStore Δ) (sealTyp Γ)
         (linkedSealLin (sealTyp Γ) (sealTyp Γ₁) (sealTyp B) x l ce₁ ce₂)
         (.and (sealTyp Γ₁) (sealTyp B)) := by
   refine HasType.tapp (HasType.tlam (disj_rcd_notin hfrΓ) ?_) (HasType.trcd ht₁)
@@ -95,17 +97,17 @@ theorem linkedSealLin_typed {Γ Γ₁ A B : SCE.Typ} {x l : String} {ce₁ ce₂
 theorem seal_separate_compilation_lin
     {Γ Γ₁ A B : SCE.Typ} {x l : String} {es₁ es₂ : SCE.Exp} {ce₁ ce₂ : Seal.Exp}
     {ρs vs : SCE.Exp} {ρc : Seal.Exp}
-    (helab₁ : elabSeal Γ es₁ Γ₁ ce₁)
-    (helab₂ : elabSeal Γ es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ce₂)
+    (helab₁ : elabSeal Δ Γ es₁ Γ₁ ce₁)
+    (helab₂ : elabSeal Δ Γ es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ce₂)
     (hlookup : SCE.SRLookup Γ₁ l A)
     (hd₁ : Seal.Disj (sealTyp Γ₁) (sealTyp Γ))
     (hd₂ : Seal.Disj (sealTyp Γ₁) (sealTyp B))
     (hfrΓ : ¬ Seal.Lin x (sealTyp Γ))
     (hfrΓ₁ : ¬ Seal.Lin x (sealTyp Γ₁))
     (heval : S_Sem.BStep ρs (.mlink es₁ es₂) vs)
-    (henv_val : SCE.Value ρs) (henv : EVal Γ ρs ρc)
+    (henv_val : SCE.Value ρs) (henv : EVal Δ Γ ρs ρc)
     : ∃ vc, MStep ρc (linkedSealLin (sealTyp Γ) (sealTyp Γ₁) (sealTyp B) x l ce₁ ce₂) vc
-      ∧ EVal (.and Γ₁ B) vs vc := by
+      ∧ EVal Δ (.and Γ₁ B) vs vc := by
   cases heval with
   | mlink _ h1 h2 hsel h3 =>
     -- the module runs ONCE, under the ambient environment
@@ -115,7 +117,7 @@ theorem seal_separate_compilation_lin
     have hv₁c := eval_value hEV₁
     have hv₁c' := eval_value hEV₁'
     have hE₁v : Value (.mrg ρc (.lrec x vc₁')) := Value.vmrg hρv (Value.vrcd hv₁c')
-    have htE₁ : HasType noBrands .top (.mrg ρc (.lrec x vc₁'))
+    have htE₁ : HasType (sealStore Δ) .top (.mrg ρc (.lrec x vc₁'))
         (.and (sealTyp Γ) (.rcd x (sealTyp Γ₁))) :=
       HasType.tmergev hρv (Value.vrcd hv₁c') (eval_typed henv)
         (HasType.trcd (eval_typed hEV₁'))
@@ -153,7 +155,7 @@ theorem seal_separate_compilation_lin
       -- typing of the merge-extended environment E₂ for the outer seal
       have hDC : Seal.Disj (.and (sealTyp Γ) (.rcd x (sealTyp Γ₁))) (sealTyp Γ₁) :=
         disj_and_l (disj_symm hd₁) (disj_symm (disj_rcd_notin hfrΓ₁))
-      have htE₂ : HasType noBrands .top (.mrg (.mrg ρc (.lrec x vc₁')) vc₁')
+      have htE₂ : HasType (sealStore Δ) .top (.mrg (.mrg ρc (.lrec x vc₁')) vc₁')
           (.and (.and (sealTyp Γ) (.rcd x (sealTyp Γ₁))) (sealTyp Γ₁)) :=
         HasType.tmergev hE₁v hv₁c' htE₁ (eval_typed hEV₁')
           (disjoint_consistent hE₁v hv₁c' htE₁ (eval_typed hEV₁') hDC)
@@ -216,7 +218,7 @@ theorem seal_separate_compilation_lin
                 (mstep_trans (mstep_rproj hE₁'v hproj₂)
                   (mstep_one (Step.srprojv hE₁'v hv₁''c hwc)))
             obtain ⟨argc, hcarg, _⟩ := eval_cast_ex (EVal.rcd hEVw)
-            obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed (Δ := noBrands) hB' .top)
+            obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed (Δ := sealStore Δ) hB' .top)
               (sub_refl _)
             have hg' := (toplike_gen_cast hB' hcg).1
             obtain ⟨wa, hwa⟩ := eval_elab (EVal.rcd hEVw)
@@ -246,14 +248,14 @@ theorem seal_separate_compilation_lin
 theorem seal_separate_compilation_lin_closed
     {Γ₁ A B : SCE.Typ} {x l : String} {es₁ es₂ : SCE.Exp} {ce₁ ce₂ : Seal.Exp}
     {vs : SCE.Exp}
-    (helab₁ : elabSeal .top es₁ Γ₁ ce₁)
-    (helab₂ : elabSeal .top es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ce₂)
+    (helab₁ : elabSeal Δ .top es₁ Γ₁ ce₁)
+    (helab₂ : elabSeal Δ .top es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ce₂)
     (hlookup : SCE.SRLookup Γ₁ l A)
     (hd₂ : Seal.Disj (sealTyp Γ₁) (sealTyp B))
     (hfrΓ₁ : ¬ Seal.Lin x (sealTyp Γ₁))
     (heval : S_Sem.BStep .unit (.mlink es₁ es₂) vs)
     : ∃ vc, MStep .unit (linkedSealLin .top (sealTyp Γ₁) (sealTyp B) x l ce₁ ce₂) vc
-      ∧ EVal (.and Γ₁ B) vs vc :=
+      ∧ EVal Δ (.and Γ₁ B) vs vc :=
   seal_separate_compilation_lin helab₁ helab₂ hlookup disj_top_r hd₂
     (fun h => nomatch h) hfrΓ₁ heval SCE.Value.vunit EVal.unit
 
@@ -266,21 +268,21 @@ theorem seal_separate_compilation_lin_closed
 theorem linearization_coherent_seal
     {Γ Γ₁ A B : SCE.Typ} {x l : String} {es₁ es₂ : SCE.Exp} {ce₁ ce₂ : Seal.Exp}
     {ρs vs : SCE.Exp} {ρc : Seal.Exp}
-    (helab₁ : elabSeal Γ es₁ Γ₁ ce₁)
-    (helab₂ : elabSeal Γ es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ce₂)
+    (helab₁ : elabSeal Δ Γ es₁ Γ₁ ce₁)
+    (helab₂ : elabSeal Δ Γ es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ce₂)
     (hlookup : SCE.SRLookup Γ₁ l A)
     (hd₁ : Seal.Disj (sealTyp Γ₁) (sealTyp Γ))
     (hd₂ : Seal.Disj (sealTyp Γ₁) (sealTyp B))
     (hfrΓ : ¬ Seal.Lin x (sealTyp Γ))
     (hfrΓ₁ : ¬ Seal.Lin x (sealTyp Γ₁))
     (heval : S_Sem.BStep ρs (.mlink es₁ es₂) vs)
-    (henv_val : SCE.Value ρs) (henv : EVal Γ ρs ρc)
+    (henv_val : SCE.Value ρs) (henv : EVal Δ Γ ρs ρc)
     : ∃ vc vc',
         MStep ρc (.mrg ce₁ (.box (.anno .query (sealTyp Γ))
           (.app ce₂ (.lrec l (.rproj ce₁ l))))) vc
       ∧ MStep ρc (linkedSealLin (sealTyp Γ) (sealTyp Γ₁) (sealTyp B) x l ce₁ ce₂) vc'
-      ∧ EVal (.and Γ₁ B) vs vc
-      ∧ EVal (.and Γ₁ B) vs vc' := by
+      ∧ EVal Δ (.and Γ₁ B) vs vc
+      ∧ EVal Δ (.and Γ₁ B) vs vc' := by
   obtain ⟨vc, hr, hEV⟩ :=
     seal_separate_compilation helab₁ helab₂ hlookup hd₁ hd₂ heval henv_val henv
   obtain ⟨vc', hr', hEV'⟩ :=
