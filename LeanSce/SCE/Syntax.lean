@@ -14,6 +14,8 @@ inductive Typ where
   -- iso-recursive types: de Bruijn var 0 is bound by the nearest mu
   | var  : Nat → Typ
   | mu   : Typ → Typ
+  -- abstract type names (brands), mirrored from Seal (see Seal/DESIGN.md §(g))
+  | brand : Nat → Typ
 
 inductive ModTyp where
   | TyIntf : Typ → ModTyp
@@ -36,6 +38,7 @@ def substTyp (d : Nat) (S : Typ) : Typ → Typ
   | .sig mt => .sig (substModTyp d S mt)
   | .var n => if n = d then S else .var n
   | .mu T => .mu (substTyp (d + 1) S T)
+  | .brand n => .brand n
 
 def substModTyp (d : Nat) (S : Typ) : ModTyp → ModTyp
   | .TyIntf T => .TyIntf (substTyp d S T)

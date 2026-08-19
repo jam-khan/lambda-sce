@@ -83,6 +83,8 @@ def elabTyp : Typ → Core.Typ
   | Typ.sig mty    => elabModTyp mty
   | Typ.var n      => Core.Typ.var n
   | Typ.mu t       => Core.Typ.mu (elabTyp t)
+  -- brands have no Core counterpart (λE has no type abstraction); inert junk
+  | Typ.brand _    => Core.Typ.top
 
 @[simp]
 def elabModTyp : ModTyp → Core.Typ
@@ -110,6 +112,7 @@ theorem elab_substTyp (d : Nat) (S : Typ)
     by_cases h : n = d <;> simp [substTyp, elabTyp, Core.substTyp, h]
   | .mu T => by
     simp [substTyp, elabTyp, Core.substTyp, elab_substTyp (d + 1) S T]
+  | .brand n => by simp [substTyp, elabTyp, Core.substTyp]
 
 theorem elab_substModTyp (d : Nat) (S : Typ)
     : (mt : ModTyp) → elabModTyp (substModTyp d S mt) = Core.substTyp d (elabTyp S) (elabModTyp mt)

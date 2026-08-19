@@ -94,6 +94,7 @@ theorem type_safe_label_existence
     | or _ _ => simp [elabTyp] at h; cases h
     | var _ => simp [elabTyp] at h; cases h
     | mu _ => simp [elabTyp] at h; cases h
+    | brand _ => simp [elabTyp] at h; cases h
     | sig mt =>
       cases mt with
       | TyIntf T =>

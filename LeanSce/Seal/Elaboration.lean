@@ -38,6 +38,7 @@ def sealTyp : SCE.Typ → Seal.Typ
   | .sig mt    => sealModTyp mt
   | .var _     => .top
   | .mu _      => .top
+  | .brand n   => .brand n
 
 @[simp]
 def sealModTyp : SCE.ModTyp → Seal.Typ
