@@ -46,7 +46,7 @@ theorem sandboxed_functor_confinement
           -- Both bodies now execute under `.mrg .unit varg` — the same env.
           -- Build the elaboration witness for that env under the empty context.
           have hvarg_weak : elabExp (Typ.and Typ.top Typ.top) varg A ec_varg :=
-            value_typing_weakening hvarg hvarg_elab
+            elab_value_weaken hvarg_elab hvarg _
           have henv_elab :
               elabExp Typ.top (Exp.mrg Exp.unit varg) (Typ.and Typ.top A)
                 (Core.Exp.mrg Core.Exp.unit ec_varg) :=
