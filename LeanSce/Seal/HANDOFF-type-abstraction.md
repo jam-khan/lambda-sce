@@ -65,7 +65,21 @@ Commits (newest first): `LeanSce.lean import` · `de14ba2` DESIGN §(g) · `6411
   `2>&1 | grep -E "^error" -A 10`. Full build ≈ 68 jobs.
 - Axiom check: `lake env lean file.lean` with `#print axioms Seal.representation_independence`.
 
-## 3. Phase 4 — the SCE source side (NOT done). Instructions
+## 3. Phase 4 — the SCE source side (steps 1–4 DONE, 5–9 remain). Instructions
+
+**Done (commit "SCE: source-level sealing forms")**: `SCE.Typ.brand`, `SCE.substBrand`,
+`Exp.wrap/mseal/munseal`, `Value.vwrap`, `S_Sem.SSealV/SUnsealV` (+ `proxyEnv/proxyFun`
+in `S_Sem`), `BStep.wrap/mseal/munseal`, `SStep.sswrap/ssmseal/ssmsealv/ssmunseal/
+ssmunsealv`, all Equivalence/Theories/Preservation cases (Core-side ones vacuous:
+`elabExp` has NO rules for the sealing forms — decision taken, documented in commit).
+`Seal/Correctness.lean` `seal_semantic_preservation` has vacuous `wrap/mseal/munseal`
+cases *because `elabSeal` has no rules yet* — those cases become real in step 6.
+Whole library green.
+
+**Remaining**: steps 5–9 below (elabSeal rules + Δ threading into elabSeal, EVal.wrap,
+the semantic-preservation cases via an `eval_sealv` simulation lemma, sealed separate
+compilation, source-level example, DESIGN/memory updates).
+
 
 Goal: a source-level sealing construct that elaborates to `Seal.seal`, with the SCE
 metatheory extended and `seal_semantic_preservation` covering it, so "sealed
