@@ -3,8 +3,67 @@ import LeanSce.Seal.Typing
 -- Small-step semantics of λE^≤: the ternary environment-passing relation of the Core
 -- mechanization (per-construct congruence rules, no frames).  New relative to λE: the
 -- sanno/sannov rules for the sealing primitive, and the cast premise + result reseal in
--- sbeta (both ported from Eᵢ).
+-- sbeta (both ported from Eᵢ).  New for type abstraction: `seal`/`unseal` on values step
+-- in one shot through the value-level coercion relations SealV/UnsealV below (mirroring
+-- how `anno` steps through Cast), plus congruences for wrap/seal/unseal.
 namespace Seal
+
+-- The proxy `seal`/`unseal` build at an arrow: the underlying closure `c` is stored in the
+-- environment under the reserved label; the body unseals the argument (`?.0`), applies
+-- `c` (`?.1.#f`), and seals the result — or the mirror image.  Storing `c` under a record
+-- label rather than bare is what keeps the environment type disjoint from the input type
+-- (tclos demands `Disj Γ₁ A`; a bare closure environment would COST-collide with any
+-- signature arrow of matching codomain).
+def proxyEnv (c : Exp) : Exp := .mrg .unit (.lrec reservedLabel c)
+
+def proxyFun : Exp := .rproj (.proj .query 1) reservedLabel
+
+-- SealV n R S v w: the value-level coercion S[n:=R] ⇒ S, structural on S.  Wraps at α_n,
+-- identity at other leaves, componentwise on merges/records, proxy at arrows.
+inductive SealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
+  | brand_eq {v}
+    : SealV n R (.brand n) v (.wrap n v)
+  | brand_ne {m v}
+    : m ≠ n
+    → SealV n R (.brand m) v v
+  | int {i}
+    : SealV n R .int (.lit i) (.lit i)
+  | top {v}
+    : SealV n R .top v .unit
+  | and {A B v₁ v₂ w₁ w₂}
+    : SealV n R A v₁ w₁
+    → SealV n R B v₂ w₂
+    → SealV n R (.and A B) (.mrg v₁ v₂) (.mrg w₁ w₂)
+  | rcd {l A v w}
+    : SealV n R A v w
+    → SealV n R (.rcd l A) (.lrec l v) (.lrec l w)
+  | arr {A B c}
+    : SealV n R (.arr A B) c
+        (.clos (proxyEnv c) A B
+          (.seal n R B (.app proxyFun (.unseal n R A (.proj .query 0)))))
+
+-- UnsealV n R S v w: the converse coercion S ⇒ S[n:=R].
+inductive UnsealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
+  | brand_eq {v}
+    : UnsealV n R (.brand n) (.wrap n v) v
+  | brand_ne {m v}
+    : m ≠ n
+    → UnsealV n R (.brand m) v v
+  | int {i}
+    : UnsealV n R .int (.lit i) (.lit i)
+  | top {v}
+    : UnsealV n R .top v .unit
+  | and {A B v₁ v₂ w₁ w₂}
+    : UnsealV n R A v₁ w₁
+    → UnsealV n R B v₂ w₂
+    → UnsealV n R (.and A B) (.mrg v₁ v₂) (.mrg w₁ w₂)
+  | rcd {l A v w}
+    : UnsealV n R A v w
+    → UnsealV n R (.rcd l A) (.lrec l v) (.lrec l w)
+  | arr {A B c}
+    : UnsealV n R (.arr A B) c
+        (.clos (proxyEnv c) (substBrand n R A) (substBrand n R B)
+          (.unseal n R B (.app proxyFun (.seal n R A (.proj .query 0)))))
 
 inductive Step : Exp → Exp → Exp → Prop where
   | squery {v}
@@ -82,6 +141,28 @@ inductive Step : Exp → Exp → Exp → Prop where
     → Value v₁
     → Cast v₁ A v'
     → Step v (.anno v₁ A) v'
+  | swrap {v e e' n}
+    : Value v
+    → Step v e e'
+    → Step v (.wrap n e) (.wrap n e')
+  | sseal {v e e' n R S}
+    : Value v
+    → Step v e e'
+    → Step v (.seal n R S e) (.seal n R S e')
+  | ssealv {v v₁ w n R S}
+    : Value v
+    → Value v₁
+    → SealV n R S v₁ w
+    → Step v (.seal n R S v₁) w
+  | sunseal {v e e' n R S}
+    : Value v
+    → Step v e e'
+    → Step v (.unseal n R S e) (.unseal n R S e')
+  | sunsealv {v v₁ w n R S}
+    : Value v
+    → Value v₁
+    → UnsealV n R S v₁ w
+    → Step v (.unseal n R S v₁) w
 
 inductive MStep : Exp → Exp → Exp → Prop where
   | refl {v e}
@@ -113,6 +194,54 @@ theorem value_not_step {e : Exp} (hv : Value e) : ∀ {v e' : Exp}, Step v e e' 
     cases h with
     | smrgl _ hs => exact ih₁ hs
     | smrgr _ _ hs => exact ih₂ hs
+  | vwrap _ ih => intro _ _ h; cases h with | swrap _ hs => exact ih hs
+
+-- The coercions produce values from values.
+theorem sealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SealV n R S v w)
+    : Value w := by
+  induction h with
+  | brand_eq => exact Value.vwrap hv
+  | brand_ne _ => exact hv
+  | int => exact Value.vint
+  | top => exact Value.vunit
+  | and _ _ ih₁ ih₂ => cases hv with | vmrg h₁ h₂ => exact Value.vmrg (ih₁ h₁) (ih₂ h₂)
+  | rcd _ ih => cases hv with | vrcd h' => exact Value.vrcd (ih h')
+  | arr => exact Value.vclos (Value.vmrg Value.vunit (Value.vrcd hv))
+
+theorem unsealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : UnsealV n R S v w)
+    : Value w := by
+  induction h with
+  | brand_eq => cases hv with | vwrap h' => exact h'
+  | brand_ne _ => exact hv
+  | int => exact Value.vint
+  | top => exact Value.vunit
+  | and _ _ ih₁ ih₂ => cases hv with | vmrg h₁ h₂ => exact Value.vmrg (ih₁ h₁) (ih₂ h₂)
+  | rcd _ ih => cases hv with | vrcd h' => exact Value.vrcd (ih h')
+  | arr => exact Value.vclos (Value.vmrg Value.vunit (Value.vrcd hv))
+
+-- The coercions are deterministic as relations (no typing needed: the shape of the
+-- source type picks the rule).
+theorem sealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : SealV n R S v w₁)
+    : ∀ {w₂ : Exp}, SealV n R S v w₂ → w₁ = w₂ := by
+  induction h₁ with
+  | brand_eq => intro _ h₂; cases h₂ with | brand_eq => rfl | brand_ne hne => exact absurd rfl hne
+  | brand_ne hne => intro _ h₂; cases h₂ with | brand_eq => exact absurd rfl hne | brand_ne _ => rfl
+  | int => intro _ h₂; cases h₂; rfl
+  | top => intro _ h₂; cases h₂; rfl
+  | and _ _ ih₁ ih₂ => intro _ h₂; cases h₂ with | and a b => rw [ih₁ a, ih₂ b]
+  | rcd _ ih => intro _ h₂; cases h₂ with | rcd a => rw [ih a]
+  | arr => intro _ h₂; cases h₂; rfl
+
+theorem unsealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : UnsealV n R S v w₁)
+    : ∀ {w₂ : Exp}, UnsealV n R S v w₂ → w₁ = w₂ := by
+  induction h₁ with
+  | brand_eq => intro _ h₂; cases h₂ with | brand_eq => rfl | brand_ne hne => exact absurd rfl hne
+  | brand_ne hne => intro _ h₂; cases h₂ with | brand_eq => exact absurd rfl hne | brand_ne _ => rfl
+  | int => intro _ h₂; cases h₂; rfl
+  | top => intro _ h₂; cases h₂; rfl
+  | and _ _ ih₁ ih₂ => intro _ h₂; cases h₂ with | and a b => rw [ih₁ a, ih₂ b]
+  | rcd _ ih => intro _ h₂; cases h₂ with | rcd a => rw [ih a]
+  | arr => intro _ h₂; cases h₂; rfl
 
 theorem mstep_value_eq {v e e' : Exp} (hv : Value e) (h : MStep v e e') : e = e' := by
   cases h with

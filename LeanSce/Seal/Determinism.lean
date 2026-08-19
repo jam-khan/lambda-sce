@@ -7,8 +7,10 @@ import LeanSce.Seal.Lookup
 -- this one is central to the TDOS story.
 namespace Seal
 
+variable {Δ : BrandStore}
+
 theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
-    {Γ A : Typ} (ht : HasType Γ e A) (henv : HasType .top venv Γ)
+    {Γ A : Typ} (ht : HasType Δ Γ e A) (henv : HasType Δ .top venv Γ)
     {e₂ : Exp} (h₂ : Step venv e e₂) : e₁ = e₂ := by
   induction h₁ generalizing Γ A e₂ with
   | squery _ =>
@@ -110,9 +112,34 @@ theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
     | sannov _ _ hc₂ =>
       cases ht with
       | tanno ha _ => exact cast_determinism hc hv₁ ha hc₂
+  | swrap _ hs ih =>
+    cases h₂ with
+    | swrap _ hs₂ =>
+      cases ht with
+      | twrap _ hv _ => exact (value_not_step hv hs).elim
+  | sseal _ hs ih =>
+    cases h₂ with
+    | sseal _ hs₂ =>
+      cases ht with
+      | tseal _ _ _ ha => rw [ih ha henv hs₂]
+    | ssealv _ hv₁ _ => exact (value_not_step hv₁ hs).elim
+  | ssealv _ hv₁ hsv =>
+    cases h₂ with
+    | sseal _ hs₂ => exact (value_not_step hv₁ hs₂).elim
+    | ssealv _ _ hsv₂ => exact sealv_det hsv hsv₂
+  | sunseal _ hs ih =>
+    cases h₂ with
+    | sunseal _ hs₂ =>
+      cases ht with
+      | tunseal _ _ _ ha _ => rw [ih ha henv hs₂]
+    | sunsealv _ hv₁ _ => exact (value_not_step hv₁ hs).elim
+  | sunsealv _ hv₁ hsv =>
+    cases h₂ with
+    | sunseal _ hs₂ => exact (value_not_step hv₁ hs₂).elim
+    | sunsealv _ _ hsv₂ => exact unsealv_det hsv hsv₂
 
 -- Whole-program corollary.
-theorem determinism {e e₁ e₂ : Exp} {A : Typ} (ht : HasType .top e A)
+theorem determinism {e e₁ e₂ : Exp} {A : Typ} (ht : HasType Δ .top e A)
     (h₁ : Step .unit e e₁) (h₂ : Step .unit e e₂) : e₁ = e₂ :=
   gdeterminism h₁ ht HasType.tunit h₂
 

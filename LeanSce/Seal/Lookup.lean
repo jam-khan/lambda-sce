@@ -5,6 +5,8 @@ import LeanSce.Seal.CastingLemmas
 -- value-typing inversions now also see tmergev.
 namespace Seal
 
+variable {Δ : BrandStore}
+
 theorem lookupv_value {v : Exp} {n : Nat} {v' : Exp} (hlv : LookupV v n v') (hv : Value v)
     : Value v' := by
   induction hlv with
@@ -25,7 +27,7 @@ theorem lookupv_det {v : Exp} {n : Nat} {v₁ : Exp} (h₁ : LookupV v n v₁)
   | lvsucc _ ih => cases h₂ with | lvsucc h₂' => exact ih h₂'
 
 theorem lookup_prog {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
-    {v : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Γ v A) : ∃ v', LookupV v n v' := by
+    {v : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Δ Γ v A) : ∃ v', LookupV v n v' := by
   induction hl generalizing v Γ with
   | zero =>
     cases ht with
@@ -37,6 +39,8 @@ theorem lookup_prog {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tseal _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ => nomatch hv
   | succ _ ih =>
     cases ht with
     | tmrg h₁ _ _ _ =>
@@ -53,10 +57,12 @@ theorem lookup_prog {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tseal _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ => nomatch hv
 
 theorem lookup_pres {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
-    {v v' : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Γ v A) (hlv : LookupV v n v')
-    : HasType Γ v' B := by
+    {v v' : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Δ Γ v A) (hlv : LookupV v n v')
+    : HasType Δ Γ v' B := by
   induction hl generalizing v v' Γ with
   | zero =>
     cases hlv with
@@ -78,7 +84,7 @@ theorem lookup_pres {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
 
 -- If l does not occur in the type, the value has no l-selection (Core's notin_false).
 theorem lin_absent {v v' : Exp} {l : String} (hlv : RLookupV v l v')
-    {Γ B : Typ} (hv : Value v) (ht : HasType Γ v B) (hnl : ¬ Lin l B) : False := by
+    {Γ B : Typ} (hv : Value v) (ht : HasType Δ Γ v B) (hnl : ¬ Lin l B) : False := by
   induction hlv generalizing Γ B with
   | rvlzero =>
     cases ht with
@@ -97,7 +103,7 @@ theorem lin_absent {v v' : Exp} {l : String} (hlv : RLookupV v l v')
       | tmergev _ _ _ h₂ _ => exact ih hv₂ h₂ (fun hlin => hnl (Lin.andr hlin))
 
 theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
-    {v : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Γ v B) : ∃ v', RLookupV v l v' := by
+    {v : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Δ Γ v B) : ∃ v', RLookupV v l v' := by
   induction hl generalizing v Γ with
   | zero =>
     cases ht with
@@ -108,6 +114,8 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tseal _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ => nomatch hv
   | landl _ _ ih =>
     cases ht with
     | tmrg h₁ _ _ _ =>
@@ -124,6 +132,8 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tseal _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ => nomatch hv
   | landr _ _ ih =>
     cases ht with
     | tmrg _ h₂ _ _ =>
@@ -140,10 +150,12 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tseal _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ => nomatch hv
 
 theorem rlookup_pres {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
-    {v v' : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Γ v B) (hlv : RLookupV v l v')
-    : HasType Γ v' A := by
+    {v v' : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Δ Γ v B) (hlv : RLookupV v l v')
+    : HasType Δ Γ v' A := by
   induction hl generalizing v v' Γ with
   | zero =>
     cases hlv with
@@ -176,7 +188,7 @@ theorem rlookup_pres {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
       | vmrg hv₁ hv₂ =>
         cases ht with
         | tmrg _ h₂ _ _ =>
-          exact value_weaken (ih hv₂ (value_weaken h₂ hv₂ : HasType .top _ _) hlv')
+          exact value_weaken (ih hv₂ (value_weaken h₂ hv₂ : HasType Δ .top _ _) hlv')
             (rlookupv_value hlv' hv₂)
         | tmergev _ _ _ h₂ _ =>
           exact value_weaken (ih hv₂ h₂ hlv') (rlookupv_value hlv' hv₂)
@@ -190,7 +202,7 @@ theorem rlookup_pres {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
 -- λE Lemma 4.1: well-typed selection is deterministic — containment rules out the
 -- ambiguous branch.
 theorem sel_determinism {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
-    {v v₁ : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Γ v B) (h₁ : RLookupV v l v₁)
+    {v v₁ : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Δ Γ v B) (h₁ : RLookupV v l v₁)
     {v₂ : Exp} (h₂ : RLookupV v l v₂) : v₁ = v₂ := by
   induction hl generalizing v v₁ v₂ Γ with
   | zero =>
@@ -230,7 +242,7 @@ theorem sel_determinism {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
         cases h₂ with
         | vlandr h₂' =>
           cases ht with
-          | tmrg _ hq _ _ => exact ih hv₂ (value_weaken hq hv₂ : HasType .top _ _) h₁' h₂'
+          | tmrg _ hq _ _ => exact ih hv₂ (value_weaken hq hv₂ : HasType Δ .top _ _) h₁' h₂'
           | tmergev _ _ _ hq _ => exact ih hv₂ hq h₁' h₂'
         | vlandl h₂' =>
           cases ht with
@@ -247,9 +259,9 @@ theorem sel_determinism {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
 -- smrgr in preservation, progress, and determinism.  This is exactly where the A ∗ Γ
 -- premise of tmrg earns its keep.
 theorem env_extend_typing {v v₁ : Exp} {Γ A : Typ}
-    (hv : Value v) (hv₁ : Value v₁) (henv : HasType .top v Γ) (h₁ : HasType Γ v₁ A)
-    (hd : Disj A Γ) : HasType .top (.mrg v v₁) (.and Γ A) := by
-  have h₁' : HasType .top v₁ A := value_weaken h₁ hv₁
+    (hv : Value v) (hv₁ : Value v₁) (henv : HasType Δ .top v Γ) (h₁ : HasType Δ Γ v₁ A)
+    (hd : Disj A Γ) : HasType Δ .top (.mrg v v₁) (.and Γ A) := by
+  have h₁' : HasType Δ .top v₁ A := value_weaken h₁ hv₁
   exact HasType.tmergev hv hv₁ henv h₁'
     (disjoint_consistent hv hv₁ henv h₁' (disj_symm hd))
 

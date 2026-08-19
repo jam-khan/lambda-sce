@@ -14,6 +14,7 @@ import LeanSce.SCE.Theories
 -- the key lemma is that casting at a value's own type preserves the relation.
 namespace Seal
 
+
 -- Value elaborations are context-irrelevant (mirror of SCE's elab_value_weaken; the
 -- edmrg case re-elaborates through the context-free evmrg).
 theorem elabSeal_weaken {Γ A : SCE.Typ} {v : SCE.Exp} {ce : Seal.Exp}
@@ -133,7 +134,7 @@ theorem eval_elab {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal A vs vc
 
 -- Related target values inhabit the sealed type.
 theorem eval_typed {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal A vs vc)
-    : Seal.HasType .top vc (sealTyp A) := by
+    : Seal.HasType noBrands .top vc (sealTyp A) := by
   induction h with
   | lit => exact HasType.tint
   | unit => exact HasType.tunit
@@ -499,7 +500,7 @@ theorem sealbox_mstep {ρ v₁ ρ' body bres : Seal.Exp} {Γ : Seal.Typ}
 theorem eval_env_restrict {Γ A : SCE.Typ} {ρs v₁s : SCE.Exp} {ρc v₁c : Seal.Exp}
     (hρ : EVal Γ ρs ρc) (h₁ : EVal A v₁s v₁c) (hd : Seal.Disj (sealTyp A) (sealTyp Γ))
     : ∃ ρ', Cast (.mrg ρc v₁c) (sealTyp Γ) ρ' ∧ EVal Γ ρs ρ' := by
-  have hty : HasType .top (.mrg ρc v₁c) (.and (sealTyp Γ) (sealTyp A)) :=
+  have hty : HasType noBrands .top (.mrg ρc v₁c) (.and (sealTyp Γ) (sealTyp A)) :=
     HasType.tmergev (eval_value hρ) (eval_value h₁) (eval_typed hρ) (eval_typed h₁)
       (disjoint_consistent (eval_value hρ) (eval_value h₁) (eval_typed hρ) (eval_typed h₁)
         (disj_symm hd))
@@ -674,7 +675,7 @@ theorem seal_semantic_preservation {ρs es vs : SCE.Exp} (heval : S_Sem.BStep ρ
         cases htl with
         | tlarr hB' =>
           obtain ⟨ac', hca, _⟩ := eval_cast_ex hEVa
-          obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed hB' .top)
+          obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed (Δ := noBrands) hB' .top)
             (sub_refl _)
           have hg' := (toplike_gen_cast hB' hcg).1
           -- the source result still elaborates: rerun the body IH on the raw elaboration
@@ -712,7 +713,7 @@ theorem seal_semantic_preservation {ρs es vs : SCE.Exp} (heval : S_Sem.BStep ρ
         cases htl with
         | tlarr hB' =>
           obtain ⟨ac', hca, _⟩ := eval_cast_ex hEVa
-          obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed hB' .top)
+          obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed (Δ := noBrands) hB' .top)
             (sub_refl _)
           have hg' := (toplike_gen_cast hB' hcg).1
           cases hw with
@@ -903,7 +904,7 @@ theorem seal_semantic_preservation {ρs es vs : SCE.Exp} (heval : S_Sem.BStep ρ
           | emclos hval₂ hw₁ hw₂ hdw =>
             obtain ⟨wc, hwc, hEVw⟩ := eval_sel hslook hEVm' hsel
             obtain ⟨argc, hcarg, _⟩ := eval_cast_ex (EVal.rcd hEVw)
-            obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed hB' .top)
+            obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed (Δ := noBrands) hB' .top)
               (sub_refl _)
             have hg' := (toplike_gen_cast hB' hcg).1
             obtain ⟨wa, hwa⟩ := eval_elab (EVal.rcd hEVw)
@@ -964,7 +965,7 @@ theorem seal_semantic_preservation {ρs es vs : SCE.Exp} (heval : S_Sem.BStep ρ
             obtain ⟨pc, hrp, hEVp⟩ := wire_mstep hwire
               (fun hρx => ih1 ha henv_val hρx) hsp hρ'
             obtain ⟨argc, hcarg, _⟩ := eval_cast_ex hEVp
-            obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed hB' .top)
+            obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed (Δ := noBrands) hB' .top)
               (sub_refl _)
             have hg' := (toplike_gen_cast hB' hcg).1
             obtain ⟨wa, hwa⟩ := eval_elab hEVp
@@ -1092,7 +1093,7 @@ theorem seal_separate_compilation_n_closed
 -- runs of a well-typed term agree (the analogue of SCE's bigstep_deterministic, via
 -- gdeterminism + gpreservation).
 theorem mstep_value_determinism {venv e v₁ : Seal.Exp} (h₁ : MStep venv e v₁)
-    : ∀ {Γ A : Seal.Typ}, Seal.HasType Γ e A → Seal.HasType .top venv Γ → Value v₁
+    : ∀ {Γ A : Seal.Typ}, Seal.HasType noBrands Γ e A → Seal.HasType noBrands .top venv Γ → Value v₁
     → ∀ {v₂ : Seal.Exp}, MStep venv e v₂ → Value v₂ → v₁ = v₂ := by
   induction h₁ with
   | refl =>

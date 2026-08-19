@@ -24,6 +24,8 @@ import LeanSce.Seal.CastingLemmas
 --    combinator machinery is a one-liner once restriction is a first-class operation.
 namespace Seal
 
+variable {Δ : BrandStore}
+
 mutual
 @[simp]
 def sealTyp : SCE.Typ → Seal.Typ
@@ -102,8 +104,8 @@ inductive WireOk (Γ : Seal.Typ) (Γ₁ : SCE.Typ) : SCE.Typ → Prop where
 
 -- The package inhabits the import interface.
 theorem wireArgSeal_typed {Γ : Seal.Typ} {Γ₁ : SCE.Typ} {ce₁ : Seal.Exp} {D : SCE.Typ}
-    (hw : WireOk Γ Γ₁ D) (ht₁ : Seal.HasType Γ ce₁ (sealTyp Γ₁))
-    : Seal.HasType Γ (wireArgSeal Γ ce₁ D) (sealTyp D) := by
+    (hw : WireOk Γ Γ₁ D) (ht₁ : Seal.HasType Δ Γ ce₁ (sealTyp Γ₁))
+    : Seal.HasType Δ Γ (wireArgSeal Γ ce₁ D) (sealTyp D) := by
   induction hw with
   | one hl => exact HasType.trcd (HasType.trproj ht₁ (srlookup_seal hl))
   | more _ hl hd₁ hd₂ ih =>
@@ -277,7 +279,7 @@ theorem elabSeal_value {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce : Seal.Ex
 
 theorem seal_type_preservation {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce : Seal.Exp}
     (h : elabSeal Γ es A ce)
-    : Seal.HasType (sealTyp Γ) ce (sealTyp A) := by
+    : Seal.HasType Δ (sealTyp Γ) ce (sealTyp A) := by
   induction h with
   | equery => exact HasType.tquery
   | elit _ _ => exact HasType.tint

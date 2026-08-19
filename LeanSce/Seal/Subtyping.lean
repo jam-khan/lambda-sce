@@ -23,6 +23,10 @@ inductive Sub : Typ → Typ → Prop where
   | srcd {l A B}
     : Sub A B
     → Sub (.rcd l A) (.rcd l B)
+  -- A brand is a subtype only of itself (and ε, via stop): abstract types are opaque in
+  -- both directions.  In particular `brand n <: R` for its representation R is NOT
+  -- derivable — that would make α_n translucent and kill representation independence.
+  | sbrand {n} : Sub (.brand n) (.brand n)
 
 theorem sub_refl : (A : Typ) → Sub A A
   | .int => Sub.sint
@@ -30,6 +34,7 @@ theorem sub_refl : (A : Typ) → Sub A A
   | .arr A B => Sub.sarr (sub_refl A) (sub_refl B)
   | .and A B => Sub.sand (Sub.sandl (sub_refl A)) (Sub.sandr (sub_refl B))
   | .rcd _ A => Sub.srcd (sub_refl A)
+  | .brand _ => Sub.sbrand
 
 theorem sub_and_inv_l : {A B C : Typ} → Sub A (.and B C) → Sub A B
   | _, _, _, .sandl h => .sandl (sub_and_inv_l h)
@@ -56,6 +61,7 @@ theorem sub_toplike {A B : Typ} (htl : TopLike A) (h : Sub A B) : TopLike B := b
   | sandr _ ih => cases htl with | tland _ h₂ => exact ih h₂
   | sand _ _ ih₁ ih₂ => exact TopLike.tland (ih₁ htl) (ih₂ htl)
   | srcd _ ih => cases htl with | tlrcd hB => exact TopLike.tlrcd (ih hB)
+  | sbrand => exact htl
 
 -- Peel the sandl/sandr chain of a derivation whose target is an arrow, handing the
 -- arrow-vs-arrow leaf to a continuation.
@@ -95,6 +101,18 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
     | top => intro _ _; exact Sub.stop
     | arr C₁ C₂ _ _ => intro _ h₂; nomatch h₂
     | rcd l C' _ => intro _ h₂; nomatch h₂
+    | brand _ => intro _ h₂; nomatch h₂
+    | and C₁ C₂ ihC₁ ihC₂ =>
+      intro h₁ h₂
+      exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
+  | brand n =>
+    intro A C
+    induction C with
+    | brand _ => intro h₁ h₂; cases h₂; exact h₁
+    | top => intro _ _; exact Sub.stop
+    | int => intro _ h₂; nomatch h₂
+    | arr C₁ C₂ _ _ => intro _ h₂; nomatch h₂
+    | rcd l C' _ => intro _ h₂; nomatch h₂
     | and C₁ C₂ ihC₁ ihC₂ =>
       intro h₁ h₂
       exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
@@ -106,6 +124,11 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
       intro h₁ h₂
       exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
     | int =>
+      intro h₁ h₂
+      cases h₂ with
+      | sandl hp => exact ihB₁ (sub_and_inv_l h₁) hp
+      | sandr hp => exact ihB₂ (sub_and_inv_r h₁) hp
+    | brand _ =>
       intro h₁ h₂
       cases h₂ with
       | sandl hp => exact ihB₁ (sub_and_inv_l h₁) hp
@@ -128,6 +151,7 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
       intro h₁ h₂
       exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
     | int => intro _ h₂; nomatch h₂
+    | brand _ => intro _ h₂; nomatch h₂
     | rcd l C' _ => intro _ h₂; nomatch h₂
     | arr C₁ C₂ _ _ =>
       intro h₁ h₂
@@ -144,6 +168,7 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
       intro h₁ h₂
       exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
     | int => intro _ h₂; nomatch h₂
+    | brand _ => intro _ h₂; nomatch h₂
     | arr C₁ C₂ _ _ => intro _ h₂; nomatch h₂
     | rcd l' C' _ =>
       intro h₁ h₂

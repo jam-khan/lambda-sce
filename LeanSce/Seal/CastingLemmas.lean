@@ -6,6 +6,8 @@ import LeanSce.Seal.SmallStep
 -- cast_preservation (L12) → cast_progress (L9).
 namespace Seal
 
+variable {Δ : BrandStore}
+
 -- Casting the unit value lands on the generator of a top-like target.
 theorem cast_unit_gen : {T : Typ} → {w : Exp} → Cast .unit T w → w = genVal T ∧ TopLike T
   | _, _, .ctop => ⟨rfl, TopLike.tltop⟩
@@ -27,6 +29,16 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | arr _ _ => nomatch hg
     | and _ _ => nomatch hg
     | rcd _ _ => nomatch hg
+    | brand _ => nomatch hg
+  | cwrap =>
+    intro A hg _
+    cases A with
+    | int => nomatch hg
+    | top => nomatch hg
+    | arr _ _ => nomatch hg
+    | and _ _ => nomatch hg
+    | rcd _ _ => nomatch hg
+    | brand _ => nomatch hg
   | ctop =>
     intro A _ _
     exact ⟨rfl, TopLike.tltop⟩
@@ -37,6 +49,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | top => nomatch hg
     | and _ _ => nomatch hg
     | rcd _ _ => nomatch hg
+    | brand _ => nomatch hg
     | arr C₀ D₀ =>
       injection hg with _ _ hB _
       cases htl with
@@ -51,6 +64,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | top => nomatch hg
     | arr _ _ => nomatch hg
     | rcd _ _ => nomatch hg
+    | brand _ => nomatch hg
     | and A₁ A₂ =>
       injection hg with h₁ _
       cases htl with
@@ -62,6 +76,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | top => nomatch hg
     | arr _ _ => nomatch hg
     | rcd _ _ => nomatch hg
+    | brand _ => nomatch hg
     | and A₁ A₂ =>
       injection hg with _ h₂
       cases htl with
@@ -78,6 +93,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | top => nomatch hg
     | arr _ _ => nomatch hg
     | and _ _ => nomatch hg
+    | brand _ => nomatch hg
     | rcd l' A' =>
       injection hg with _ hA'
       cases htl with
@@ -100,7 +116,7 @@ theorem gen_consistent {A B : Typ} (hA : TopLike A) (hB : TopLike B)
   rw [h₁.1, h₂.1]
 
 -- ⌉A⌈ → A↑ inhabits A in any context (needed for preservation of Casting-arrowtl).
-theorem genVal_typed {A : Typ} (htl : TopLike A) : ∀ Γ, HasType Γ (genVal A) A := by
+theorem genVal_typed {A : Typ} (htl : TopLike A) : ∀ Γ, HasType Δ Γ (genVal A) A := by
   induction htl with
   | tltop => intro Γ; exact HasType.tunit
   | tland h₁ h₂ ih₁ ih₂ =>
@@ -118,7 +134,7 @@ theorem genVal_typed {A : Typ} (htl : TopLike A) : ∀ Γ, HasType Γ (genVal A)
 
 -- A value castable at Int has an Int leaf in its type.
 theorem cast_int_cost : {v w : Exp} → Cast v .int w
-    → ∀ {Γ B : Typ}, Value v → HasType Γ v B → Cost B .int
+    → ∀ {Γ B : Typ}, Value v → HasType Δ Γ v B → Cost B .int
   | _, _, .cint => by
     intro _ ht
     cases ht
@@ -139,7 +155,7 @@ theorem cast_int_cost : {v w : Exp} → Cast v .int w
 -- A value castable at a non-top-like arrow type is COST-related to any arrow whose
 -- codomain sits below the target codomain.
 theorem cast_arr_cost : {v w : Exp} → {C D : Typ} → Cast v (.arr C D) w → ¬ TopLike D
-    → ∀ {Γ B : Typ}, Value v → HasType Γ v B
+    → ∀ {Γ B : Typ}, Value v → HasType Δ Γ v B
     → ∀ {E B₀ : Typ}, Sub B₀ D → Cost (.arr E B₀) B
   | _, _, _, _, .carrow _ _ hsB', hntlD => by
     intro _ ht
@@ -162,12 +178,33 @@ theorem cast_arr_cost : {v w : Exp} → {C D : Typ} → Cast v (.arr C D) w → 
     | tmrg _ hq' _ _ => exact Cost.crandr (cast_arr_cost hc hntlD hq hq' hsB₀)
     | tmergev _ _ _ hq' _ => exact Cost.crandr (cast_arr_cost hc hntlD hq hq' hsB₀)
 
+-- A value castable at a brand has that brand as a leaf of its type (only wrappers cast at
+-- brands, and only twrap types wrappers).
+theorem cast_brand_cost : {v w : Exp} → {n : Nat} → Cast v (.brand n) w
+    → ∀ {Γ B : Typ}, Value v → HasType Δ Γ v B → Cost B (.brand n)
+  | _, _, _, .cwrap => by
+    intro _ ht
+    cases ht
+    exact Cost.cbrand
+  | _, _, _, .cmrgl _ hc => by
+    intro hv ht
+    cases hv with | vmrg hp _ =>
+    cases ht with
+    | tmrg hp' _ _ _ => exact Cost.candl (cast_brand_cost hc hp hp')
+    | tmergev _ _ hp' _ _ => exact Cost.candl (cast_brand_cost hc hp hp')
+  | _, _, _, .cmrgr _ hc => by
+    intro hv ht
+    cases hv with | vmrg _ hq =>
+    cases ht with
+    | tmrg _ hq' _ _ => exact Cost.candr (cast_brand_cost hc hq hq')
+    | tmergev _ _ _ hq' _ => exact Cost.candr (cast_brand_cost hc hq hq')
+
 -- Peel the second cast at a record target down to its record leaf, handing the leaf to a
 -- continuation (which will be the outer induction hypothesis of casts_not_disjoint).
 theorem cast_rcd_cost_aux : {v w : Exp} → {l : String} → {T' : Typ} → Cast v (.rcd l T') w
-    → ∀ {Γ B : Typ} {A' : Typ}, Value v → HasType Γ v B
+    → ∀ {Γ B : Typ} {A' : Typ}, Value v → HasType Δ Γ v B
     → (∀ {p' : Exp} {Γ' B' : Typ} {w' : Exp},
-        Value p' → HasType Γ' p' B' → Cast p' T' w' → Cost A' B')
+        Value p' → HasType Δ Γ' p' B' → Cast p' T' w' → Cost A' B')
     → Cost (.rcd l A') B
   | _, _, _, _, .crcd hc' => by
     intro hv ht k
@@ -192,8 +229,8 @@ theorem cast_rcd_cost_aux : {v w : Exp} → {l : String} → {T' : Typ} → Cast
 -- no common non-top-like cast targets.
 theorem casts_not_disjoint
     {v₁ : Exp} {T : Typ} {w₁ : Exp} (hc₁ : Cast v₁ T w₁)
-    : ∀ {Γ₁ A : Typ}, Value v₁ → HasType Γ₁ v₁ A
-    → ∀ {v₂ : Exp} {Γ₂ B : Typ} {w₂ : Exp}, Value v₂ → HasType Γ₂ v₂ B → Cast v₂ T w₂
+    : ∀ {Γ₁ A : Typ}, Value v₁ → HasType Δ Γ₁ v₁ A
+    → ∀ {v₂ : Exp} {Γ₂ B : Typ} {w₂ : Exp}, Value v₂ → HasType Δ Γ₂ v₂ B → Cast v₂ T w₂
     → ¬ TopLike T → Cost A B := by
   induction hc₁ with
   | ctop =>
@@ -210,6 +247,10 @@ theorem casts_not_disjoint
   | carrowtl htlD _ _ =>
     intro _ _ _ _ _ _ _ _ _ _ _ hntl
     exact absurd (TopLike.tlarr htlD) hntl
+  | cwrap =>
+    intro Γ₁ A _ ht₁ v₂ Γ₂ B w₂ hv₂ ht₂ hc₂ _
+    cases ht₁
+    exact cost_symm (cast_brand_cost hc₂ hv₂ ht₂)
   | cmrgl _ _ ih =>
     intro Γ₁ A hv₁ ht₁ v₂ Γ₂ B w₂ hv₂ ht₂ hc₂ hntl
     cases hv₁ with | vmrg hp _ =>
@@ -242,7 +283,7 @@ theorem casts_not_disjoint
 
 -- Eᵢ Lemma 4: disjointness implies consistency.
 theorem disjoint_consistent {v₁ v₂ : Exp} {Γ₁ Γ₂ A B : Typ}
-    (hv₁ : Value v₁) (hv₂ : Value v₂) (ht₁ : HasType Γ₁ v₁ A) (ht₂ : HasType Γ₂ v₂ B)
+    (hv₁ : Value v₁) (hv₂ : Value v₂) (ht₁ : HasType Δ Γ₁ v₁ A) (ht₂ : HasType Δ Γ₂ v₂ B)
     (hd : Disj A B) : Consistent v₁ v₂ := by
   intro T w₁ w₂ c₁ c₂
   induction T generalizing w₁ w₂ with
@@ -268,6 +309,10 @@ theorem disjoint_consistent {v₁ v₂ : Exp} {Γ₁ Γ₂ A B : Typ}
     cases toplike_dec .int with
     | inl htl => nomatch htl
     | inr hntl => exact absurd (casts_not_disjoint c₁ hv₁ ht₁ hv₂ ht₂ c₂ hntl) hd
+  | brand n =>
+    cases toplike_dec (.brand n) with
+    | inl htl => nomatch htl
+    | inr hntl => exact absurd (casts_not_disjoint c₁ hv₁ ht₁ hv₂ ht₂ c₂ hntl) hd
   | arr T₁ T₂ _ _ =>
     cases toplike_dec (.arr T₁ T₂) with
     | inl htl => rw [cast_toplike_gen htl c₁, cast_toplike_gen htl c₂]
@@ -280,8 +325,8 @@ theorem disjoint_consistent {v₁ v₂ : Exp} {Γ₁ Γ₂ A B : Typ}
 -- Value closedness (Eᵢ Lemma 5 / Core's value_weaken): a well-typed value is well-typed
 -- under any context.  Merges typed by the context-sensitive tmrg re-type via tmergev,
 -- with consistency supplied by disjointness of the branches.
-theorem value_weaken {v : Exp} {Γ A : Typ} (ht : HasType Γ v A)
-    : ∀ {Γ' : Typ}, Value v → HasType Γ' v A := by
+theorem value_weaken {v : Exp} {Γ A : Typ} (ht : HasType Δ Γ v A)
+    : ∀ {Γ' : Typ}, Value v → HasType Δ Γ' v A := by
   induction ht with
   | tquery => intro _ hv; nomatch hv
   | tint => intro _ _; exact HasType.tint
@@ -305,12 +350,15 @@ theorem value_weaken {v : Exp} {Γ A : Typ} (ht : HasType Γ v A)
     intro Γ' _
     exact HasType.tclos hv' henv hd hb hs₁ hs₂
   | tanno _ _ _ => intro _ hv; nomatch hv
+  | twrap hΔ hv' hp _ => intro Γ' _; exact HasType.twrap hΔ hv' hp
+  | tseal _ _ _ _ _ => intro _ hv; nomatch hv
+  | tunseal _ _ _ _ _ _ => intro _ hv; nomatch hv
 
 -- Eᵢ Lemma 6: determinism of casting for well-typed values.  The merge overlap
 -- (cmrgl vs cmrgr) is resolved by disjointness of branches (tmrg) or the consistency
 -- premise (tmergev).
 theorem cast_determinism {v : Exp} {A : Typ} {w₁ : Exp} (c₁ : Cast v A w₁)
-    : ∀ {Γ C : Typ}, Value v → HasType Γ v C → ∀ {w₂ : Exp}, Cast v A w₂ → w₁ = w₂ := by
+    : ∀ {Γ C : Typ}, Value v → HasType Δ Γ v C → ∀ {w₂ : Exp}, Cast v A w₂ → w₁ = w₂ := by
   induction c₁ with
   | cint =>
     intro _ _ _ _ _ c₂
@@ -332,6 +380,10 @@ theorem cast_determinism {v : Exp} {A : Typ} {w₁ : Exp} (c₁ : Cast v A w₁)
     cases c₂ with
     | carrow hntl _ _ => exact absurd htl hntl
     | carrowtl _ _ _ => rfl
+  | cwrap =>
+    intro _ _ _ _ _ c₂
+    cases c₂
+    rfl
   | cmrgl hord hc ih =>
     intro Γ C hv ht w₂ c₂
     cases hv with | vmrg hv₁ hv₂ =>
@@ -416,6 +468,12 @@ theorem cast_trans_arrowtl : {v : Exp} → {A : Typ} → {u : Exp} → {A₀ B�
   | _, _, _, _, _, _, .cmrgr _ h, _, _, htl', hsC', hsB' =>
     .cmrgr .oarr (cast_trans_arrowtl h htl' hsC' hsB')
 
+theorem cast_trans_wrap : {v : Exp} → {A : Typ} → {n : Nat} → {u : Exp}
+    → Cast v A (.wrap n u) → Cast v (.brand n) (.wrap n u)
+  | _, _, _, _, .cwrap => .cwrap
+  | _, _, _, _, .cmrgl _ h => .cmrgl .obrand (cast_trans_wrap h)
+  | _, _, _, _, .cmrgr _ h => .cmrgr .obrand (cast_trans_wrap h)
+
 theorem cast_trans_mrgl : {v : Exp} → {A : Typ} → {x y : Exp}
     → Cast v A (.mrg x y)
     → ∀ {B : Typ} {v₂ : Exp}, Ordinary B
@@ -444,17 +502,18 @@ theorem cast_trans : {v : Exp} → {A : Typ} → {v₁ : Exp} → {B : Typ} → 
   | _, _, _, _, _, f, .carrowtl htl hsC hsB => cast_trans_arrowtl f htl hsC hsB
   | _, _, _, _, _, f, .cmrgl hord s => cast_trans_mrgl f hord (fun f' => cast_trans f' s)
   | _, _, _, _, _, f, .cmrgr hord s => cast_trans_mrgr f hord (fun f' => cast_trans f' s)
+  | _, _, _, _, _, f, .cwrap => cast_trans_wrap f
 
 -- Eᵢ Lemma 11: the results of casting one well-typed value are consistent.
 theorem consistent_after_cast {v : Exp} {Γ C A B : Typ} {v₁ v₂ : Exp}
-    (hv : Value v) (ht : HasType Γ v C) (c₁ : Cast v A v₁) (c₂ : Cast v B v₂)
+    (hv : Value v) (ht : HasType Δ Γ v C) (c₁ : Cast v A v₁) (c₂ : Cast v B v₂)
     : Consistent v₁ v₂ := by
   intro T w₁ w₂ d₁ d₂
   exact cast_determinism (cast_trans c₁ d₁) hv ht (cast_trans c₂ d₂)
 
 -- Eᵢ Lemma 12: casting preserves types — the result inhabits the cast type.
 theorem cast_preservation : {v : Exp} → {A : Typ} → {w : Exp} → Cast v A w
-    → ∀ {Γ B : Typ}, Value v → HasType Γ v B → HasType Γ w A
+    → ∀ {Γ B : Typ}, Value v → HasType Δ Γ v B → HasType Δ Γ w A
   | _, _, _, .cint => by
     intro _ ht
     cases ht
@@ -497,10 +556,14 @@ theorem cast_preservation : {v : Exp} → {A : Typ} → {w : Exp} → Cast v A w
     cases hv with | vrcd hv' =>
     cases ht with
     | trcd hp => exact HasType.trcd (cast_preservation hc hv' hp)
+  | _, _, _, .cwrap => by
+    intro _ ht
+    cases ht with
+    | twrap hΔ hv' hp => exact HasType.twrap hΔ hv' hp
 
 -- Eᵢ Lemma 9: a well-typed value casts at any supertype of its type.
 theorem cast_progress {A : Typ}
-    : ∀ {v : Exp} {Γ B : Typ}, Value v → HasType Γ v B → Sub B A → ∃ w, Cast v A w := by
+    : ∀ {v : Exp} {Γ B : Typ}, Value v → HasType Δ Γ v B → Sub B A → ∃ w, Cast v A w := by
   induction A with
   | top =>
     intro v Γ B _ _ _
@@ -545,6 +608,50 @@ theorem cast_progress {A : Typ}
     | tlam _ _ _ => intro hv _; nomatch hv
     | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
     | tanno _ _ _ => intro hv _; nomatch hv
+    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | tseal _ _ _ _ _ => intro hv _; nomatch hv
+    | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
+  | brand n =>
+    intro v Γ B hv ht hs
+    revert hv hs
+    induction ht with
+    | tquery => intro hv _; nomatch hv
+    | tint => intro _ hs; nomatch hs
+    | tunit => intro _ hs; nomatch hs
+    | tapp _ _ _ _ => intro hv _; nomatch hv
+    | tbox _ _ _ _ => intro hv _; nomatch hv
+    | tproj _ _ _ => intro hv _; nomatch hv
+    | trcd _ _ => intro _ hs; nomatch hs
+    | trproj _ _ _ => intro hv _; nomatch hv
+    | tmrg _ _ _ _ ih₁ ih₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ih₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.obrand hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ih₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.obrand hc⟩
+    | tmergev _ _ _ _ _ ih₁ ih₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ih₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.obrand hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ih₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.obrand hc⟩
+    | tlam _ _ _ => intro hv _; nomatch hv
+    | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tanno _ _ _ => intro hv _; nomatch hv
+    | twrap _ _ _ _ =>
+      intro _ hs
+      cases hs with
+      | sbrand => exact ⟨_, Cast.cwrap⟩
+    | tseal _ _ _ _ _ => intro hv _; nomatch hv
+    | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
   | arr C D _ _ =>
     intro v Γ B hv ht hs
     revert hv hs
@@ -586,6 +693,9 @@ theorem cast_progress {A : Typ}
         | inl htl => exact ⟨_, Cast.carrowtl htl (sub_trans hsC hs₂) hsD⟩
         | inr hntl => exact ⟨_, Cast.carrow hntl (sub_trans hsC hs₂) hsD⟩
     | tanno _ _ _ => intro hv _; nomatch hv
+    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | tseal _ _ _ _ _ => intro hv _; nomatch hv
+    | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
   | rcd l A' ihA' =>
     intro v Γ B hv ht hs
     revert hv hs
@@ -627,5 +737,8 @@ theorem cast_progress {A : Typ}
     | tlam _ _ _ => intro hv _; nomatch hv
     | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
     | tanno _ _ _ => intro hv _; nomatch hv
+    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | tseal _ _ _ _ _ => intro hv _; nomatch hv
+    | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
 
 end Seal

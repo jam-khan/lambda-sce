@@ -6,6 +6,8 @@ import LeanSce.Seal.Elaboration
 -- the seal agree exactly after sealing.
 namespace Seal
 
+variable {Δ : BrandStore}
+
 -- Sealing discards: {x = 1} # {y = 2} sealed at {x : Int} is exactly {x = 1}.
 example : Cast (.mrg (.lrec "x" (.lit 1)) (.lrec "y" (.lit 2))) (.rcd "x" .int)
     (.lrec "x" (.lit 1)) :=
@@ -21,7 +23,7 @@ example : Step .unit
 
 -- The typing side of the same seal: the merge has the full inferred type
 -- {x : Int} & {y : Int}; the annotation compiles the client against {x : Int} only.
-example : HasType .top
+example : HasType Δ .top
     (.anno (.mrg (.lrec "x" (.lit 1)) (.lrec "y" (.lit 2))) (.rcd "x" .int))
     (.rcd "x" .int) :=
   HasType.tanno
@@ -39,11 +41,12 @@ example : Step .unit
 -- Two providers that differ outside the seal — {x = 1} # {y = 2} vs {x = 1} # {z = 3} —
 -- both seal to {x = 1}, hence are related at the seal, hence (by `sealing`)
 -- indistinguishable to any client typed against {x : Int}.
-example : LR (.rcd "x" .int) (.lrec "x" (.lit 1)) (.lrec "x" (.lit 1)) :=
+example : LR noBrands noBrands (fun _ _ _ => False) (.rcd "x" .int)
+    (.lrec "x" (.lit 1)) (.lrec "x" (.lit 1)) :=
   ⟨_, _, rfl, rfl, 1, rfl, rfl⟩
 
 -- A client of the seal: select x from the sealed environment.
-example : HasType (.rcd "x" .int) (.rproj .query "x") .int :=
+example : HasType Δ (.rcd "x" .int) (.rproj .query "x") .int :=
   HasType.trproj HasType.tquery RLookup.zero
 
 -- SCE's non-capturing merge elaborates into λE^≤ via sealing — the (? : Γ) restriction
@@ -57,7 +60,7 @@ example : elabSeal .top (.nmrg (.lrec "x" (.lit 1)) (.lrec "y" (.lit 2)))
     disj_top_r (disj_rcd_ne (by decide))
 
 -- ... and the elaborated code is well-typed λE^≤ by the preservation theorem.
-example : Seal.HasType .top
+example : Seal.HasType Δ .top
     (.mrg (.lrec "x" (.lit 1)) (.box (.anno .query .top) (.lrec "y" (.lit 2))))
     (.and (.rcd "x" .int) (.rcd "y" .int)) :=
   seal_type_preservation

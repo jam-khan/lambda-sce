@@ -21,6 +21,7 @@ import LeanSce.Seal.Correctness
 -- top-like arrow collapses closures to generators asymmetrically.
 namespace Seal
 
+
 -- ── Freshness gives disjointness ─────────────────────────────────────────────────────
 
 theorem cost_rcd_lin : {T : Seal.Typ} → {x : String} → {S : Seal.Typ}
@@ -60,15 +61,15 @@ def linkedSealLin (Γ' Γ₁' B' : Seal.Typ) (x l : String) (ce₁ ce₂ : Seal.
 
 -- Well-typedness of the composition term, from the units' typings alone.
 theorem linkedSealLin_typed {Γ Γ₁ A B : SCE.Typ} {x l : String} {ce₁ ce₂ : Seal.Exp}
-    (ht₁ : Seal.HasType (sealTyp Γ) ce₁ (sealTyp Γ₁))
-    (ht₂ : Seal.HasType (sealTyp Γ) ce₂
+    (ht₁ : Seal.HasType noBrands (sealTyp Γ) ce₁ (sealTyp Γ₁))
+    (ht₂ : Seal.HasType noBrands (sealTyp Γ) ce₂
       (.arr (.rcd l (sealTyp A)) (sealTyp B)))
     (hlookup : SCE.SRLookup Γ₁ l A)
     (hd₁ : Seal.Disj (sealTyp Γ₁) (sealTyp Γ))
     (hd₂ : Seal.Disj (sealTyp Γ₁) (sealTyp B))
     (hfrΓ : ¬ Seal.Lin x (sealTyp Γ))
     (hfrΓ₁ : ¬ Seal.Lin x (sealTyp Γ₁))
-    : Seal.HasType (sealTyp Γ)
+    : Seal.HasType noBrands (sealTyp Γ)
         (linkedSealLin (sealTyp Γ) (sealTyp Γ₁) (sealTyp B) x l ce₁ ce₂)
         (.and (sealTyp Γ₁) (sealTyp B)) := by
   refine HasType.tapp (HasType.tlam (disj_rcd_notin hfrΓ) ?_) (HasType.trcd ht₁)
@@ -114,7 +115,7 @@ theorem seal_separate_compilation_lin
     have hv₁c := eval_value hEV₁
     have hv₁c' := eval_value hEV₁'
     have hE₁v : Value (.mrg ρc (.lrec x vc₁')) := Value.vmrg hρv (Value.vrcd hv₁c')
-    have htE₁ : HasType .top (.mrg ρc (.lrec x vc₁'))
+    have htE₁ : HasType noBrands .top (.mrg ρc (.lrec x vc₁'))
         (.and (sealTyp Γ) (.rcd x (sealTyp Γ₁))) :=
       HasType.tmergev hρv (Value.vrcd hv₁c') (eval_typed henv)
         (HasType.trcd (eval_typed hEV₁'))
@@ -152,7 +153,7 @@ theorem seal_separate_compilation_lin
       -- typing of the merge-extended environment E₂ for the outer seal
       have hDC : Seal.Disj (.and (sealTyp Γ) (.rcd x (sealTyp Γ₁))) (sealTyp Γ₁) :=
         disj_and_l (disj_symm hd₁) (disj_symm (disj_rcd_notin hfrΓ₁))
-      have htE₂ : HasType .top (.mrg (.mrg ρc (.lrec x vc₁')) vc₁')
+      have htE₂ : HasType noBrands .top (.mrg (.mrg ρc (.lrec x vc₁')) vc₁')
           (.and (.and (sealTyp Γ) (.rcd x (sealTyp Γ₁))) (sealTyp Γ₁)) :=
         HasType.tmergev hE₁v hv₁c' htE₁ (eval_typed hEV₁')
           (disjoint_consistent hE₁v hv₁c' htE₁ (eval_typed hEV₁') hDC)
@@ -215,7 +216,7 @@ theorem seal_separate_compilation_lin
                 (mstep_trans (mstep_rproj hE₁'v hproj₂)
                   (mstep_one (Step.srprojv hE₁'v hv₁''c hwc)))
             obtain ⟨argc, hcarg, _⟩ := eval_cast_ex (EVal.rcd hEVw)
-            obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed hB' .top)
+            obtain ⟨g', hcg⟩ := cast_progress (genVal_value _) (genVal_typed (Δ := noBrands) hB' .top)
               (sub_refl _)
             have hg' := (toplike_gen_cast hB' hcg).1
             obtain ⟨wa, hwa⟩ := eval_elab (EVal.rcd hEVw)

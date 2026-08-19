@@ -14,6 +14,10 @@ inductive Cost : Typ → Typ → Prop where
   | crandr {A B C} : Cost A C → Cost A (.and B C)
   | carr {A B C D} : Cost B D → Cost (.arr A B) (.arr C D)
   | crcd {l A B} : Cost A B → Cost (.rcd l A) (.rcd l B)
+  -- A brand's only ordinary supertype is itself, so α_n ∗ B iff α_n does not occur
+  -- (as a leaf) in B.  Distinct brands are disjoint; a brand is disjoint from Int, from
+  -- every arrow, from every record — regardless of its (hidden) representation.
+  | cbrand {n} : Cost (.brand n) (.brand n)
 
 def Disj (A B : Typ) : Prop := ¬ Cost A B
 
@@ -25,6 +29,7 @@ theorem cost_symm : {A B : Typ} → Cost A B → Cost B A
   | _, _, .crandr h => .candr (cost_symm h)
   | _, _, .carr h => .carr (cost_symm h)
   | _, _, .crcd h => .crcd (cost_symm h)
+  | _, _, .cbrand => .cbrand
 
 theorem disj_symm {A B : Typ} (h : Disj A B) : Disj B A :=
   fun hc => h (cost_symm hc)
@@ -54,6 +59,7 @@ theorem cost_compose : {A B C : Typ} → Sub A B → Cost B C → Cost A C
   | _, _, _, .sand _ p₂, .candr h => cost_compose p₂ h
   | _, _, _, .sand p₁ p₂, .crandl h => .crandl (cost_compose (.sand p₁ p₂) h)
   | _, _, _, .sand p₁ p₂, .crandr h => .crandr (cost_compose (.sand p₁ p₂) h)
+  | _, _, _, .sbrand, h => h
 
 -- Eᵢ Lemma 2.6: disjointness is preserved by widening.
 theorem sub_disj {A B C : Typ} (hs : Sub A B) (hd : Disj A C) : Disj B C :=
@@ -72,6 +78,28 @@ theorem disj_rcd_ne {l₁ l₂ : String} (hne : l₁ ≠ l₂) {A B : Typ}
   cases hc with
   | crcd _ => exact hne rfl
 
+-- Distinct brands are disjoint.
+theorem disj_brand_ne {n m : Nat} (hne : n ≠ m) : Disj (.brand n) (.brand m) := fun hc => by
+  cases hc with
+  | cbrand => exact hne rfl
+
+-- `BrandIn n B`: the brand α_n occurs somewhere in `B`.
+inductive BrandIn (n : Nat) : Typ → Prop where
+  | self          : BrandIn n (.brand n)
+  | arrl {A B}    : BrandIn n A → BrandIn n (.arr A B)
+  | arrr {A B}    : BrandIn n B → BrandIn n (.arr A B)
+  | andl {A B}    : BrandIn n A → BrandIn n (.and A B)
+  | andr {A B}    : BrandIn n B → BrandIn n (.and A B)
+  | rcd {l A}     : BrandIn n A → BrandIn n (.rcd l A)
+
+-- A brand is disjoint from every type it does not occur in — the abstraction principle
+-- for disjointness: clients need no knowledge of α_n's representation to discharge
+-- `α_n ∗ B`.
+theorem disj_brand_notin {n : Nat} : {B : Typ} → ¬ BrandIn n B → Disj (.brand n) B
+  | _, hnin, .cbrand => hnin BrandIn.self
+  | _, hnin, .crandl h => disj_brand_notin (fun h' => hnin (BrandIn.andl h')) h
+  | _, hnin, .crandr h => disj_brand_notin (fun h' => hnin (BrandIn.andr h')) h
+
 -- A subtype of a non-top-like type is COST-related to it.
 theorem sub_cost {B D : Typ} (h : Sub B D) (hntl : ¬ TopLike D) : Cost B D := by
   induction h with
@@ -87,12 +115,20 @@ theorem sub_cost {B D : Typ} (h : Sub B D) (hntl : ¬ TopLike D) : Cost B D := b
       exact Cost.crandr (ih₂ (fun htl₂ => hntl (TopLike.tland htl₁ htl₂)))
     | inr hntl₁ => exact Cost.crandl (ih₁ hntl₁)
   | srcd _ ih => exact Cost.crcd (ih (fun htl => hntl (TopLike.tlrcd htl)))
+  | sbrand => exact Cost.cbrand
 
 -- Two types COST-related to Int are COST-related to each other.
 theorem cost_int_compose : {B₁ B₂ : Typ} → Cost B₁ .int → Cost B₂ .int → Cost B₁ B₂
   | _, _, .cint, c₂ => cost_symm c₂
   | _, _, .candl h, c₂ => .candl (cost_int_compose h c₂)
   | _, _, .candr h, c₂ => .candr (cost_int_compose h c₂)
+
+-- Two types COST-related to a brand are COST-related to each other.
+theorem cost_brand_compose : {n : Nat} → {B₁ B₂ : Typ}
+    → Cost B₁ (.brand n) → Cost B₂ (.brand n) → Cost B₁ B₂
+  | _, _, _, .cbrand, c₂ => cost_symm c₂
+  | _, _, _, .candl h, c₂ => .candl (cost_brand_compose h c₂)
+  | _, _, _, .candr h, c₂ => .candr (cost_brand_compose h c₂)
 
 -- Two subtypes of a common non-top-like type share a common ordinary supertype
 -- (the compositional bridge behind "both casts succeeding refutes disjointness").
@@ -103,6 +139,9 @@ theorem sub_sub_cost : {D B₁ B₂ : Typ} → ¬ TopLike D → Sub B₁ D → S
   | int =>
     intro B₁ B₂ hntl h₁ h₂
     exact cost_int_compose (sub_cost h₁ hntl) (sub_cost h₂ hntl)
+  | brand n =>
+    intro B₁ B₂ hntl h₁ h₂
+    exact cost_brand_compose (sub_cost h₁ hntl) (sub_cost h₂ hntl)
   | and D₁ D₂ ihD₁ ihD₂ =>
     intro B₁ B₂ hntl h₁ h₂
     cases toplike_dec D₁ with

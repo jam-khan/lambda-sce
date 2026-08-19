@@ -8,31 +8,51 @@ import LeanSce.Seal.Preservation
 -- against a seal cannot distinguish providers that agree at the seal.  Strong
 -- normalization of well-typed λE^≤ programs falls out (no TDOS merge calculus had a
 -- mechanized normalization result before; Eᵢ's termination is listed as unknown).
+--
+-- Type abstraction: the relation is indexed by two brand stores Δ₁ Δ₂ (the two providers
+-- may use different representations, so left values type under Δ₁ and right values under
+-- Δ₂) and by a brand interpretation η : Nat → Exp → Exp → Prop.  At `brand n` two values
+-- are related iff both are wrappers whose payloads are η-related — the standard relational
+-- interpretation of an abstract type; η is arbitrary.  The fundamental lemma is stated for
+-- *client* typing (`HasType noBrands`, every brand opaque): a client cannot wrap, seal or
+-- unseal, and everything else it can do respects η by construction.  Provider-side
+-- values enter the relation through the sealing coercion (Abstraction.lean: coe_lr).
 namespace Seal
+
+variable {Δ Δ₁ Δ₂ : BrandStore} {η : Nat → Exp → Exp → Prop}
 
 -- The relation, by structural recursion on the type.  Every clause that cannot re-derive
 -- the values' typing carries it (& needs the consistency baked into the typing; arrows
--- carry their closure typing).  The arrow clause is extensional and phrased at the
--- application level with existential runs, over arbitrary value environments: the
--- semantics' internal argument-cast at the closure's annotation input is thereby absorbed.
-def LR : Typ → Exp → Exp → Prop
+-- carry their closure typing; brands carry it because the payload's typing lives in the
+-- respective store).  The arrow clause is extensional and phrased at the application
+-- level with existential runs, over arbitrary value environments: the semantics' internal
+-- argument-cast at the closure's annotation input is thereby absorbed.
+def LR (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) : Typ → Exp → Exp → Prop
   | .int, v₁, v₂ => ∃ i, v₁ = .lit i ∧ v₂ = .lit i
   | .top, v₁, v₂ => v₁ = .unit ∧ v₂ = .unit
+  | .brand n, v₁, v₂ =>
+      HasType Δ₁ .top v₁ (.brand n) ∧ HasType Δ₂ .top v₂ (.brand n) ∧
+      ∃ w₁ w₂, v₁ = .wrap n w₁ ∧ v₂ = .wrap n w₂ ∧ η n w₁ w₂
   | .and A B, v₁, v₂ =>
-      HasType .top v₁ (.and A B) ∧ HasType .top v₂ (.and A B) ∧
-      ∃ a₁ b₁ a₂ b₂, v₁ = .mrg a₁ b₁ ∧ v₂ = .mrg a₂ b₂ ∧ LR A a₁ a₂ ∧ LR B b₁ b₂
+      HasType Δ₁ .top v₁ (.and A B) ∧ HasType Δ₂ .top v₂ (.and A B) ∧
+      ∃ a₁ b₁ a₂ b₂, v₁ = .mrg a₁ b₁ ∧ v₂ = .mrg a₂ b₂ ∧ LR Δ₁ Δ₂ η A a₁ a₂ ∧ LR Δ₁ Δ₂ η B b₁ b₂
   | .rcd l A, v₁, v₂ =>
-      ∃ w₁ w₂, v₁ = .lrec l w₁ ∧ v₂ = .lrec l w₂ ∧ LR A w₁ w₂
+      ∃ w₁ w₂, v₁ = .lrec l w₁ ∧ v₂ = .lrec l w₂ ∧ LR Δ₁ Δ₂ η A w₁ w₂
   | .arr A B, v₁, v₂ =>
       Value v₁ ∧ Value v₂ ∧
-      HasType .top v₁ (.arr A B) ∧ HasType .top v₂ (.arr A B) ∧
-      ∀ u₁ u₂, LR A u₁ u₂ →
+      HasType Δ₁ .top v₁ (.arr A B) ∧ HasType Δ₂ .top v₂ (.arr A B) ∧
+      ∀ u₁ u₂, LR Δ₁ Δ₂ η A u₁ u₂ →
         ∀ ρ₁ ρ₂, Value ρ₁ → Value ρ₂ →
-          ∃ w₁ w₂, MStep ρ₁ (.app v₁ u₁) w₁ ∧ MStep ρ₂ (.app v₂ u₂) w₂ ∧ LR B w₁ w₂
+          ∃ w₁ w₂, MStep ρ₁ (.app v₁ u₁) w₁ ∧ MStep ρ₂ (.app v₂ u₂) w₂ ∧ LR Δ₁ Δ₂ η B w₁ w₂
 
-theorem lr_value : {T : Typ} → {v₁ v₂ : Exp} → LR T v₁ v₂ → Value v₁ ∧ Value v₂
+theorem lr_value : {T : Typ} → {v₁ v₂ : Exp} → LR Δ₁ Δ₂ η T v₁ v₂ → Value v₁ ∧ Value v₂
   | .int, _, _, ⟨_, h₁, h₂⟩ => by subst h₁; subst h₂; exact ⟨Value.vint, Value.vint⟩
   | .top, _, _, ⟨h₁, h₂⟩ => by subst h₁; subst h₂; exact ⟨Value.vunit, Value.vunit⟩
+  | .brand _, _, _, ⟨ht₁, ht₂, _, _, h₁, h₂, _⟩ => by
+    subst h₁; subst h₂
+    cases ht₁ with | twrap _ hv₁ _ =>
+    cases ht₂ with | twrap _ hv₂ _ =>
+    exact ⟨Value.vwrap hv₁, Value.vwrap hv₂⟩
   | .and A B, _, _, ⟨_, _, a₁, b₁, a₂, b₂, h₁, h₂, hA, hB⟩ => by
     subst h₁; subst h₂
     exact ⟨Value.vmrg (lr_value hA).1 (lr_value hB).1,
@@ -42,10 +62,11 @@ theorem lr_value : {T : Typ} → {v₁ v₂ : Exp} → LR T v₁ v₂ → Value 
     exact ⟨Value.vrcd (lr_value hA).1, Value.vrcd (lr_value hA).2⟩
   | .arr A B, _, _, ⟨hv₁, hv₂, _, _, _⟩ => ⟨hv₁, hv₂⟩
 
-theorem lr_typed : {T : Typ} → {v₁ v₂ : Exp} → LR T v₁ v₂
-    → HasType .top v₁ T ∧ HasType .top v₂ T
+theorem lr_typed : {T : Typ} → {v₁ v₂ : Exp} → LR Δ₁ Δ₂ η T v₁ v₂
+    → HasType Δ₁ .top v₁ T ∧ HasType Δ₂ .top v₂ T
   | .int, _, _, ⟨_, h₁, h₂⟩ => by subst h₁; subst h₂; exact ⟨HasType.tint, HasType.tint⟩
   | .top, _, _, ⟨h₁, h₂⟩ => by subst h₁; subst h₂; exact ⟨HasType.tunit, HasType.tunit⟩
+  | .brand _, _, _, ⟨ht₁, ht₂, _⟩ => ⟨ht₁, ht₂⟩
   | .and _ _, _, _, ⟨ht₁, ht₂, _⟩ => ⟨ht₁, ht₂⟩
   | .rcd l A, _, _, ⟨w₁, w₂, h₁, h₂, hA⟩ => by
     subst h₁; subst h₂
@@ -179,7 +200,7 @@ theorem mstep_anno_inv {venv e r : Exp} {T : Typ} (h : MStep venv (.anno e T) r)
 
 -- ── Canonical forms and merge-cast reconciliation ────────────────────────────────────
 
-theorem canonical_arr {Γ C D : Typ} {v : Exp} (hv : Value v) (ht : HasType Γ v (.arr C D))
+theorem canonical_arr {Γ C D : Typ} {v : Exp} (hv : Value v) (ht : HasType Δ Γ v (.arr C D))
     : ∃ u A₀ B₀ e, v = .clos u A₀ B₀ e := by
   cases ht with
   | tclos _ _ _ _ _ _ => exact ⟨_, _, _, _, rfl⟩
@@ -190,12 +211,14 @@ theorem canonical_arr {Γ C D : Typ} {v : Exp} (hv : Value v) (ht : HasType Γ v
   | trproj _ _ => nomatch hv
   | tanno _ _ => nomatch hv
   | tlam _ _ => nomatch hv
+  | tseal _ _ _ _ => nomatch hv
+  | tunseal _ _ _ _ _ => nomatch hv
 
 -- Casting a well-typed merge at (a supertype of) its left component's type agrees with
 -- casting the component directly.  Ordinary targets close by determinism/consistency;
 -- only the & case recurses.
 theorem cast_merge_eq_l_ord {a b : Exp} {Γ B₁ B₂ T : Typ} {w w' : Exp}
-    (hord : Ordinary T) (hv : Value (.mrg a b)) (ht : HasType Γ (.mrg a b) (.and B₁ B₂))
+    (hord : Ordinary T) (hv : Value (.mrg a b)) (ht : HasType Δ Γ (.mrg a b) (.and B₁ B₂))
     (hc : Cast (.mrg a b) T w) (hc' : Cast a T w') : w = w' := by
   cases hv with
   | vmrg hva hvb =>
@@ -213,7 +236,7 @@ theorem cast_merge_eq_l_ord {a b : Exp} {Γ B₁ B₂ T : Typ} {w w' : Exp}
     | ctop => nomatch hord
 
 theorem cast_merge_eq_l {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' : Exp},
-    Value (.mrg a b) → HasType Γ (.mrg a b) (.and B₁ B₂)
+    Value (.mrg a b) → HasType Δ Γ (.mrg a b) (.and B₁ B₂)
     → Cast (.mrg a b) T w → Cast a T w' → w = w' := by
   intro T
   induction T with
@@ -246,9 +269,12 @@ theorem cast_merge_eq_l {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' :
   | rcd l T' _ =>
     intro w w' hv ht hc hc'
     exact cast_merge_eq_l_ord Ordinary.orcd hv ht hc hc'
+  | brand _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_l_ord Ordinary.obrand hv ht hc hc'
 
 theorem cast_merge_eq_r_ord {a b : Exp} {Γ B₁ B₂ T : Typ} {w w' : Exp}
-    (hord : Ordinary T) (hv : Value (.mrg a b)) (ht : HasType Γ (.mrg a b) (.and B₁ B₂))
+    (hord : Ordinary T) (hv : Value (.mrg a b)) (ht : HasType Δ Γ (.mrg a b) (.and B₁ B₂))
     (hc : Cast (.mrg a b) T w) (hc' : Cast b T w') : w = w' := by
   cases hv with
   | vmrg hva hvb =>
@@ -265,7 +291,7 @@ theorem cast_merge_eq_r_ord {a b : Exp} {Γ B₁ B₂ T : Typ} {w w' : Exp}
     | ctop => nomatch hord
 
 theorem cast_merge_eq_r {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' : Exp},
-    Value (.mrg a b) → HasType Γ (.mrg a b) (.and B₁ B₂)
+    Value (.mrg a b) → HasType Δ Γ (.mrg a b) (.and B₁ B₂)
     → Cast (.mrg a b) T w → Cast b T w' → w = w' := by
   intro T
   induction T with
@@ -298,10 +324,13 @@ theorem cast_merge_eq_r {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' :
   | rcd l T' _ =>
     intro w w' hv ht hc hc'
     exact cast_merge_eq_r_ord Ordinary.orcd hv ht hc hc'
+  | brand _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_r_ord Ordinary.obrand hv ht hc hc'
 
 -- ── The generator is self-related at top-like types ──────────────────────────────────
 
-theorem toplike_lr_gen {D : Typ} (htl : TopLike D) : LR D (genVal D) (genVal D) := by
+theorem toplike_lr_gen {D : Typ} (htl : TopLike D) : LR Δ₁ Δ₂ η D (genVal D) (genVal D) := by
   induction htl with
   | tltop => exact ⟨rfl, rfl⟩
   | tland h₁ h₂ ih₁ ih₂ =>
@@ -320,7 +349,7 @@ theorem toplike_lr_gen {D : Typ} (htl : TopLike D) : LR D (genVal D) (genVal D) 
     have htu := lr_typed hu
     obtain ⟨u₁', hc₁⟩ := cast_progress hvu.1 htu.1 (sub_refl A₀)
     obtain ⟨u₂', hc₂⟩ := cast_progress hvu.2 htu.2 (sub_refl A₀)
-    obtain ⟨g', hcg⟩ := cast_progress (genVal_value D') (genVal_typed h .top) (sub_refl D')
+    obtain ⟨g', hcg⟩ := cast_progress (genVal_value D') (genVal_typed (Δ := Δ₁) h .top) (sub_refl D')
     have hg' : g' = genVal D' := (toplike_gen_cast h hcg).1
     have hrun : ∀ (ρ u u' : Exp), Value ρ → Value u → Cast u A₀ u' →
         MStep ρ (.app (genVal (.arr A₀ D')) u) g' := by
@@ -338,8 +367,8 @@ theorem toplike_lr_gen {D : Typ} (htl : TopLike D) : LR D (genVal D) (genVal D) 
 -- derivation: sandl/sandr reconcile the merge-peeling casts via cast_merge_eq;
 -- the arrow case rebuilds the applications' runs, using cast transitivity to identify
 -- the argument casts and to compose the reseal at the wider codomain.
-theorem cast_lr {B A : Typ} (hs : Sub B A) {v₁ v₂ w₁ w₂ : Exp} (hlr : LR B v₁ v₂)
-    (c₁ : Cast v₁ A w₁) (c₂ : Cast v₂ A w₂) : LR A w₁ w₂ := by
+theorem cast_lr {B A : Typ} (hs : Sub B A) {v₁ v₂ w₁ w₂ : Exp} (hlr : LR Δ₁ Δ₂ η B v₁ v₂)
+    (c₁ : Cast v₁ A w₁) (c₂ : Cast v₂ A w₂) : LR Δ₁ Δ₂ η A w₁ w₂ := by
   induction hs generalizing v₁ v₂ w₁ w₂ with
   | sint =>
     obtain ⟨i, e₁, e₂⟩ := hlr
@@ -400,6 +429,13 @@ theorem cast_lr {B A : Typ} (hs : Sub B A) {v₁ v₂ w₁ w₂ : Exp} (hlr : LR
     | crcd d₁ =>
       cases c₂ with
       | crcd d₂ => exact ⟨_, _, rfl, rfl, ih hInner d₁ d₂⟩
+  | sbrand =>
+    obtain ⟨ht₁, ht₂, u₁, u₂, e₁, e₂, hη⟩ := hlr
+    subst e₁; subst e₂
+    cases c₁ with
+    | cwrap =>
+      cases c₂ with
+      | cwrap => exact ⟨ht₁, ht₂, u₁, u₂, rfl, rfl, hη⟩
   | @sarr C' D' C D hsC hsD ihC ihD =>
     obtain ⟨hv₁, hv₂, ht₁, ht₂, CL⟩ := hlr
     obtain ⟨u₁env, A₁₀, B₁₀, e₁b, hc₁eq⟩ := canonical_arr hv₁ ht₁
@@ -425,7 +461,7 @@ theorem cast_lr {B A : Typ} (hs : Sub B A) {v₁ v₂ w₁ w₂ : Exp} (hlr : LR
         -- cast the arguments at the source domain and relate them there
         obtain ⟨u₁c, cu₁⟩ := cast_progress hvu.1 htu.1 hsC
         obtain ⟨u₂c, cu₂⟩ := cast_progress hvu.2 htu.2 hsC
-        have huc : LR C' u₁c u₂c := ihC hu cu₁ cu₂
+        have huc : LR Δ₁ Δ₂ η C' u₁c u₂c := ihC hu cu₁ cu₂
         -- the old behavior at the cast arguments
         obtain ⟨r₁, r₂, run₁, run₂, hr⟩ := CL u₁c u₂c huc ρ₁ ρ₂ hρ₁ hρ₂
         have hvr := lr_value hr
@@ -463,25 +499,25 @@ theorem cast_lr {B A : Typ} (hs : Sub B A) {v₁ v₂ w₁ w₂ : Exp} (hlr : LR
 
 -- ── Semantic typing and the fundamental lemma ────────────────────────────────────────
 
--- Open-term relatedness.  Because contexts are types, LR Γ *is* the environment
+-- Open-term relatedness.  Because contexts are types, LR Δ₁ Δ₂ η Γ *is* the environment
 -- relation — no separate context clauses are needed (the λE Fig. 4 unification).
-def SemTyp (Γ : Typ) (e₁ e₂ : Exp) (A : Typ) : Prop :=
-  ∀ {ρ₁ ρ₂ : Exp}, LR Γ ρ₁ ρ₂ →
-    ∃ w₁ w₂, MStep ρ₁ e₁ w₁ ∧ MStep ρ₂ e₂ w₂ ∧ LR A w₁ w₂
+def SemTyp (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (Γ : Typ) (e₁ e₂ : Exp) (A : Typ) : Prop :=
+  ∀ {ρ₁ ρ₂ : Exp}, LR Δ₁ Δ₂ η Γ ρ₁ ρ₂ →
+    ∃ w₁ w₂, MStep ρ₁ e₁ w₁ ∧ MStep ρ₂ e₂ w₂ ∧ LR Δ₁ Δ₂ η A w₁ w₂
 
-theorem lr_top_unit : LR .top .unit .unit := ⟨rfl, rfl⟩
+theorem lr_top_unit : LR Δ₁ Δ₂ η .top .unit .unit := ⟨rfl, rfl⟩
 
 -- A value semantically self-related under the empty context is LR-self-related.
-theorem semtyp_value_self {v : Exp} {T : Typ} (h : SemTyp .top v v T) (hv : Value v)
-    : LR T v v := by
+theorem semtyp_value_self {v : Exp} {T : Typ} (h : SemTyp Δ₁ Δ₂ η .top v v T) (hv : Value v)
+    : LR Δ₁ Δ₂ η T v v := by
   obtain ⟨w₁, w₂, r₁, r₂, hlr⟩ := h lr_top_unit
   rw [← mstep_value_eq hv r₁, ← mstep_value_eq hv r₂] at hlr
   exact hlr
 
 -- Positional lookup respects the relation.
 theorem lr_lookup {B : Typ} {n : Nat} {A : Typ} (hl : Lookup B n A)
-    {r₁ r₂ : Exp} (hr : LR B r₁ r₂)
-    : ∃ s₁ s₂, LookupV r₁ n s₁ ∧ LookupV r₂ n s₂ ∧ LR A s₁ s₂ := by
+    {r₁ r₂ : Exp} (hr : LR Δ₁ Δ₂ η B r₁ r₂)
+    : ∃ s₁ s₂, LookupV r₁ n s₁ ∧ LookupV r₂ n s₂ ∧ LR Δ₁ Δ₂ η A s₁ s₂ := by
   induction hl generalizing r₁ r₂ with
   | zero =>
     obtain ⟨_, _, a₁, b₁, a₂, b₂, e₁, e₂, _, hB⟩ := hr
@@ -495,8 +531,8 @@ theorem lr_lookup {B : Typ} {n : Nat} {A : Typ} (hl : Lookup B n A)
 
 -- Selection respects the relation.
 theorem lr_rlookup {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
-    {r₁ r₂ : Exp} (hr : LR B r₁ r₂)
-    : ∃ s₁ s₂, RLookupV r₁ l s₁ ∧ RLookupV r₂ l s₂ ∧ LR A s₁ s₂ := by
+    {r₁ r₂ : Exp} (hr : LR Δ₁ Δ₂ η B r₁ r₂)
+    : ∃ s₁ s₂, RLookupV r₁ l s₁ ∧ RLookupV r₂ l s₂ ∧ LR Δ₁ Δ₂ η A s₁ s₂ := by
   induction hl generalizing r₁ r₂ with
   | zero =>
     obtain ⟨u₁, u₂, e₁, e₂, hInner⟩ := hr
@@ -515,8 +551,8 @@ theorem lr_rlookup {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
 
 -- The fundamental lemma: every well-typed term is semantically self-related.  Strong
 -- normalization of λE^≤ is an immediate corollary.
-theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType Γ e A)
-    : SemTyp Γ e e A := by
+theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A)
+    : SemTyp Δ₁ Δ₂ η Γ e e A := by
   induction ht with
   | tquery =>
     intro ρ₁ ρ₂ hρ
@@ -584,7 +620,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType Γ e A)
     obtain ⟨a₁, a₂, ra₁, ra₂, ha⟩ := ih₁ hρ
     have hva := lr_value ha
     have hta := lr_typed ha
-    have hρ' : LR (.and _ _) (.mrg ρ₁ a₁) (.mrg ρ₂ a₂) :=
+    have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ a₁) (.mrg ρ₂ a₂) :=
       ⟨HasType.tmergev hvρ.1 hva.1 htρ.1 hta.1
           (disjoint_consistent hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)),
         HasType.tmergev hvρ.2 hva.2 htρ.2 hta.2
@@ -604,7 +640,10 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType Γ e A)
   | tmergev hv₁ hv₂ hp hq hcons ih₁ ih₂ =>
     intro ρ₁ ρ₂ _
     exact ⟨_, _, MStep.refl, MStep.refl,
-      HasType.tmergev hv₁ hv₂ hp hq hcons, HasType.tmergev hv₁ hv₂ hp hq hcons,
+      HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+        (hastype_weaken_store storele_noBrands hq) hcons,
+      HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+        (hastype_weaken_store storele_noBrands hq) hcons,
       _, _, _, _, rfl, rfl, semtyp_value_self ih₁ hv₁, semtyp_value_self ih₂ hv₂⟩
   | tlam hd hb ih =>
     intro ρ₁ ρ₂ hρ
@@ -612,8 +651,10 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType Γ e A)
     have htρ := lr_typed hρ
     refine ⟨_, _, mstep_one (Step.sclos hvρ.1), mstep_one (Step.sclos hvρ.2), ?_⟩
     refine ⟨Value.vclos hvρ.1, Value.vclos hvρ.2,
-      HasType.tclos hvρ.1 htρ.1 hd hb (sub_refl _) (sub_refl _),
-      HasType.tclos hvρ.2 htρ.2 hd hb (sub_refl _) (sub_refl _), ?_⟩
+      HasType.tclos hvρ.1 htρ.1 hd (hastype_weaken_store storele_noBrands hb)
+        (sub_refl _) (sub_refl _),
+      HasType.tclos hvρ.2 htρ.2 hd (hastype_weaken_store storele_noBrands hb)
+        (sub_refl _) (sub_refl _), ?_⟩
     intro u₁ u₂ hu σ₁ σ₂ hσ₁ hσ₂
     have hvu := lr_value hu
     have htu := lr_typed hu
@@ -622,7 +663,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType Γ e A)
     have hu' := cast_lr (sub_refl _) hu cu₁ cu₂
     have hvu' := lr_value hu'
     have htu' := lr_typed hu'
-    have hρ' : LR (.and _ _) (.mrg ρ₁ u₁') (.mrg ρ₂ u₂') :=
+    have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ u₁') (.mrg ρ₂ u₂') :=
       ⟨HasType.tmergev hvρ.1 hvu'.1 htρ.1 htu'.1
           (disjoint_consistent hvρ.1 hvu'.1 htρ.1 htu'.1 hd),
         HasType.tmergev hvρ.2 hvu'.2 htρ.2 htu'.2
@@ -649,8 +690,10 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType Γ e A)
     have hgg := semtyp_value_self ih_env hv
     refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
     refine ⟨Value.vclos hv, Value.vclos hv,
-      HasType.tclos hv henv₁ hd hb hs₁ hs₂,
-      HasType.tclos hv henv₁ hd hb hs₁ hs₂, ?_⟩
+      HasType.tclos hv (hastype_weaken_store storele_noBrands henv₁) hd
+        (hastype_weaken_store storele_noBrands hb) hs₁ hs₂,
+      HasType.tclos hv (hastype_weaken_store storele_noBrands henv₁) hd
+        (hastype_weaken_store storele_noBrands hb) hs₁ hs₂, ?_⟩
     intro u₁ u₂ hu σ₁ σ₂ hσ₁ hσ₂
     have hvu := lr_value hu
     have htu := lr_typed hu
@@ -661,7 +704,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType Γ e A)
     have htu' := lr_typed hu'
     have hgv := lr_value hgg
     have hgt := lr_typed hgg
-    have hρ' : LR (.and _ _) (.mrg _ u₁') (.mrg _ u₂') :=
+    have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg _ u₁') (.mrg _ u₂') :=
       ⟨HasType.tmergev hgv.1 hvu'.1 hgt.1 htu'.1
           (disjoint_consistent hgv.1 hvu'.1 hgt.1 htu'.1 hd),
         HasType.tmergev hgv.2 hvu'.2 hgt.2 htu'.2
@@ -694,22 +737,27 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType Γ e A)
     refine ⟨s₁, s₂, ?_, ?_, cast_lr hsub hr cs₁ cs₂⟩
     · exact mstep_trans (mstep_anno hvρ.1 rr₁) (mstep_one (Step.sannov hvρ.1 hvr.1 cs₁))
     · exact mstep_trans (mstep_anno hvρ.2 rr₂) (mstep_one (Step.sannov hvρ.2 hvr.2 cs₂))
+  -- Clients cannot brand, seal or unseal: these rules need a known representation.
+  | twrap hΔ _ _ _ => nomatch hΔ
+  | tseal hΔ _ _ _ _ => nomatch hΔ
+  | tunseal hΔ _ _ _ _ _ => nomatch hΔ
 
 -- ── Corollaries ──────────────────────────────────────────────────────────────────────
 
 -- Strong normalization of well-typed λE^≤ programs (λE Theorem 4.16 for the extended
 -- calculus; genuinely new for a TDOS merge calculus).
-theorem normalization {e : Exp} {A : Typ} (ht : HasType .top e A)
+theorem normalization {e : Exp} {A : Typ} (ht : HasType noBrands .top e A)
     : ∃ v, Value v ∧ MStep .unit e v := by
-  obtain ⟨w₁, _, r₁, _, hlr⟩ := fundamental ht lr_top_unit
+  obtain ⟨w₁, _, r₁, _, hlr⟩ :=
+    fundamental (Δ₁ := noBrands) (Δ₂ := noBrands) (η := fun _ _ _ => False) ht lr_top_unit
   exact ⟨w₁, (lr_value hlr).1, r₁⟩
 
 -- THE SEALING THEOREM.  A client typed against the seal A and observing at Int cannot
 -- distinguish two sealed values that are related at A: both runs produce the same
 -- literal.  Equality holds at base observations; at higher types agreement is the
 -- logical relation (extensional at arrows), not syntactic equality.
-theorem sealing {A : Typ} {p₁' p₂' : Exp} (hagree : LR A p₁' p₂')
-    {e : Exp} (hcl : HasType A e .int)
+theorem sealing {A : Typ} {p₁' p₂' : Exp} (hagree : LR Δ₁ Δ₂ η A p₁' p₂')
+    {e : Exp} (hcl : HasType noBrands A e .int)
     : ∃ i, MStep p₁' e (.lit i) ∧ MStep p₂' e (.lit i) := by
   obtain ⟨w₁, w₂, r₁, r₂, hlr⟩ := fundamental hcl hagree
   obtain ⟨i, e₁, e₂⟩ := hlr
@@ -721,10 +769,10 @@ theorem sealing {A : Typ} {p₁' p₂' : Exp} (hagree : LR A p₁' p₂')
 -- against A, run against either sealed provider via a box, computes the same integer.
 theorem sealing_providers {B₁ B₂ A : Typ} {p₁ p₂ p₁' p₂' : Exp}
     (hv₁ : Value p₁) (hv₂ : Value p₂)
-    (_ht₁ : HasType .top p₁ B₁) (_ht₂ : HasType .top p₂ B₂)
+    (_ht₁ : HasType Δ₁ .top p₁ B₁) (_ht₂ : HasType Δ₂ .top p₂ B₂)
     (hc₁ : Cast p₁ A p₁') (hc₂ : Cast p₂ A p₂')
-    (hagree : LR A p₁' p₂')
-    {e : Exp} (hcl : HasType A e .int)
+    (hagree : LR Δ₁ Δ₂ η A p₁' p₂')
+    {e : Exp} (hcl : HasType noBrands A e .int)
     {ρ₁ ρ₂ : Exp} (hρ₁ : Value ρ₁) (hρ₂ : Value ρ₂)
     : ∃ i, MStep ρ₁ (.box p₁' e) (.lit i) ∧ MStep ρ₂ (.box p₂' e) (.lit i) := by
   obtain ⟨i, r₁, r₂⟩ := sealing hagree hcl

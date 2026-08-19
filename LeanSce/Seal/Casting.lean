@@ -36,6 +36,14 @@ inductive Cast : Exp → Typ → Exp → Prop where
   | crcd {v A v' l}
     : Cast v A v'
     → Cast (.lrec l v) (.rcd l A) (.lrec l v')
+  -- The one new rule for type abstraction: casting at a brand is the identity on values
+  -- already branded at it, and undefined on everything else.  Casting must NOT be able to
+  -- *produce* a brand from an arbitrary value (`v ↪_{α_n} ⟨n⟩v`): then every value would
+  -- cast at α_n, `disjoint_consistent` would fail (5 and {l = 3} are typed at disjoint
+  -- types yet would cast at α_n to different values), and with it `tmergev` and
+  -- preservation.  Branding is therefore installed by `seal`, never by a cast.
+  | cwrap {n v}
+    : Cast (.wrap n v) (.brand n) (.wrap n v)
 
 -- Eᵢ Definition 3.
 def Consistent (v₁ v₂ : Exp) : Prop :=
@@ -51,6 +59,7 @@ theorem cast_value {v : Exp} {A : Typ} {w : Exp} (hv : Value v) (h : Cast v A w)
   | cmrgr _ _ ih => cases hv with | vmrg _ hv₂ => exact ih hv₂
   | cand _ _ ih₁ ih₂ => exact Value.vmrg (ih₁ hv) (ih₂ hv)
   | crcd _ ih => cases hv with | vrcd hv' => exact Value.vrcd (ih hv')
+  | cwrap => exact hv
 
 -- Casting at a top-like type always yields the canonical generated value — the collapse
 -- that keeps casting deterministic at top-like targets (Eᵢ's Casting-arrowtl rationale).
@@ -69,5 +78,6 @@ theorem cast_toplike_gen {v : Exp} {A : Typ} {w : Exp} (htl : TopLike A) (h : Ca
   | crcd _ ih =>
     cases htl with
     | tlrcd h' => rw [ih h']; rfl
+  | cwrap => nomatch htl
 
 end Seal
