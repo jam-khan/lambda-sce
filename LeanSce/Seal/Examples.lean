@@ -1,6 +1,7 @@
 import LeanSce.Seal.Sealing
 import LeanSce.Seal.Elaboration
 import LeanSce.Seal.Abstraction
+import LeanSce.Seal.Correctness
 
 -- Smoke tests: sealing is not inert — the cast actually discards components, beta
 -- actually casts the argument and reseals the result, and providers that differ outside
@@ -176,8 +177,10 @@ theorem unboxClos_typed {Δ : BrandStore} : HasType Δ .top unboxClos (.arr R₂
     (HasType.trproj (HasType.tproj HasType.tquery Lookup.zero) RLookup.zero)
     (sub_refl _) (sub_refl _)
 
--- The two implementations are related through η at the abstract type.
-theorem impl_related : LRg store₁ store₂ ηex (some (0, .int, R₂)) Sig impl₁ impl₂ := by
+-- The two implementations are related through η at the abstract type (in any pair of
+-- stores: the relation at an open brand only consults η).
+theorem impl_related {Δ₁ Δ₂ : BrandStore}
+    : LRg Δ₁ Δ₂ ηex (some (0, .int, R₂)) Sig impl₁ impl₂ := by
   refine ⟨?_, ?_, _, _, _, _, rfl, rfl, ?_, ?_⟩
   · -- typing of impl₁ at Sig[α := Int]
     exact HasType.tmrg (HasType.trcd idClos_typed)
@@ -219,6 +222,164 @@ theorem client_typed : HasType noBrands Sig client .int :=
 example : ∃ i, MStep .unit (.box (.seal 0 .int Sig impl₁) client) (.lit i)
              ∧ MStep .unit (.box (.seal 0 R₂ Sig impl₂) client) (.lit i) :=
   representation_independence openbrand_ex wfsig_ex₁ wfsig_ex₂ impl_related client_typed
+
+-- ── The same example at the source level ────────────────────────────────────────────
+-- The providers and the client are SCE programs; the source sealing form `mseal`
+-- elaborates to λE^≤'s `seal`, and `source_representation_independence` (semantic
+-- preservation + target RI + determinism) shows the two sealed *source* programs agree.
+
+def sα : SCE.Typ := .brand 0
+def sSig : SCE.Typ := .and (.rcd "mk" (.arr .int sα)) (.rcd "get" (.arr sα .int))
+def sR₂ : SCE.Typ := .rcd "v" .int
+
+def sIdClos : SCE.Exp := .clos .unit .int (.proj .query 0)
+def sBoxClos : SCE.Exp := .clos .unit .int (.lrec "v" (.proj .query 0))
+def sUnboxClos : SCE.Exp := .clos .unit sR₂ (.rproj (.proj .query 0) "v")
+
+def sImpl₁ : SCE.Exp := .mrg (.lrec "mk" sIdClos) (.lrec "get" sIdClos)
+def sImpl₂ : SCE.Exp := .mrg (.lrec "mk" sBoxClos) (.lrec "get" sUnboxClos)
+
+-- Source stores; their sealTyp images are the target stores above.
+def sstore₁ : SCE.BrandStore := fun n => if n = 0 then some .int else none
+def sstore₂ : SCE.BrandStore := fun n => if n = 0 then some sR₂ else none
+
+def sClient : SCE.Exp := .app (.rproj .query "get") (.app (.rproj .query "mk") (.lit 5))
+
+theorem labelin_rcd_ne {l l' : String} (hne : l ≠ l') {T : SCE.Typ}
+    : ¬ SCE.LabelIn l (.rcd l' T) := by
+  intro h; cases h; exact hne rfl
+
+-- Elaborations: each provider at the representation view of sSig, the client against
+-- sSig with every brand opaque.
+theorem sImpl₁_elab : elabSeal sstore₁ .top sImpl₁ (SCE.substBrand 0 .int sSig) impl₁ :=
+  elabSeal.evmrg (SCE.Value.vlrec (SCE.Value.vclos SCE.Value.vunit))
+    (SCE.Value.vlrec (SCE.Value.vclos SCE.Value.vunit))
+    (elabSeal.elrec (elabSeal.eclos SCE.Value.vunit (elabSeal.eunit _)
+      (elabSeal.eproj elabSeal.equery (SCE.SLookup.zero _ _)) disj_top))
+    (elabSeal.elrec (elabSeal.eclos SCE.Value.vunit (elabSeal.eunit _)
+      (elabSeal.eproj elabSeal.equery (SCE.SLookup.zero _ _)) disj_top))
+    (disj_rcd_ne (by decide))
+
+theorem sImpl₂_elab : elabSeal sstore₂ .top sImpl₂ (SCE.substBrand 0 sR₂ sSig) impl₂ :=
+  elabSeal.evmrg (SCE.Value.vlrec (SCE.Value.vclos SCE.Value.vunit))
+    (SCE.Value.vlrec (SCE.Value.vclos SCE.Value.vunit))
+    (elabSeal.elrec (elabSeal.eclos SCE.Value.vunit (elabSeal.eunit _)
+      (elabSeal.elrec (elabSeal.eproj elabSeal.equery (SCE.SLookup.zero _ _))) disj_top))
+    (elabSeal.elrec (elabSeal.eclos SCE.Value.vunit (elabSeal.eunit _)
+      (elabSeal.erproj (elabSeal.eproj elabSeal.equery (SCE.SLookup.zero _ _))
+        (SCE.SRLookup.zero _ _)) disj_top))
+    (disj_rcd_ne (by decide))
+
+theorem sClient_elab : elabSeal SCE.noBrands sSig sClient .int client :=
+  elabSeal.eapp
+    (elabSeal.erproj elabSeal.equery
+      (SCE.SRLookup.andr _ _ _ _ (SCE.SRLookup.zero _ _) (labelin_rcd_ne (by decide))))
+    (elabSeal.eapp
+      (elabSeal.erproj elabSeal.equery
+        (SCE.SRLookup.andl _ _ _ _ (SCE.SRLookup.zero _ _) (labelin_rcd_ne (by decide))))
+      (elabSeal.elit _ 5))
+
+theorem openbrand_src : OpenBrand (sealStore sstore₁) (sealStore sstore₂) ηex 0 .int R₂ :=
+  { openbrand_ex with st₁ := rfl, st₂ := rfl }
+
+-- Both sealed source programs run (through the source coercion proxies) to 5.  The
+-- sealed providers are the records of proxies the source coercion builds:
+def sProxies₁ : SCE.Exp :=
+  .mrg (.lrec "mk" (.clos (S_Sem.proxyEnv sIdClos) .int
+        (.mseal 0 .int sα (.app S_Sem.proxyFun (.munseal 0 .int .int (.proj .query 0))))))
+      (.lrec "get" (.clos (S_Sem.proxyEnv sIdClos) sα
+        (.mseal 0 .int .int (.app S_Sem.proxyFun (.munseal 0 .int sα (.proj .query 0))))))
+
+def sProxies₂ : SCE.Exp :=
+  .mrg (.lrec "mk" (.clos (S_Sem.proxyEnv sBoxClos) .int
+        (.mseal 0 sR₂ sα (.app S_Sem.proxyFun (.munseal 0 sR₂ .int (.proj .query 0))))))
+      (.lrec "get" (.clos (S_Sem.proxyEnv sUnboxClos) sα
+        (.mseal 0 sR₂ .int (.app S_Sem.proxyFun (.munseal 0 sR₂ sα (.proj .query 0))))))
+
+open S_Sem in
+theorem sRun₁ : BStep .unit (.box (.mseal 0 .int sSig sImpl₁) sClient) (.lit 5) := by
+  have hc : SCE.Value sIdClos := SCE.Value.vclos SCE.Value.vunit
+  have hPE : SCE.Value (S_Sem.proxyEnv sIdClos) := SCE.Value.vmrg SCE.Value.vunit (SCE.Value.vlrec hc)
+  have hP : SCE.Value sProxies₁ :=
+    SCE.Value.vmrg (SCE.Value.vlrec (SCE.Value.vclos hPE)) (SCE.Value.vlrec (SCE.Value.vclos hPE))
+  have hE₁ : SCE.Value (.mrg (S_Sem.proxyEnv sIdClos) (.lit 5)) := SCE.Value.vmrg hPE SCE.Value.vint
+  have hE₂ : SCE.Value (.mrg (S_Sem.proxyEnv sIdClos) (.wrap 0 (.lit 5))) :=
+    SCE.Value.vmrg hPE (SCE.Value.vwrap SCE.Value.vint)
+  have hE₀ : SCE.Value (.mrg .unit (.lit 5)) := SCE.Value.vmrg SCE.Value.vunit SCE.Value.vint
+  refine BStep.box (v₁ := sProxies₁) SCE.Value.vunit ?_ ?_
+  · -- the provider seals to the two proxies
+    exact BStep.mseal SCE.Value.vunit
+      (BStep.dmrg SCE.Value.vunit (BStep.lrec SCE.Value.vunit (BStep.clos_val SCE.Value.vunit SCE.Value.vunit))
+        (BStep.lrec (SCE.Value.vmrg SCE.Value.vunit (SCE.Value.vlrec hc))
+          (BStep.clos_val (SCE.Value.vmrg SCE.Value.vunit (SCE.Value.vlrec hc)) SCE.Value.vunit)))
+      (SSealV.and (SSealV.rcd SSealV.arr) (SSealV.rcd SSealV.arr))
+  · -- get (mk 5): mk's proxy unseals 5, applies id, seals to a wrapper; get's proxy
+    -- unwraps it, applies id, and returns 5
+    refine BStep.app_clos (v₂ := .wrap 0 (.lit 5)) hP (BStep.rproj hP (BStep.query hP) (Sel.dmrg_right Sel.rcd)) ?_ ?_
+    · refine BStep.app_clos hP (BStep.rproj hP (BStep.query hP) (Sel.dmrg_left Sel.rcd))
+        (BStep.lit hP) ?_
+      exact BStep.mseal hE₁
+        (BStep.app_clos hE₁
+          (BStep.rproj hE₁ (BStep.proj hE₁ (BStep.query hE₁) (LookupV.dmrg_succ LookupV.dmrg_zero))
+            Sel.rcd)
+          (BStep.munseal hE₁ (BStep.proj hE₁ (BStep.query hE₁) LookupV.dmrg_zero) SUnsealV.int)
+          (BStep.proj hE₀ (BStep.query hE₀) LookupV.dmrg_zero))
+        SSealV.brand_eq
+    · exact BStep.mseal hE₂
+        (BStep.app_clos hE₂
+          (BStep.rproj hE₂ (BStep.proj hE₂ (BStep.query hE₂) (LookupV.dmrg_succ LookupV.dmrg_zero))
+            Sel.rcd)
+          (BStep.munseal hE₂ (BStep.proj hE₂ (BStep.query hE₂) LookupV.dmrg_zero) SUnsealV.brand_eq)
+          (BStep.proj hE₀ (BStep.query hE₀) LookupV.dmrg_zero))
+        SSealV.int
+
+open S_Sem in
+theorem sRun₂ : BStep .unit (.box (.mseal 0 sR₂ sSig sImpl₂) sClient) (.lit 5) := by
+  have hcm : SCE.Value sBoxClos := SCE.Value.vclos SCE.Value.vunit
+  have hcg : SCE.Value sUnboxClos := SCE.Value.vclos SCE.Value.vunit
+  have hPEm : SCE.Value (S_Sem.proxyEnv sBoxClos) := SCE.Value.vmrg SCE.Value.vunit (SCE.Value.vlrec hcm)
+  have hPEg : SCE.Value (S_Sem.proxyEnv sUnboxClos) := SCE.Value.vmrg SCE.Value.vunit (SCE.Value.vlrec hcg)
+  have hP : SCE.Value sProxies₂ :=
+    SCE.Value.vmrg (SCE.Value.vlrec (SCE.Value.vclos hPEm)) (SCE.Value.vlrec (SCE.Value.vclos hPEg))
+  have hE₁ : SCE.Value (.mrg (S_Sem.proxyEnv sBoxClos) (.lit 5)) := SCE.Value.vmrg hPEm SCE.Value.vint
+  have hE₂ : SCE.Value (.mrg (S_Sem.proxyEnv sUnboxClos) (.wrap 0 (.lrec "v" (.lit 5)))) :=
+    SCE.Value.vmrg hPEg (SCE.Value.vwrap (SCE.Value.vlrec SCE.Value.vint))
+  have hE₀ : SCE.Value (.mrg .unit (.lit 5)) := SCE.Value.vmrg SCE.Value.vunit SCE.Value.vint
+  have hE₀' : SCE.Value (.mrg .unit (.lrec "v" (.lit 5))) :=
+    SCE.Value.vmrg SCE.Value.vunit (SCE.Value.vlrec SCE.Value.vint)
+  refine BStep.box (v₁ := sProxies₂) SCE.Value.vunit ?_ ?_
+  · exact BStep.mseal SCE.Value.vunit
+      (BStep.dmrg SCE.Value.vunit (BStep.lrec SCE.Value.vunit (BStep.clos_val SCE.Value.vunit SCE.Value.vunit))
+        (BStep.lrec (SCE.Value.vmrg SCE.Value.vunit (SCE.Value.vlrec hcm))
+          (BStep.clos_val (SCE.Value.vmrg SCE.Value.vunit (SCE.Value.vlrec hcm)) SCE.Value.vunit)))
+      (SSealV.and (SSealV.rcd SSealV.arr) (SSealV.rcd SSealV.arr))
+  · refine BStep.app_clos (v₂ := .wrap 0 (.lrec "v" (.lit 5))) hP (BStep.rproj hP (BStep.query hP) (Sel.dmrg_right Sel.rcd)) ?_ ?_
+    · refine BStep.app_clos hP (BStep.rproj hP (BStep.query hP) (Sel.dmrg_left Sel.rcd))
+        (BStep.lit hP) ?_
+      exact BStep.mseal hE₁
+        (BStep.app_clos hE₁
+          (BStep.rproj hE₁ (BStep.proj hE₁ (BStep.query hE₁) (LookupV.dmrg_succ LookupV.dmrg_zero))
+            Sel.rcd)
+          (BStep.munseal hE₁ (BStep.proj hE₁ (BStep.query hE₁) LookupV.dmrg_zero) SUnsealV.int)
+          (BStep.lrec hE₀ (BStep.proj hE₀ (BStep.query hE₀) LookupV.dmrg_zero)))
+        SSealV.brand_eq
+    · exact BStep.mseal hE₂
+        (BStep.app_clos hE₂
+          (BStep.rproj hE₂ (BStep.proj hE₂ (BStep.query hE₂) (LookupV.dmrg_succ LookupV.dmrg_zero))
+            Sel.rcd)
+          (BStep.munseal hE₂ (BStep.proj hE₂ (BStep.query hE₂) LookupV.dmrg_zero) SUnsealV.brand_eq)
+          (BStep.rproj hE₀' (BStep.proj hE₀' (BStep.query hE₀') LookupV.dmrg_zero) Sel.rcd))
+        SSealV.int
+
+-- Source-level representation independence, instantiated: whatever the two sealed source
+-- programs `box (mseal 0 Rᵢ sSig sImplᵢ) sClient` evaluate to, it is the same literal
+-- (and by sRun₁/sRun₂ they do evaluate).
+example {v₁ v₂ : SCE.Exp}
+    (h₁ : S_Sem.BStep .unit (.box (.mseal 0 .int sSig sImpl₁) sClient) v₁)
+    (h₂ : S_Sem.BStep .unit (.box (.mseal 0 sR₂ sSig sImpl₂) sClient) v₂)
+    : ∃ i, v₁ = .lit i ∧ v₂ = .lit i :=
+  source_representation_independence openbrand_src rfl rfl wfsig_ex₁ wfsig_ex₂
+    sImpl₁_elab sImpl₂_elab impl_related sClient_elab h₁ h₂
 
 end RIExample
 
