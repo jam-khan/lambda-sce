@@ -45,6 +45,25 @@ def substModTyp (d : Nat) (S : Typ) : ModTyp → ModTyp
   | .TyArrM T mt => .TyArrM (substTyp d S T) (substModTyp d S mt)
 end
 
+mutual
+-- substBrand n R T replaces brand n by R in T (the representation view of a signature)
+def substBrand (n : Nat) (R : Typ) : Typ → Typ
+  | .int => .int
+  | .top => .top
+  | .arr A B => .arr (substBrand n R A) (substBrand n R B)
+  | .and A B => .and (substBrand n R A) (substBrand n R B)
+  | .or A B => .or (substBrand n R A) (substBrand n R B)
+  | .rcd l A => .rcd l (substBrand n R A)
+  | .sig mt => .sig (substBrandModTyp n R mt)
+  | .var k => .var k
+  | .mu T => .mu (substBrand n R T)
+  | .brand m => if m = n then R else .brand m
+
+def substBrandModTyp (n : Nat) (R : Typ) : ModTyp → ModTyp
+  | .TyIntf T => .TyIntf (substBrand n R T)
+  | .TyArrM T mt => .TyArrM (substBrand n R T) (substBrandModTyp n R mt)
+end
+
 inductive Sandbox where
   | sandboxed : Sandbox
   | open_ : Sandbox
@@ -85,6 +104,11 @@ inductive Exp where
   -- iso-recursive types: fold T e stores the mu-body T, folds into mu T
   | fold   : Typ → Exp → Exp
   | unfold : Exp → Exp
+  -- type abstraction (mirrored from Seal, see Seal/DESIGN.md §(g)): a value branded at
+  -- brand n; the sealing coercion S[n:=R] ⇒ S and its converse
+  | wrap    : Nat → Exp → Exp
+  | mseal   : Nat → Typ → Typ → Exp → Exp
+  | munseal : Nat → Typ → Typ → Exp → Exp
   deriving Repr
 
 inductive Value : Exp → Prop where
@@ -98,6 +122,7 @@ inductive Value : Exp → Prop where
   | vinr   {v A}    : Value v → Value (.inr A v)
   | vfclos {v A B e} : Value v → Value (.fclos v A B e)
   | vfold  {v T}    : Value v → Value (.fold T v)
+  | vwrap  {v n}    : Value v → Value (.wrap n v)
 
 inductive SLookup : Typ → Nat → Typ → Prop
 | zero (A B : Typ) : SLookup (Typ.and A B) 0 B

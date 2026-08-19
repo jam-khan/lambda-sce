@@ -564,6 +564,8 @@ theorem elab_value
     cases helab with
     | efold _ _ _ ce h =>
       exact Core.Value.vfold (ih h)
+  -- no Core elaboration rule for wrap (λE has no brands): vacuous
+  | vwrap _ _ => cases helab
 
 /-- The linearized wire is well-typed: under any context that reaches the
 provider type `⟦Γ₁⟧` at index `shift`, `wire_shift ⟦D⟧` has the interface type
@@ -816,6 +818,9 @@ theorem eval_produces_value
   | unfold _ _ ih =>
     have hfold := ih hval
     cases hfold with | vfold hv => exact hv
+  | wrap _ _ ih => exact SCE.Value.vwrap (ih hval)
+  | mseal _ _ hsv ih => exact S_Sem.ssealv_value (ih hval) hsv
+  | munseal _ _ hsv ih => exact S_Sem.sunsealv_value (ih hval) hsv
 
 theorem sel_implies_label_in
     {v v' : SCE.Exp} {vc : Core.Exp} {A : SCE.Typ} {l : String}
@@ -1383,6 +1388,10 @@ theorem semantic_preservation
       cases helab_fold with
       | efold _ _ _ ce_v h_v =>
         exact ⟨_, EBig.ebunfold hbig, h_v⟩
+  -- no Core elaboration rules for the sealing forms (λE has no brands): vacuous
+  | wrap _ _ _ => cases helab
+  | mseal _ _ _ _ => cases helab
+  | munseal _ _ _ _ => cases helab
 
 theorem whole_program_correctness
     {A : SCE.Typ} {es : SCE.Exp} {ec : Core.Exp} {vs : SCE.Exp}
@@ -1916,6 +1925,9 @@ theorem bigstep_deterministic_gen
         have heq_f := ih₁ h_elab henv henv_val hstep₂
         cases heq_f
         rfl
+  | wrap _ _ _ => cases helab
+  | mseal _ _ _ _ => cases helab
+  | munseal _ _ _ _ => cases helab
 
 theorem bigstep_deterministic
     {A : SCE.Typ} {e v₁ v₂ : SCE.Exp}

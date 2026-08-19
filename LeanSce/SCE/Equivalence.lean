@@ -269,6 +269,27 @@ theorem smstep_unfold {v e1 e2 : Exp}
   | refl hv => exact SMStep.refl hv
   | step hs _ ih => exact SMStep.step (SStep.ssunfold (sstep_env_value hs) hs) ih
 
+theorem smstep_wrap {v e1 e2 : Exp} {n : Nat}
+    (h : SMStep v e1 e2)
+    : SMStep v (.wrap n e1) (.wrap n e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.sswrap (sstep_env_value hs) hs) ih
+
+theorem smstep_mseal {v e1 e2 : Exp} {n : Nat} {R S : Typ}
+    (h : SMStep v e1 e2)
+    : SMStep v (.mseal n R S e1) (.mseal n R S e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssmseal (sstep_env_value hs) hs) ih
+
+theorem smstep_munseal {v e1 e2 : Exp} {n : Nat} {R S : Typ}
+    (h : SMStep v e1 e2)
+    : SMStep v (.munseal n R S e1) (.munseal n R S e2) := by
+  induction h with
+  | refl hv => exact SMStep.refl hv
+  | step hs _ ih => exact SMStep.step (SStep.ssmunseal (sstep_env_value hs) hs) ih
+
 -- Soundness: big-step → multi-step (simple cases filled)
 theorem sbig_sound {env e v : Exp}
     (h : BStep env e v)
@@ -415,6 +436,15 @@ theorem sbig_sound {env e v : Exp}
     | vfold hv1 =>
       exact smstep_trans (smstep_unfold ih)
         (SMStep.step (SStep.ssunfoldv hv hv1) (SMStep.refl hv))
+  | wrap _ _ ih => exact smstep_wrap ih
+  | mseal hv hb hsv ih =>
+    have hv1 := sbig_produces_value hv hb
+    exact smstep_trans (smstep_mseal ih)
+      (SMStep.step (SStep.ssmsealv hv hv1 hsv) (SMStep.refl hv))
+  | munseal hv hb hsv ih =>
+    have hv1 := sbig_produces_value hv hb
+    exact smstep_trans (smstep_munseal ih)
+      (SMStep.step (SStep.ssmunsealv hv hv1 hsv) (SMStep.refl hv))
 
 -- Values big-step to themselves
 theorem sbig_value_refl {e v : Exp}
@@ -430,6 +460,7 @@ theorem sbig_value_refl {e v : Exp}
   | vinr hv' ih => exact BStep.inr hvv (ih hvv)
   | vfclos hv' ih => exact BStep.fclos_val hvv hv'
   | vfold hv' ih => exact BStep.fold hvv (ih hvv)
+  | vwrap hv' ih => exact BStep.wrap hvv (ih hvv)
   | vmrg hv1 hv2 ih1 ih2 =>
     have h1 := ih1 hvv
     exact BStep.dmrg hvv h1 (ih2 (Value.vmrg hvv (sbig_produces_value hvv h1)))
@@ -466,6 +497,13 @@ theorem sbig_val_det {env e v1 : Exp}
   | case_inl _ _ _ _ _ => cases hv
   | case_inr _ _ _ _ _ => cases hv
   | unfold _ _ _ => cases hv
+  | mseal _ _ _ _ => cases hv
+  | munseal _ _ _ _ => cases hv
+  | wrap _ hb1 ih1 =>
+    cases hv with
+    | vwrap hv' =>
+      cases h2 with
+      | wrap _ hb2 => rw [ih1 hv' hb2]
   | fold _ hb1 ih1 =>
     cases hv with
     | vfold hv' =>
@@ -710,6 +748,23 @@ theorem sstep_sbig {env e1 e2 v : Exp}
     have heq := sbig_value_eq hb hv1
     subst heq
     exact BStep.unfold hv (sbig_value_refl (Value.vfold hv1) hv)
+  | sswrap hv _ ih =>
+    cases hb with
+    | wrap _ hb1 => exact BStep.wrap hv (ih hb1)
+  | ssmseal hv _ ih =>
+    cases hb with
+    | mseal _ hb1 hsv => exact BStep.mseal hv (ih hb1) hsv
+  | ssmsealv hv hv1 hsv =>
+    have heq := sbig_value_eq hb (S_Sem.ssealv_value hv1 hsv)
+    subst heq
+    exact BStep.mseal hv (sbig_value_refl hv1 hv) hsv
+  | ssmunseal hv _ ih =>
+    cases hb with
+    | munseal _ hb1 hsv => exact BStep.munseal hv (ih hb1) hsv
+  | ssmunsealv hv hv1 hsv =>
+    have heq := sbig_value_eq hb (S_Sem.sunsealv_value hv1 hsv)
+    subst heq
+    exact BStep.munseal hv (sbig_value_refl hv1 hv) hsv
 
 -- Completeness: multi-step + value → big-step
 theorem sbig_complete {env e v : Exp}

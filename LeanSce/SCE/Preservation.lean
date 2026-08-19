@@ -596,6 +596,12 @@ theorem sgpreservation
       subst heq
       cases h1 with
       | efold _ _ _ _ hinner => exact ⟨_, hinner⟩
+  -- no Core elaboration rules for the sealing forms (λE has no brands): vacuous
+  | sswrap _ _ _ => intro Γ A ⟨ce, helab⟩ _ _; cases helab
+  | ssmseal _ _ _ => intro Γ A ⟨ce, helab⟩ _ _; cases helab
+  | ssmsealv _ _ _ => intro Γ A ⟨ce, helab⟩ _ _; cases helab
+  | ssmunseal _ _ _ => intro Γ A ⟨ce, helab⟩ _ _; cases helab
+  | ssmunsealv _ _ _ => intro Γ A ⟨ce, helab⟩ _ _; cases helab
   | ssmlinknl hv hstep ih =>
     intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
     cases helab with

@@ -58,6 +58,85 @@ theorem selpkg_value {v : Exp} {D : Typ} {pkg : Exp}
   | one hsel => exact Value.vlrec (sel_value hsel hv)
   | more _ hsel ih => exact Value.vmrg ih (Value.vlrec (sel_value hsel hv))
 
+-- Source-level sealing coercions, mirroring Seal.SealV/UnsealV (Seal/DESIGN.md §(g)):
+-- structural on the signature; wrap/unwrap at brand n, identity at other leaves,
+-- componentwise on merges/records, a proxy closure at arrows.  The source has no casts,
+-- so the proxy is a plain SCE closure; its shape is chosen to elaborate exactly to the
+-- target proxy.
+def proxyEnv (c : Exp) : Exp := .mrg .unit (.lrec "#f" c)
+def proxyFun : Exp := .rproj (.proj .query 1) "#f"
+
+inductive SSealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
+  | brand_eq {v} : SSealV n R (.brand n) v (.wrap n v)
+  | brand_ne {m v} : m ≠ n → SSealV n R (.brand m) v v
+  | int {i} : SSealV n R .int (.lit i) (.lit i)
+  | top {v} : SSealV n R .top v .unit
+  | and {A B v₁ v₂ w₁ w₂}
+    : SSealV n R A v₁ w₁ → SSealV n R B v₂ w₂
+    → SSealV n R (.and A B) (.mrg v₁ v₂) (.mrg w₁ w₂)
+  | rcd {l A v w} : SSealV n R A v w → SSealV n R (.rcd l A) (.lrec l v) (.lrec l w)
+  | arr {A B c}
+    : SSealV n R (.arr A B) c
+        (.clos (proxyEnv c) A (.mseal n R B (.app proxyFun (.munseal n R A (.proj .query 0)))))
+
+inductive SUnsealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
+  | brand_eq {v} : SUnsealV n R (.brand n) (.wrap n v) v
+  | brand_ne {m v} : m ≠ n → SUnsealV n R (.brand m) v v
+  | int {i} : SUnsealV n R .int (.lit i) (.lit i)
+  | top {v} : SUnsealV n R .top v .unit
+  | and {A B v₁ v₂ w₁ w₂}
+    : SUnsealV n R A v₁ w₁ → SUnsealV n R B v₂ w₂
+    → SUnsealV n R (.and A B) (.mrg v₁ v₂) (.mrg w₁ w₂)
+  | rcd {l A v w} : SUnsealV n R A v w → SUnsealV n R (.rcd l A) (.lrec l v) (.lrec l w)
+  | arr {A B c}
+    : SUnsealV n R (.arr A B) c
+        (.clos (proxyEnv c) (substBrand n R A)
+          (.munseal n R B (.app proxyFun (.mseal n R A (.proj .query 0)))))
+
+theorem ssealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SSealV n R S v w)
+    : Value w := by
+  induction h with
+  | brand_eq => exact Value.vwrap hv
+  | brand_ne _ => exact hv
+  | int => exact Value.vint
+  | top => exact Value.vunit
+  | and _ _ ih₁ ih₂ => cases hv with | vmrg h₁ h₂ => exact Value.vmrg (ih₁ h₁) (ih₂ h₂)
+  | rcd _ ih => cases hv with | vlrec h' => exact Value.vlrec (ih h')
+  | arr => exact Value.vclos (Value.vmrg Value.vunit (Value.vlrec hv))
+
+theorem sunsealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SUnsealV n R S v w)
+    : Value w := by
+  induction h with
+  | brand_eq => cases hv with | vwrap h' => exact h'
+  | brand_ne _ => exact hv
+  | int => exact Value.vint
+  | top => exact Value.vunit
+  | and _ _ ih₁ ih₂ => cases hv with | vmrg h₁ h₂ => exact Value.vmrg (ih₁ h₁) (ih₂ h₂)
+  | rcd _ ih => cases hv with | vlrec h' => exact Value.vlrec (ih h')
+  | arr => exact Value.vclos (Value.vmrg Value.vunit (Value.vlrec hv))
+
+theorem ssealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : SSealV n R S v w₁)
+    : ∀ {w₂ : Exp}, SSealV n R S v w₂ → w₁ = w₂ := by
+  induction h₁ with
+  | brand_eq => intro _ h₂; cases h₂ with | brand_eq => rfl | brand_ne hne => exact absurd rfl hne
+  | brand_ne hne => intro _ h₂; cases h₂ with | brand_eq => exact absurd rfl hne | brand_ne _ => rfl
+  | int => intro _ h₂; cases h₂; rfl
+  | top => intro _ h₂; cases h₂; rfl
+  | and _ _ ih₁ ih₂ => intro _ h₂; cases h₂ with | and a b => rw [ih₁ a, ih₂ b]
+  | rcd _ ih => intro _ h₂; cases h₂ with | rcd a => rw [ih a]
+  | arr => intro _ h₂; cases h₂; rfl
+
+theorem sunsealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : SUnsealV n R S v w₁)
+    : ∀ {w₂ : Exp}, SUnsealV n R S v w₂ → w₁ = w₂ := by
+  induction h₁ with
+  | brand_eq => intro _ h₂; cases h₂ with | brand_eq => rfl | brand_ne hne => exact absurd rfl hne
+  | brand_ne hne => intro _ h₂; cases h₂ with | brand_eq => exact absurd rfl hne | brand_ne _ => rfl
+  | int => intro _ h₂; cases h₂; rfl
+  | top => intro _ h₂; cases h₂; rfl
+  | and _ _ ih₁ ih₂ => intro _ h₂; cases h₂ with | and a b => rw [ih₁ a, ih₂ b]
+  | rcd _ ih => intro _ h₂; cases h₂ with | rcd a => rw [ih a]
+  | arr => intro _ h₂; cases h₂; rfl
+
 inductive BStep : Exp → Exp → Exp → Prop where
   | query {ρ : Exp}
     : Value ρ
@@ -190,6 +269,20 @@ inductive BStep : Exp → Exp → Exp → Prop where
     : Value ρ
     → BStep ρ e (.fold T v)
     → BStep ρ (.unfold e) v
+  | wrap {ρ e v : Exp} {n : Nat}
+    : Value ρ
+    → BStep ρ e v
+    → BStep ρ (.wrap n e) (.wrap n v)
+  | mseal {ρ e v w : Exp} {n : Nat} {R S : Typ}
+    : Value ρ
+    → BStep ρ e v
+    → SSealV n R S v w
+    → BStep ρ (.mseal n R S e) w
+  | munseal {ρ e v w : Exp} {n : Nat} {R S : Typ}
+    : Value ρ
+    → BStep ρ e v
+    → SUnsealV n R S v w
+    → BStep ρ (.munseal n R S e) w
   | mlinkn {ρ e₁ e₂ v₁ v₂ pkg v₃ : Exp} {D : Typ} {body : Exp}
     : Value ρ
     → BStep ρ e₁ v₁

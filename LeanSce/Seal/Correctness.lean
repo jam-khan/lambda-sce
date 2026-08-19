@@ -558,6 +558,11 @@ theorem bstep_value_id {ρ v v' : SCE.Exp} (h : S_Sem.BStep ρ v v') (hv : SCE.V
     | vfold hv' => rw [ih hv']
   | unfold _ _ _ => nomatch hv
   | mlinkn _ _ _ _ _ _ _ _ => nomatch hv
+  | wrap _ _ ih =>
+    cases hv with
+    | vwrap hv' => rw [ih hv']
+  | mseal _ _ _ _ => nomatch hv
+  | munseal _ _ _ _ => nomatch hv
 
 -- The import package of an n-ary link: given a way to re-run the module expression under
 -- any related environment (the caller's induction hypothesis), the wireArgSeal term runs
@@ -1013,6 +1018,17 @@ theorem seal_semantic_preservation {ρs es vs : SCE.Exp} (heval : S_Sem.BStep ρ
     intro Γ A ce ρc helab _ _
     nomatch helab
   | unfold _ _ _ =>
+    intro Γ A ce ρc helab _ _
+    nomatch helab
+  -- Sealing forms: no elabSeal rules yet (Phase 4 continues here — see
+  -- HANDOFF-type-abstraction.md §3 steps 5–6); vacuous for now.
+  | wrap _ _ _ =>
+    intro Γ A ce ρc helab _ _
+    nomatch helab
+  | mseal _ _ _ _ =>
+    intro Γ A ce ρc helab _ _
+    nomatch helab
+  | munseal _ _ _ _ =>
     intro Γ A ce ρc helab _ _
     nomatch helab
 

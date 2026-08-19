@@ -192,6 +192,28 @@ inductive SStep : Exp → Exp → Exp → Prop where
     : Value v
     → Value v1
     → SStep v (.unfold (.fold T v1)) v1
+  | sswrap {v e1 e2 n}
+    : Value v
+    → SStep v e1 e2
+    → SStep v (.wrap n e1) (.wrap n e2)
+  | ssmseal {v e1 e2 n R S}
+    : Value v
+    → SStep v e1 e2
+    → SStep v (.mseal n R S e1) (.mseal n R S e2)
+  | ssmsealv {v v1 w n R S}
+    : Value v
+    → Value v1
+    → S_Sem.SSealV n R S v1 w
+    → SStep v (.mseal n R S v1) w
+  | ssmunseal {v e1 e2 n R S}
+    : Value v
+    → SStep v e1 e2
+    → SStep v (.munseal n R S e1) (.munseal n R S e2)
+  | ssmunsealv {v v1 w n R S}
+    : Value v
+    → Value v1
+    → S_Sem.SUnsealV n R S v1 w
+    → SStep v (.munseal n R S v1) w
   | ssmlinknl {v e1 e1' e2}
     : Value v
     → SStep v e1 e1'
