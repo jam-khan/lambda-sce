@@ -20,8 +20,9 @@ work). Type abstraction is obtained without type variables, by generative brands
 Mechanization: `Syntax`, `Subtyping`, `Disjointness`, `Casting`, `Typing`,
 `SmallStep`, `CastingLemmas`, `Lookup`, `Determinism`, `Progress`, `Preservation`,
 `Sealing` (binary logical relation + fundamental lemma + sealing corollary),
-`Abstraction` (representation independence), `Examples`. Zero `sorry`, zero custom
-axioms — everything uses at most `propext`.
+`Abstraction` (representation independence), `Elaboration`/`Correctness`/
+`Linearization` (SCE → λE^≤, including sealed compilation units), `Examples`. Zero
+`sorry`, zero custom axioms — everything uses at most `propext`.
 
 ---
 
@@ -498,6 +499,39 @@ over `Int` vs `{v : Int}`).
   only by the generator anyway.
 - Brand allocation is a toolchain concern (`WfStore`-style uniqueness assumed; the
   implementation must allocate distinct brands per sealed unit).
-- The SCE source language has no `mseal` yet (`Elaboration.lean`/`Correctness.lean`
-  instantiate the store to `noBrands`); the planned route is to mirror `seal`/`wrap`
-  at the source so `EVal` stays structural.
+
+**The SCE source side (sealed compilation units).** SCE mirrors the target one-to-one:
+`SCE.Typ.brand n`, `SCE.substBrand`, and the runtime/coercion forms `wrap n e`,
+`mseal n R S e`, `munseal n R S e` (`SCE/Syntax.lean`), with the same structural
+value-level coercions `SSealV`/`SUnsealV` (source proxies are `clos (ε # {#f = c}) A
+(mseal n R B (?.1.#f (munseal n R A ?.0)))`; SCE lambdas carry only the domain) and
+big-/small-step rules `BStep.wrap/mseal/munseal`, `SStep.ss…`; SCE's own equivalence,
+determinism and preservation extend (`SCE/…`). Design decision: `mseal` is *not*
+transparent at the source — the source and target both wrap — so that `EVal`
+(elaboration-shaped simulation relation, "up to top-like collapse") gets a plain
+clause `EVal.wrap` and `eval_cast_self` survives. The Core-targeting elaboration
+(`SCE/Elaboration.lean`) has no rules for the sealing forms — Core has no brands, so
+sealed units live in the λE^≤-targeted development only.
+
+Elaboration (`Seal/Elaboration.lean`) carries a *source* brand store
+`Δ : SCE.BrandStore := Nat → Option SCE.Typ`; the target store is its image
+`sealStore Δ`; `sealTyp (S[n:=R]) = (sealTyp S)[n:=sealTyp R]` (`sealTyp_substBrand`).
+Rules `ewrap`/`emseal`/`emunseal` mirror `twrap`/`tseal`/`tunseal` (`emunseal`'s
+result type is equation-guarded like `tunseal`'s); `seal_type_preservation :
+elabSeal Δ Γ e A ce → HasType (sealStore Δ) …`; only these three rules consult Δ, so a
+derivation weakens along store extension (`elabSeal_weaken_store`) — a client compiled
+knowing no representation composes with the provider that has it. Semantic
+preservation (`Correctness.lean`) covers the sealing forms through `eval_sealv`/
+`eval_unsealv`: source `SSealV` is simulated by target `SealV` on `EVal`-related
+values, structurally on the signature; the arrow case relates the two proxies directly
+by `EVal.clos` (the proxy body elaborates rule-for-rule), so no mutual induction is
+needed; generator-shaped values (`EVal.gen`) are re-split along the signature.
+Corollaries: `seal_separate_compilation_sealed` (a sealed provider `mseal n R Γ₁ p`
+linked into a client functor compiled in any smaller store) and
+`source_representation_independence` — a source client typed against `S` with every
+brand opaque computes the same literal against either sealed source provider whose
+elaborations are related as implementations (semantic preservation + target RI +
+determinism). `Examples.lean` runs the `{mk} & {get}` example at the source level
+(`sRun₁`/`sRun₂` evaluate the sealed source programs through the proxies to 5).
+Brand allocation remains a toolchain concern: the mechanization takes Δ as a
+hypothesis; the implementation allocates distinct brands per sealed unit, like symbols.

@@ -3,7 +3,8 @@
 Branch: `lambdae-sub` (contains `main` merged in as of 2026-08-19; `main` = SCE with the
 linearized `linkedCore`/`nmrgCore`/`wire` combinators). Everything below is committed
 and green: `lake build` succeeds, zero `sorry`, every theorem uses at most `propext`.
-Nothing is pushed.
+Nothing is pushed. **Status 2026-08-19: Phases 0–4 all done** (target brands + RI, and
+the SCE source side with sealed compilation units end to end).
 
 Read first: `LeanSce/Seal/DESIGN.md` §(g) (the design, provenance, scope limits) and this
 file. The original plan (all phases, challenges, options A/B/C) is in the chat of
@@ -65,97 +66,42 @@ Commits (newest first): `LeanSce.lean import` · `de14ba2` DESIGN §(g) · `6411
   `2>&1 | grep -E "^error" -A 10`. Full build ≈ 68 jobs.
 - Axiom check: `lake env lean file.lean` with `#print axioms Seal.representation_independence`.
 
-## 3. Phase 4 — the SCE source side (steps 1–4 DONE, 5–9 remain). Instructions
+## 3. Phase 4 — the SCE source side: DONE (all steps 1–9)
 
-**Done (commit "SCE: source-level sealing forms")**: `SCE.Typ.brand`, `SCE.substBrand`,
-`Exp.wrap/mseal/munseal`, `Value.vwrap`, `S_Sem.SSealV/SUnsealV` (+ `proxyEnv/proxyFun`
-in `S_Sem`), `BStep.wrap/mseal/munseal`, `SStep.sswrap/ssmseal/ssmsealv/ssmunseal/
-ssmunsealv`, all Equivalence/Theories/Preservation cases (Core-side ones vacuous:
-`elabExp` has NO rules for the sealing forms — decision taken, documented in commit).
-`Seal/Correctness.lean` `seal_semantic_preservation` has vacuous `wrap/mseal/munseal`
-cases *because `elabSeal` has no rules yet* — those cases become real in step 6.
-Whole library green.
+Commits (newest first): `Examples: RI at the source level` · `Seal: sealed separate
+compilation + source RI` · `Seal: elabSeal rules for wrap/mseal/munseal …` ·
+`2915a4d SCE: source-level sealing forms` · `5ef2652 SCE: Typ.brand`.
 
-**Remaining**: steps 5–9 below (elabSeal rules + Δ threading into elabSeal, EVal.wrap,
-the semantic-preservation cases via an `eval_sealv` simulation lemma, sealed separate
-compilation, source-level example, DESIGN/memory updates).
+| where | what |
+|---|---|
+| `SCE/Syntax.lean` | `Typ.brand`, `substBrand`/`substBrandModTyp`, `Exp.wrap/mseal/munseal`, `Value.vwrap`, **`SCE.BrandStore`**, `noBrands`, `StoreLe`, `storele_noBrands` |
+| `SCE/Semantics.lean` | `S_Sem.proxyEnv/proxyFun` (label literal `"#f"`), `SSealV`/`SUnsealV`, `BStep.wrap/mseal/munseal`, value/det lemmas |
+| `SCE/SmallStep.lean`, `Equivalence`, `Theories`, `Preservation`, `Progress` | new cases (Core-side ones vacuous: `elabExp` has no sealing rules — scope note above `elabExp`) |
+| `Seal/Elaboration.lean` | `sealStore Δ := fun n => (Δ n).map sealTyp`; `sealStore_some`, `sealStore_noBrands` (**rfl**, no funext), `sealStore_le`; `sealTyp_substBrand`/`sealModTyp_substBrand`; **`elabSeal (Δ : SCE.BrandStore) …`** with `ewrap`/`emseal`/`emunseal` (`emunseal` result type equation-guarded `T = SCE.substBrand n R S`); `elabSeal_value`; `elabSeal_weaken_store`; `seal_type_preservation : … → HasType (sealStore Δ) …` |
+| `Seal/Correctness.lean` | `variable {Δ : SCE.BrandStore}`; **`EVal Δ …`** + `EVal.wrap` (`Δ n = some R → EVal Δ R v w → EVal Δ (brand n) (wrap n v) (wrap n w)`); all value lemmas; `eval_sealv`/`eval_unsealv` (induction on the source coercion; arrow case = `EVal.clos` of the two proxies, no mutual induction; `EVal.gen` re-split along the signature); `seal_semantic_preservation` cases `wrap/mseal/munseal`; `mstep_value_determinism` generic in the target store; `seal_separate_compilation_sealed`; `eval_int`; `source_representation_independence` |
+| `Seal/Linearization.lean` | Δ threaded (mechanical) |
+| `Seal/Examples.lean` | `impl_related` generic in the stores; source-level example: `sSig/sImpl₁/sImpl₂/sClient/sstore₁/sstore₂`, `sImplᵢ_elab`, `sClient_elab`, `openbrand_src`, `sProxies₁/₂`, `sRun₁/sRun₂` (concrete sealed source runs to 5), RI instantiated |
+| `Seal/DESIGN.md` | §(g) "The SCE source side" paragraph; header mechanization list |
 
+Gotchas learned in this phase (beyond §2):
+- The store is **source-level** (`SCE.BrandStore`, SCE representation types): `EVal.wrap`
+  must record the SCE-level `R` because `sealTyp` is not injective (`arr A B` vs
+  `sig (TyArrM A (TyIntf B))` both seal to the same arrow) — `eval_unsealv`'s
+  `brand_eq` case needs `R₀ = R` from two store lookups.
+- `simp only [...]` on a goal of the form `∃ wc, …` rewrites under the binder and drags
+  in `funext` (⇒ `Quot.sound`). Do `refine ⟨_, C, ?_⟩` first, then `simp only` / `show`.
+- `sealStore SCE.noBrands = noBrands` is `rfl` (`Option.map f none` reduces); do not
+  `funext`.
+- Source `proxyEnv` uses the literal `"#f"`; target uses `reservedLabel` (a def) — they
+  unify by δ, `exact`/`refine` cope.
+- Concrete `BStep` runs need `(v₁ := …)`/`(v₂ := …)` pins on `BStep.box`/`app_clos`.
 
-Goal: a source-level sealing construct that elaborates to `Seal.seal`, with the SCE
-metatheory extended and `seal_semantic_preservation` covering it, so "sealed
-compilation units" exist end to end. Decision already taken (user confirmed): **mirror**
-the target — give the source `wrap`/`seal`/`unseal` value forms and the same
-structural big-step coercion, so `EVal` (Correctness.lean, elaboration-shaped,
-"up to top-like collapse") gets plain clauses `EVal.wrap` etc. Do NOT make the source
-`mseal` transparent: then `EVal` would have to relate an unwrapped source value to a
-wrapped target value and `eval_cast_self` breaks.
+## 4. Possible follow-ups (not started)
 
-Suggested order (each step: build green, commit):
-
-1. **`SCE/Syntax.lean`**: `Typ.brand : Nat → Typ` (add to `substTyp`, `LabelIn` no case,
-   `SRLookup` no case, `Repr`); `Exp.wrap : Nat → Exp → Exp`, `Exp.mseal : Nat → Typ →
-   Typ → Exp → Exp` (n, R, S), `Exp.munseal` likewise; `Value.vwrap`. Optionally a
-   source `SCE.substBrand`. Keep names parallel to Seal.
-2. **`SCE/Semantics.lean`**: source coercion relations `SSealV n R : Typ → Exp → Exp →
-   Prop` / `SUnsealV`, mirroring `Seal.SealV/UnsealV` (arrow case builds a source proxy
-   `mclos`/`clos`? — choose `clos (mrg unit (lrec "#f" c)) A (mseal n R B (app
-   (rproj (proj query 1) "#f") (munseal n R A (proj query 0))))`; SCE lambdas carry only
-   the input type, which is fine since SCE has no casts). `BStep.mseal : BStep ρ e v →
-   SSealV n R S v w → BStep ρ (mseal n R S e) w`, `BStep.munseal`, `BStep.wrap`
-   (congruence). `SCE/SmallStep.lean`: matching small-step rules.
-3. **`SCE/Elaboration.lean`** (SCE→Core, λE has no brands): decide and document. Simplest
-   sound choice: `elabExp` has NO rule for `mseal` (Core keeps the brand-free fragment,
-   like `fold/unfold` are absent from `elabSeal`); or erase `mseal` to `ce` (identity)
-   and `Typ.brand` via `elabTyp` to … there is no Core brand. Recommended: no rule
-   (out of Core's scope), and state that in `SCE/Elaboration.lean`'s header.
-4. **SCE typing/progress/preservation/equivalence** (`SCE/Preservation.lean`,
-   `Progress.lean`, `Equivalence.lean`, `SmallStep.lean`, `Theories.lean`): new cases.
-   SCE's typing is `elabExp` (Core-targeting) — if `mseal` has no Core rule, source
-   type safety for `mseal` must come from `elabSeal` (Seal-targeting) instead: consider
-   proving progress/preservation for `mseal` only in the Seal-targeted development
-   (`Correctness.lean` uses `elabSeal` + `EVal`), leaving Core-side theorems untouched.
-   Check which SCE theorems induct on `Exp`/`BStep` and would need new alternatives
-   (`grep -n "| mlinkn" LeanSce/SCE/*.lean` gives the sites).
-5. **`Seal/Elaboration.lean`**: `sealTyp (.brand n) = .brand n`; rule
-   `elabSeal.emseal : Δ n = some R? …` — `elabSeal` currently has no store; add the
-   store as a parameter of `elabSeal` (or a section variable) since `tseal` needs
-   `Δ n = some R`, `NoRes (sealTyp R)`, `WfSig n (sealTyp R) (sealTyp S)`; conclusion
-   `elabSeal ctx (mseal n R S se) S (Seal.seal n (sealTyp R) (sealTyp S) ce)` with premise
-   `elabSeal ctx se (substTyp… S[n:=R]) ce` — you need `sealTyp (substBrand_src n R S)
-   = Seal.substBrand n (sealTyp R) (sealTyp S)` (lemma). Extend
-   `seal_type_preservation` (needs `HasType Δ`, so thread Δ into `elabSeal`).
-   Also `emunseal`, and `ewrap` for values (`Value.vwrap`), needed by `elabSeal_value`.
-6. **`Seal/Correctness.lean`**: `EVal.wrap : EVal R v w → EVal (brand n) (wrap n v)
-   (wrap n w)` (type index: brand n; think about whether `EVal` needs the store to know
-   R — it is elaboration-shaped, so `EVal (.brand n) (.wrap n v) (.wrap n w)` given
-   `EVal R v w` for the R the store says; probably parametrize `EVal` by Δ);
-   `seal_semantic_preservation` cases for `BStep.mseal/munseal/wrap`: source `SSealV`
-   simulates target `SealV` step-by-step (lemma `eval_sealv : EVal (S[R]) v w → SSealV
-   n R S v v' → ∃ w', SealV n (sealTyp R) (sealTyp S) w w' ∧ EVal S v' w'`, by induction on
-   S; the arrow case relates the two proxies — `EVal` at arrows is closure-shaped, so
-   the proxy closures must be `EVal`-related: check `EVal.clos`'s shape and make the
-   source proxy match it exactly). Then `Correctness/Linearization` can drop the
-   `noBrands` instantiation (thread Δ).
-7. **Sealed separate compilation**: a `seal_separate_compilation_sealed` corollary:
-   provider unit `mseal n R S p` linked into a client via `mlink`, statement in the style
-   of `seal_separate_compilation` (Correctness.lean:1030). And a source-level RI
-   corollary if cheap: source clients typed against `S` ⇒ (via semantic preservation +
-   `representation_independence`) same integer.
-8. **`Examples.lean`**: the RI example written at the source level and elaborated.
-9. `DESIGN.md` §(g) "SCE source side" paragraph; remove the "not done" note; update
-   the memory file `~/.claude/projects/…/memory/seal_type_abstraction.md`.
-
-Brand allocation: at the mechanization level `Δ` is a hypothesis; document that the
-toolchain allocates distinct brands per sealed unit (like symbols).
-
-## 4. Open questions to settle early in Phase 4
-
-- Does `elabSeal` get the store as an index (`elabSeal Δ Γ e A ce`) or as a section
-  variable? Index is cleaner for `seal_type_preservation`.
-- Source `SSealV` arrow proxy: SCE `clos v A e` has no codomain annotation; the source
-  proxy body will be `mseal n R B (…)` — make sure `EVal`'s closure clause can relate it
-  to the target proxy `clos (proxyEnv c) A B (seal …)` (target carries B). If `EVal.clos`
-  requires the target's B to be `sealTyp` of something, that is B itself — fine.
-- Whether SCE's `Typ.brand` should live in `ModTyp`/signatures too (`sig` types): a
-  sealed module's signature `S` is an SCE `Typ` (record intersections), so `Typ.brand`
-  suffices; functor import interfaces mention brands as ordinary types.
+- SCE-side type safety for the sealing forms stated *at the source*: progress/
+  preservation of `mseal` under `elabSeal`-typing (currently: source safety comes via
+  simulation + target safety).
+- Functor polymorphism over abstract types (needs type variables — out of scope by
+  design, DESIGN §(g) scope limits).
+- Toolchain: brand allocation per sealed unit (`lib/sepcomp.ml`) — mechanization takes
+  Δ as a hypothesis.

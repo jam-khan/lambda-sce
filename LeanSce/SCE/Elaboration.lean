@@ -124,6 +124,10 @@ end
 
 abbrev TyCtx := Typ
 
+-- Scope note: the sealing forms `wrap`/`mseal`/`munseal` (type abstraction, see
+-- Seal/DESIGN.md §(g)) have NO rules here — Core has no brands, so sealed compilation
+-- units exist only in the λE^≤-targeted elaboration (Seal/Elaboration.lean, `elabSeal`).
+-- Their SCE-side type safety therefore comes from that development.
 inductive elabExp : TyCtx → Exp → Typ → Core.Exp → Prop
   | equery {ctx}
     : elabExp ctx Exp.query ctx Core.Exp.query
