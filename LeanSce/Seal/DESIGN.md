@@ -9,19 +9,19 @@ novel except the combination; every ported rule is credited below. The calculus 
 deliberately minimal — it exists to serve the module/linking work in `SCE/`, not as a
 general-purpose calculus.
 
-Scope of this version: the paper fragment `Int | ε | A → B | A & B | {l : A}`.
-Left out (and why): unions and iso-recursive μ (casting rules for them exist in
-*neither* paper — open design); fix (paper-backed via Eᵢ Appendix B, natural next
-step); polymorphism/type components (λE §6.3 flags type-level substitution under
-environment semantics as open; Eᵢ lists polymorphism as future work — sealing here is
-**value-level only**).
+Scope of this version: the paper fragment `Int | ε | A → B | A & B | {l : A}`,
+**plus abstract type names (brands) for module sealing with type abstraction — see
+§(g)**. Left out (and why): unions and iso-recursive μ (casting rules for them exist
+in *neither* paper — open design); fix (paper-backed via Eᵢ Appendix B, natural next
+step); polymorphism proper — type variables, ∀/∃ (λE §6.3 flags type-level
+substitution under environment semantics as open; Eᵢ lists polymorphism as future
+work). Type abstraction is obtained without type variables, by generative brands.
 
 Mechanization: `Syntax`, `Subtyping`, `Disjointness`, `Casting`, `Typing`,
 `SmallStep`, `CastingLemmas`, `Lookup`, `Determinism`, `Progress`, `Preservation`,
 `Sealing` (binary logical relation + fundamental lemma + sealing corollary),
-`Examples`. Zero `sorry`, zero custom axioms — `sealing`, `fundamental`,
-`cast_lr`, and `normalization` are axiom-free; determinism/preservation use
-`propext` only.
+`Abstraction` (representation independence), `Examples`. Zero `sorry`, zero custom
+axioms — everything uses at most `propext`.
 
 ---
 
@@ -145,14 +145,14 @@ Precision about what this is and is not:
   the fundamental lemma) strongly normalizing, so there are no effects or traces to
   speak of; nothing is claimed about an effectful extension (that would require a
   ⊤⊤-closed/biorthogonal relation and is **not established** here).
-- It is **not representation independence**. There are no type components,
-  existentials, or polymorphism; the client can name every type it depends on.
-  What is hidden is *width* (components not named in `A`) and *behavior beyond the
-  seal at depth* (record fields and function results are resealed recursively).
+- On its own it is **not representation independence**: with the value-level seal
+  `(e : A)` alone the client can name every type it depends on. What `(e : A)`
+  hides is *width* (components not named in `A`) and *behavior beyond the seal at
+  depth* (record fields and function results are resealed recursively).
   Width-hiding is in fact almost trivial in this calculus — the cast **erases**
   discarded components, so the sealed value literally does not contain them
   ("erasure sealing"); the genuine content of the theorem is extensionality at
-  arrows and depth.
+  arrows and depth. Representation independence proper is §(g).
 
 ## (e) What breaks in λE's existing metatheory?
 
@@ -376,3 +376,128 @@ bound value under re-sealed environments) and is left as mechanical.
 
 Still open on this path: a source-level signature-ascription construct
 elaborating to `(e : A)` (one rule + one BStep case), and fix/unions/μ as before.
+
+---
+
+## (g) Type abstraction: brands, `seal`, and representation independence
+
+**Goal.** ML-style module sealing: a unit implements a signature `S` with an abstract
+type `α`, over some representation `R`; clients compile against `S` with `α` opaque;
+two implementations over different representations, related in the standard
+relational way at `α`, are indistinguishable to every client. Mechanized as
+`representation_independence` (`Abstraction.lean`).
+
+**Route.** Not type variables (∀/∃): under environment semantics that reopens λE §6.3
+(type-level substitution as resolution-under-environment, casts at type variables
+across closure environments, COST with variables, disjoint quantification just to
+discharge `tlam`'s `Γ ∗ A`). Instead, **generative brands**: an abstract type is a
+statically allocated type name `brand n` (α_n) whose representation lives in a
+private *brand store* `Δ : Nat → Option Typ`; sealed values are wrapped `⟨n⟩v`; the
+seal is a coercion between the two views of a signature. Provenance: Sumii–Pierce
+dynamic sealing / Matthews–Ahmed (parametricity via runtime sealing) /
+Neis–Dreyer–Rossberg (non-parametric parametricity: type analysis + generated names
+still gives representation independence) — minus dynamic name generation, because in
+SCE seals happen at compilation-unit boundaries and brands can be allocated by the
+linker like symbols. Static brands ⇒ no allocation ⇒ no Kripke worlds; strong
+normalization ⇒ no step index. **Slogan: sealing = casting + branding.**
+
+**Rules.**
+
+```
+Typ  ::= … | brand n
+Sub:   brand n <: brand n           (only; NOT brand n <: R — that is translucency, kills RI)
+Cost:  brand n ⊓ brand n            (so  α_n ∗ B  iff  α_n does not occur in B: disj_brand_notin)
+Ordinary (brand n); ¬TopLike (brand n); genVal (brand n) = ε (junk, guarded as for Int)
+Exp  ::= … | wrap n e | seal n R S e | unseal n R S e        Value ::= … | ⟨n⟩v
+Cast:  ⟨n⟩v ↪_{brand n} ⟨n⟩v          THE ONLY NEW CAST RULE
+
+Δ; Γ ⊢ e : A                                  (typing carries the unit's brand store)
+twrap:    Δ n = R → v value → Δ; ε ⊢ v : R → Δ; Γ ⊢ ⟨n⟩v : brand n
+tseal:    Δ n = R → NoRes R → WfSig n R S → Δ; Γ ⊢ e : S[n:=R] → Δ; Γ ⊢ seal n R S e : S
+tunseal:  Δ n = R → NoRes R → WfSig n R S → Δ; Γ ⊢ e : S       → Δ; Γ ⊢ unseal n R S e : S[n:=R]
+```
+Clients are typed with `Δ n = none`: they can use α_n opaquely but cannot brand, seal
+or unseal at it; both client and provider derivations weaken to the union store
+(`hastype_weaken_store`), which is how the composed program types.
+
+`WfSig n R S`: every `A & B` inside `S` is disjoint in *both* views (abstract and
+representation — disjointness is preserved by substitution in neither direction:
+`α & Int` vs `Int & Int`; `α & α` vs `ε & ε`), and `S` (and `R`, `NoRes`) avoid the
+reserved label `#f`.
+
+**Semantics.** `seal`/`unseal` on values step in one shot through value-level coercion
+relations `SealV`/`UnsealV` (mirroring how `(v : A)` steps through `Cast`), structural
+on the signature: wrap/unwrap at `brand n`, identity at other leaves, componentwise at
+`&`/records, and at arrows a **proxy**
+```
+seal   n R (A → B) c  ↪  ⟨ ε # {#f = c},  λ(A → B).           seal n R B (?.1.#f (unseal n R A ?.0)) ⟩
+unseal n R (A → B) c  ↪  ⟨ ε # {#f = c},  λ(A[R] → B[R]).   unseal n R B (?.1.#f (seal n R A ?.0)) ⟩
+```
+Why a proxy and not `Casting-arrow`'s annotation rewrite: the underlying body computes
+at `R`, the client passes `⟨n⟩v`; something must unwrap on the way in and wrap on the
+way out. Why the closure is stored under a *reserved record label*: `tclos` demands
+`Disj Γ₁ A` for the closure environment; a bare closure environment COST-collides with
+any signature arrow of matching codomain (e.g. `S = (Int→Int)→Int`); a record under a
+label the signature cannot use is disjoint from everything in it (`disj_proxyEnv`).
+Why coercions are relations on values and not structural term rewriting: an
+intermediate `mrg (seal … v₁) (seal … v₂)` would have to be typed by `tmrg`, whose
+`A ∗ Γ` premise fails under an arbitrary ambient context; the one-shot value coercion
+re-types the result via `tmergev` + `disjoint_consistent` (hence `WfSig`).
+
+**Why casting at a brand must not be universal.** The tempting rule `v ↪_{α_n} ⟨n⟩v`
+for all `v` (let the cast install the brand) destroys the calculus: every value would
+cast at α_n, so `5` and `{l = 3}` — typed at disjoint types — would cast at α_n to
+different values, `disjoint_consistent` (Eᵢ L4) fails, with it `tmergev`, value
+closedness, and preservation. Casting at a brand is therefore the identity on
+same-brand wrappers and undefined otherwise; branding is installed by `seal` only.
+Consequently `Consistent ⟨n⟩v ⟨n⟩v'` iff `v = v'`, matching Eᵢ's treatment of
+`Int # Int`.
+
+**Metatheory.** Every Eᵢ casting lemma (L4–L12) re-established with brands
+(`CastingLemmas`); progress of the coercions by canonical forms
+(`sealv_progress`/`unsealv_progress`); preservation of the coercions
+(`sealv_preservation`/`unsealv_preservation`, the proxy typed by `tclos` with the
+reserved-label environment); determinism of the coercions is typing-free (the
+signature's shape picks the rule). `gdeterminism`, `gprogress`, `gpreservation`
+extend.
+
+**The relation.** `LRg Δ₁ Δ₂ η o` — two stores (the two providers have different
+representations, so left values type under Δ₁ and right values under Δ₂), a brand
+interpretation `η : Nat → Exp → Exp → Prop`, and an *open brand*
+`o : Option (Nat × Typ × Typ)`:
+- `o = none` (`LR`): every brand abstract — at `brand m` two values are related iff both
+  are wrappers whose payloads are η-related.
+- `o = some (n, R₁, R₂)`: brand n open — at `brand n` two values are raw
+  representations, typed at R₁/R₂, related by η n; every type is read through the
+  substitution (`viewL`/`viewR`). This is the relation the *implementations* stand in.
+`cast_lr` and `toplike_lr_gen` are proved once for both views (`OpenAdm`: the
+representations are not top-like, so top-likeness agrees across views, and η n is
+closed under self-casts at R₁/R₂ — a mild admissibility condition forced by beta's
+argument-cast at a proxy's annotation). The fundamental lemma is stated for *client*
+typing (`HasType noBrands`): a client cannot wrap/seal/unseal, and everything else it
+can do respects η by construction. This stratification is what avoids a relation that
+recurses through the store.
+
+**Results.** `coe_lr`: sealing carries implementation-relatedness to
+client-relatedness and unsealing carries it back (mutual induction on the signature;
+the arrow case runs the proxies). `representation_independence`: for `OpenBrand`
+(stores agree on n, reps `NoRes` and not top-like, η n cast-closed), `WfSig` on both
+sides, implementations `p₁ p₂` related in `LRg (some (n,R₁,R₂)) S`, and any client
+`noBrands; S ⊢ e : Int`: `(seal n R₁ S p₁) ▷ e` and `(seal n R₂ S p₂) ▷ e` evaluate to
+the same literal. Instantiated in `Examples.lean` (`{mk : Int → α} & {get : α → Int}`
+over `Int` vs `{v : Int}`).
+
+**Scope limits (design choices, stated up front).**
+- No functor polymorphism over abstract types: an import interface names the concrete
+  brand it links against — natural for `--link sys counter app`, but "generic" functors
+  need type variables.
+- Applicative-by-brand generativity: a `seal` inside a functor body uses the same brand
+  and representation for every application (sound; not ML-generative).
+- One brand per `seal`; several abstract types = nested seals.
+- Top-like representations excluded (`OpenAdm`); a top-like abstract type is inhabited
+  only by the generator anyway.
+- Brand allocation is a toolchain concern (`WfStore`-style uniqueness assumed; the
+  implementation must allocate distinct brands per sealed unit).
+- The SCE source language has no `mseal` yet (`Elaboration.lean`/`Correctness.lean`
+  instantiate the store to `noBrands`); the planned route is to mirror `seal`/`wrap`
+  at the source so `EVal` stays structural.
