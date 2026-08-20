@@ -1,0 +1,936 @@
+\documentclass[10pt]{article}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathpartir}
+\usepackage{array}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{definition}[theorem]{Definition}
+
+% ── shared ──
+\newcommand{\Int}{\mathsf{Int}}
+\newcommand{\tp}{\varepsilon}
+\newcommand{\bra}[1]{\alpha_{#1}}
+\newcommand{\mrg}{\mathbin{\#}}
+\newcommand{\qry}{{?}}
+\newcommand{\bx}{\mathbin{\triangleright}}
+\newcommand{\subs}[3]{#1[#2{:=}#3]}
+\newcommand{\wrp}[2]{\langle #1\rangle\,#2}
+\newcommand{\sealE}[4]{\mathsf{seal}\;#1\;#2\;#3\;#4}
+\newcommand{\unsealE}[4]{\mathsf{unseal}\;#1\;#2\;#3\;#4}
+\newcommand{\resl}{\mathtt{\#f}}
+\newcommand{\Val}{\mathsf{value}}
+\newcommand{\tl}[1]{\rceil #1\lceil}
+\newcommand{\gen}[1]{{#1}^{\uparrow}}
+\newcommand{\step}[3]{#1 \vdash #2 \hookrightarrow #3}
+\newcommand{\msteps}[3]{#1 \vdash #2 \hookrightarrow^{*} #3}
+\newcommand{\cast}[3]{#1 \hookrightarrow_{#2} #3}
+\newcommand{\sealv}[5]{#4 \hookrightarrow^{\mathsf{seal}\,#1\,#2}_{#3} #5}
+\newcommand{\unsealv}[5]{#4 \hookrightarrow^{\mathsf{unseal}\,#1\,#2}_{#3} #5}
+\newcommand{\lk}[3]{#1 \ni_{#2} #3}
+\newcommand{\rlk}[3]{#2\,{:}\,#3 \in #1}
+\newcommand{\lin}[2]{#1 \in #2}
+\newcommand{\hast}[4]{#1; #2 \vdash #3 : #4}
+\newcommand{\storele}{\sqsubseteq}
+\newcommand{\pxe}[1]{\tp \mrg \{\resl = #1\}}
+\newcommand{\pxf}{(\qry.1).\resl}
+% ── SCE ──
+\newcommand{\bstep}[3]{#1 \vdash #2 \Downarrow #3}
+\newcommand{\sel}[3]{#1 . #2 \rightsquigarrow #3}
+\newcommand{\selp}[3]{#1 \gg_{#2} #3}
+\newcommand{\ssealv}[5]{#4 \Downarrow^{\mathsf{seal}\,#1\,#2}_{#3} #5}
+\newcommand{\sunsealv}[5]{#4 \Downarrow^{\mathsf{unseal}\,#1\,#2}_{#3} #5}
+\newcommand{\sT}[1]{[\![#1]\!]}
+\newcommand{\elab}[5]{#1; #2 \vdash #3 : #4 \rightsquigarrow #5}
+\newcommand{\eva}[4]{#1 \vdash #2 \sim_{#3} #4}
+\newcommand{\wire}[3]{\mathsf{wire}(#1,#2,#3)}
+\newcommand{\sbx}{{\scriptscriptstyle\bullet}}
+\newcommand{\opn}{{\scriptscriptstyle\circ}}
+% ── LR ──
+\newcommand{\LRg}[2]{\mathcal{V}\sT{#2}^{#1}}
+\newcommand{\LRc}[1]{\mathcal{V}\sT{#1}}
+
+\begin{document}
+
+\section{$\lambda_E^{\leq}$ (Seal)}
+
+\subsection{Syntax}
+
+\[
+\begin{array}{r@{\;}c@{\;}l@{\qquad}l}
+A,B,C,R,S,\Gamma &::=& \Int \mid \tp \mid A \to B \mid A \,\&\, B \mid \{\ell : A\} \mid \bra{n} & \\
+\Delta &\in& \mathbb{N} \rightharpoonup \mathsf{Typ} \qquad \emptyset \;=\; \lambda n.\ \mathsf{none} & \\[2pt]
+e &::=& \qry \mid e.k \mid i \mid \tp \mid \lambda(A{\to}B).\,e \mid e_1 \bx e_2 \mid \langle e_1, \lambda(A{\to}B).\,e_2\rangle \mid e_1\,e_2 & \\
+  &\mid& e_1 \mrg e_2 \mid \{\ell = e\} \mid e.\ell \mid (e : A) \mid \wrp{n}{e} \mid \sealE{n}{R}{S}{e} \mid \unsealE{n}{R}{S}{e} & \\[2pt]
+v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\} \mid v_1 \mrg v_2 \mid \wrp{n}{v} &
+\end{array}
+\]
+
+\[
+\begin{array}{l}
+\subs{\Int}{n}{R} = \Int \qquad
+\subs{\tp}{n}{R} = \tp \qquad
+\subs{(A \to B)}{n}{R} = \subs{A}{n}{R} \to \subs{B}{n}{R} \\
+\subs{(A \& B)}{n}{R} = \subs{A}{n}{R} \,\&\, \subs{B}{n}{R} \qquad
+\subs{\{\ell : A\}}{n}{R} = \{\ell : \subs{A}{n}{R}\} \qquad
+\subs{\bra{m}}{n}{R} = \begin{cases} R & m = n \\ \bra{m} & m \neq n\end{cases}
+\end{array}
+\]
+
+\begin{mathpar}
+\inferrule*[right=zero]{ }{\lk{A \& B}{0}{B}}
+\and
+\inferrule*[right=succ]{\lk{A}{k}{C}}{\lk{A \& B}{k+1}{C}}
+\and
+\inferrule*[right=rcd]{ }{\lin{\ell}{\{\ell:A\}}}
+\and
+\inferrule*[right=andl]{\lin{\ell}{A}}{\lin{\ell}{A\&B}}
+\and
+\inferrule*[right=andr]{\lin{\ell}{B}}{\lin{\ell}{A\&B}}
+\and
+\inferrule*[right=zero]{ }{\rlk{\{\ell:A\}}{\ell}{A}}
+\and
+\inferrule*[right=landl]{\rlk{A}{\ell}{C} \\ \neg\,\lin{\ell}{B}}{\rlk{A\&B}{\ell}{C}}
+\and
+\inferrule*[right=landr]{\rlk{B}{\ell}{C} \\ \neg\,\lin{\ell}{A}}{\rlk{A\&B}{\ell}{C}}
+\end{mathpar}
+
+\begin{mathpar}
+\inferrule*[right=oint]{ }{\Int\ \mathsf{ord}}
+\and
+\inferrule*[right=oarr]{ }{A\to B\ \mathsf{ord}}
+\and
+\inferrule*[right=orcd]{ }{\{\ell:A\}\ \mathsf{ord}}
+\and
+\inferrule*[right=obrand]{ }{\bra{n}\ \mathsf{ord}}
+\and
+\inferrule*[right=tltop]{ }{\tl{\tp}}
+\and
+\inferrule*[right=tland]{\tl{A} \\ \tl{B}}{\tl{A\&B}}
+\and
+\inferrule*[right=tlarr]{\tl{B}}{\tl{A\to B}}
+\and
+\inferrule*[right=tlrcd]{\tl{B}}{\tl{\{\ell:B\}}}
+\end{mathpar}
+
+\[
+\gen{\Int} = \tp \quad
+\gen{\tp} = \tp \quad
+\gen{(A\to B)} = \langle \tp, \lambda(A{\to}B).\,\gen{B}\rangle \quad
+\gen{(A\&B)} = \gen{A} \mrg \gen{B} \quad
+\gen{\{\ell:A\}} = \{\ell = \gen{A}\} \quad
+\gen{\bra{n}} = \tp
+\]
+
+\subsection{Typing}
+
+\subsubsection*{Subtyping \quad $A <: B$}
+\begin{mathpar}
+\inferrule*[right=sint]{ }{\Int <: \Int}
+\and
+\inferrule*[right=stop]{ }{A <: \tp}
+\and
+\inferrule*[right=sarr]{B_1 <: A_1 \\ A_2 <: B_2}{A_1 \to A_2 <: B_1 \to B_2}
+\and
+\inferrule*[right=sandl]{A_1 <: A_3}{A_1 \& A_2 <: A_3}
+\and
+\inferrule*[right=sandr]{A_2 <: A_3}{A_1 \& A_2 <: A_3}
+\and
+\inferrule*[right=sand]{A_1 <: A_2 \\ A_1 <: A_3}{A_1 <: A_2 \& A_3}
+\and
+\inferrule*[right=srcd]{A <: B}{\{\ell : A\} <: \{\ell : B\}}
+\and
+\inferrule*[right=sbrand]{ }{\bra{n} <: \bra{n}}
+\end{mathpar}
+
+\subsubsection*{Common ordinary supertypes and disjointness \quad $A \sqcap B$, \; $A * B \;:=\; \neg (A \sqcap B)$}
+\begin{mathpar}
+\inferrule*[right=cint]{ }{\Int \sqcap \Int}
+\and
+\inferrule*[right=candl]{A \sqcap C}{A \& B \sqcap C}
+\and
+\inferrule*[right=candr]{B \sqcap C}{A \& B \sqcap C}
+\and
+\inferrule*[right=crandl]{A \sqcap B}{A \sqcap B \& C}
+\and
+\inferrule*[right=crandr]{A \sqcap C}{A \sqcap B \& C}
+\and
+\inferrule*[right=carr]{B \sqcap D}{A \to B \sqcap C \to D}
+\and
+\inferrule*[right=crcd]{A \sqcap B}{\{\ell:A\} \sqcap \{\ell:B\}}
+\and
+\inferrule*[right=cbrand]{ }{\bra{n} \sqcap \bra{n}}
+\end{mathpar}
+
+\subsubsection*{Casting and consistency \quad $\cast{v}{A}{v'}$, \; $v_1 \approx v_2 \;:=\; \forall A\,w_1\,w_2.\ \cast{v_1}{A}{w_1} \Rightarrow \cast{v_2}{A}{w_2} \Rightarrow w_1 = w_2$}
+\begin{mathpar}
+\inferrule*[right=cint]{ }{\cast{i}{\Int}{i}}
+\and
+\inferrule*[right=ctop]{ }{\cast{v}{\tp}{\tp}}
+\and
+\inferrule*[right=carrow]{\neg\tl{D} \\ C <: A \\ B <: D}
+  {\cast{\langle v, \lambda(A{\to}B).e\rangle}{C \to D}{\langle v, \lambda(A{\to}D).e\rangle}}
+\and
+\inferrule*[right=carrowtl]{\tl{D} \\ C <: A \\ B <: D}
+  {\cast{\langle v, \lambda(A{\to}B).e\rangle}{C \to D}{\langle \tp, \lambda(C{\to}D).\gen{D}\rangle}}
+\and
+\inferrule*[right=cmrgl]{A\ \mathsf{ord} \\ \cast{v_1}{A}{v_1'}}{\cast{v_1 \mrg v_2}{A}{v_1'}}
+\and
+\inferrule*[right=cmrgr]{A\ \mathsf{ord} \\ \cast{v_2}{A}{v_2'}}{\cast{v_1 \mrg v_2}{A}{v_2'}}
+\and
+\inferrule*[right=cand]{\cast{v}{A}{v_1} \\ \cast{v}{B}{v_2}}{\cast{v}{A \& B}{v_1 \mrg v_2}}
+\and
+\inferrule*[right=crcd]{\cast{v}{A}{v'}}{\cast{\{\ell = v\}}{\{\ell : A\}}{\{\ell = v'\}}}
+\and
+\inferrule*[right=cwrap]{ }{\cast{\wrp{n}{v}}{\bra{n}}{\wrp{n}{v}}}
+\end{mathpar}
+
+\subsubsection*{Reserved-label freedom and signature well-formedness \quad $\mathsf{NoRes}\ T$, \; $\mathsf{WfSig}\ n\ R\ S$}
+\begin{mathpar}
+\inferrule{ }{\mathsf{NoRes}\ \Int}
+\and
+\inferrule{ }{\mathsf{NoRes}\ \tp}
+\and
+\inferrule{ }{\mathsf{NoRes}\ \bra{n}}
+\and
+\inferrule{\mathsf{NoRes}\ A \\ \mathsf{NoRes}\ B}{\mathsf{NoRes}\ (A \to B)}
+\and
+\inferrule{\ell \neq \resl \\ \mathsf{NoRes}\ A}{\mathsf{NoRes}\ \{\ell : A\}}
+\and
+\inferrule{\mathsf{NoRes}\ A \\ \mathsf{NoRes}\ B}{\mathsf{NoRes}\ (A \& B)}
+\end{mathpar}
+\begin{mathpar}
+\inferrule{ }{\mathsf{WfSig}\ n\ R\ \Int}
+\and
+\inferrule{ }{\mathsf{WfSig}\ n\ R\ \tp}
+\and
+\inferrule{ }{\mathsf{WfSig}\ n\ R\ \bra{m}}
+\and
+\inferrule{\mathsf{WfSig}\ n\ R\ A \\ \mathsf{WfSig}\ n\ R\ B}{\mathsf{WfSig}\ n\ R\ (A \to B)}
+\and
+\inferrule{\ell \neq \resl \\ \mathsf{WfSig}\ n\ R\ A}{\mathsf{WfSig}\ n\ R\ \{\ell : A\}}
+\and
+\inferrule{\mathsf{WfSig}\ n\ R\ A \\ \mathsf{WfSig}\ n\ R\ B \\ A * B \\ \subs{A}{n}{R} * \subs{B}{n}{R}}
+  {\mathsf{WfSig}\ n\ R\ (A \& B)}
+\end{mathpar}
+
+\subsubsection*{Typing \quad $\hast{\Delta}{\Gamma}{e}{A}$}
+\begin{mathpar}
+\inferrule*[right=tquery]{ }{\hast{\Delta}{\Gamma}{\qry}{\Gamma}}
+\and
+\inferrule*[right=tint]{ }{\hast{\Delta}{\Gamma}{i}{\Int}}
+\and
+\inferrule*[right=tunit]{ }{\hast{\Delta}{\Gamma}{\tp}{\tp}}
+\and
+\inferrule*[right=tapp]{\hast{\Delta}{\Gamma}{e_1}{A \to B} \\ \hast{\Delta}{\Gamma}{e_2}{A}}
+  {\hast{\Delta}{\Gamma}{e_1\,e_2}{B}}
+\and
+\inferrule*[right=tbox]{\hast{\Delta}{\Gamma}{e_1}{\Gamma_1} \\ \hast{\Delta}{\Gamma_1}{e_2}{A}}
+  {\hast{\Delta}{\Gamma}{e_1 \bx e_2}{A}}
+\and
+\inferrule*[right=tproj]{\hast{\Delta}{\Gamma}{e}{B} \\ \lk{B}{k}{A}}
+  {\hast{\Delta}{\Gamma}{e.k}{A}}
+\and
+\inferrule*[right=trcd]{\hast{\Delta}{\Gamma}{e}{A}}
+  {\hast{\Delta}{\Gamma}{\{\ell = e\}}{\{\ell : A\}}}
+\and
+\inferrule*[right=trproj]{\hast{\Delta}{\Gamma}{e}{B} \\ \rlk{B}{\ell}{A}}
+  {\hast{\Delta}{\Gamma}{e.\ell}{A}}
+\and
+\inferrule*[right=tmrg]{\hast{\Delta}{\Gamma}{e_1}{A} \\ \hast{\Delta}{\Gamma \& A}{e_2}{B} \\ A * \Gamma \\ A * B}
+  {\hast{\Delta}{\Gamma}{e_1 \mrg e_2}{A \& B}}
+\and
+\inferrule*[right=tmergev]{v_1\ \Val \\ v_2\ \Val \\ \hast{\Delta}{\tp}{v_1}{A} \\ \hast{\Delta}{\tp}{v_2}{B} \\ v_1 \approx v_2}
+  {\hast{\Delta}{\Gamma}{v_1 \mrg v_2}{A \& B}}
+\and
+\inferrule*[right=tlam]{\Gamma * A \\ \hast{\Delta}{\Gamma \& A}{e}{B}}
+  {\hast{\Delta}{\Gamma}{\lambda(A{\to}B).e}{A \to B}}
+\and
+\inferrule*[right=tclos]{v\ \Val \\ \hast{\Delta}{\tp}{v}{\Gamma_1} \\ \Gamma_1 * A \\ \hast{\Delta}{\Gamma_1 \& A}{e}{B'} \\ B' <: B \\ C <: A}
+  {\hast{\Delta}{\Gamma}{\langle v, \lambda(A{\to}B).e\rangle}{C \to B}}
+\and
+\inferrule*[right=tanno]{\hast{\Delta}{\Gamma}{e}{B} \\ B <: A}
+  {\hast{\Delta}{\Gamma}{(e : A)}{A}}
+\and
+\inferrule*[right=twrap]{\Delta\,n = R \\ v\ \Val \\ \hast{\Delta}{\tp}{v}{R}}
+  {\hast{\Delta}{\Gamma}{\wrp{n}{v}}{\bra{n}}}
+\and
+\inferrule*[right=tseal]{\Delta\,n = R \\ \mathsf{NoRes}\ R \\ \mathsf{WfSig}\ n\ R\ S \\ \hast{\Delta}{\Gamma}{e}{\subs{S}{n}{R}}}
+  {\hast{\Delta}{\Gamma}{\sealE{n}{R}{S}{e}}{S}}
+\and
+\inferrule*[right=tunseal]{\Delta\,n = R \\ \mathsf{NoRes}\ R \\ \mathsf{WfSig}\ n\ R\ S \\ \hast{\Delta}{\Gamma}{e}{S}}
+  {\hast{\Delta}{\Gamma}{\unsealE{n}{R}{S}{e}}{\subs{S}{n}{R}}}
+\end{mathpar}
+
+\[
+\Delta \storele \Delta' \;:=\; \forall n\,R.\ \Delta\,n = R \Rightarrow \Delta'\,n = R
+\]
+
+\subsection{Semantics}
+
+\subsubsection*{Value lookups \quad $\lk{v}{k}{v'}$, \; $\rlk{v}{\ell}{v'}$}
+\begin{mathpar}
+\inferrule*[right=lvzero]{ }{\lk{v_1 \mrg v_2}{0}{v_2}}
+\and
+\inferrule*[right=lvsucc]{\lk{v_1}{k}{v_3}}{\lk{v_1 \mrg v_2}{k+1}{v_3}}
+\and
+\inferrule*[right=rvlzero]{ }{\rlk{\{\ell = e\}}{\ell}{e}}
+\and
+\inferrule*[right=vlandl]{\rlk{e_1}{\ell}{e}}{\rlk{e_1 \mrg e_2}{\ell}{e}}
+\and
+\inferrule*[right=vlandr]{\rlk{e_2}{\ell}{e}}{\rlk{e_1 \mrg e_2}{\ell}{e}}
+\end{mathpar}
+
+\subsubsection*{Sealing coercions \quad $\sealv{n}{R}{S}{v}{w}$, \; $\unsealv{n}{R}{S}{v}{w}$
+\qquad ($\mathsf{pxe}(c) := \pxe{c}$, \; $\mathsf{pxf} := \pxf$)}
+\begin{mathpar}
+\inferrule*[right=brand-eq]{ }{\sealv{n}{R}{\bra{n}}{v}{\wrp{n}{v}}}
+\and
+\inferrule*[right=brand-ne]{m \neq n}{\sealv{n}{R}{\bra{m}}{v}{v}}
+\and
+\inferrule*[right=int]{ }{\sealv{n}{R}{\Int}{i}{i}}
+\and
+\inferrule*[right=top]{ }{\sealv{n}{R}{\tp}{v}{\tp}}
+\and
+\inferrule*[right=and]{\sealv{n}{R}{A}{v_1}{w_1} \\ \sealv{n}{R}{B}{v_2}{w_2}}
+  {\sealv{n}{R}{A \& B}{v_1 \mrg v_2}{w_1 \mrg w_2}}
+\and
+\inferrule*[right=rcd]{\sealv{n}{R}{A}{v}{w}}
+  {\sealv{n}{R}{\{\ell:A\}}{\{\ell = v\}}{\{\ell = w\}}}
+\and
+\inferrule*[right=arr]{ }
+  {\sealv{n}{R}{A \to B}{c}{\langle \mathsf{pxe}(c), \lambda(A{\to}B).\ \sealE{n}{R}{B}{(\mathsf{pxf}\;(\unsealE{n}{R}{A}{\qry.0}))}\rangle}}
+\end{mathpar}
+\begin{mathpar}
+\inferrule*[right=brand-eq]{ }{\unsealv{n}{R}{\bra{n}}{\wrp{n}{v}}{v}}
+\and
+\inferrule*[right=brand-ne]{m \neq n}{\unsealv{n}{R}{\bra{m}}{v}{v}}
+\and
+\inferrule*[right=int]{ }{\unsealv{n}{R}{\Int}{i}{i}}
+\and
+\inferrule*[right=top]{ }{\unsealv{n}{R}{\tp}{v}{\tp}}
+\and
+\inferrule*[right=and]{\unsealv{n}{R}{A}{v_1}{w_1} \\ \unsealv{n}{R}{B}{v_2}{w_2}}
+  {\unsealv{n}{R}{A \& B}{v_1 \mrg v_2}{w_1 \mrg w_2}}
+\and
+\inferrule*[right=rcd]{\unsealv{n}{R}{A}{v}{w}}
+  {\unsealv{n}{R}{\{\ell:A\}}{\{\ell = v\}}{\{\ell = w\}}}
+\and
+\inferrule*[right=arr]{ }
+  {\unsealv{n}{R}{A \to B}{c}{\langle \mathsf{pxe}(c), \lambda(\subs{A}{n}{R}{\to}\subs{B}{n}{R}).\ \unsealE{n}{R}{B}{(\mathsf{pxf}\;(\sealE{n}{R}{A}{\qry.0}))}\rangle}}
+\end{mathpar}
+
+\subsubsection*{Small-step \quad $\step{v}{e}{e'}$ \qquad (all rules carry $v\ \Val$; value premises shown)}
+\begin{mathpar}
+\inferrule*[right=squery]{ }{\step{v}{\qry}{v}}
+\and
+\inferrule*[right=sappl]{\step{v}{e_1}{e_1'}}{\step{v}{e_1\,e_2}{e_1'\,e_2}}
+\and
+\inferrule*[right=sappr]{v_1\ \Val \\ \step{v}{e_2}{e_2'}}{\step{v}{v_1\,e_2}{v_1\,e_2'}}
+\and
+\inferrule*[right=sbeta]{v_1\ \Val \\ v_2\ \Val \\ \cast{v_2}{A}{v_2'}}
+  {\step{v}{\langle v_1, \lambda(A{\to}B).e\rangle\,v_2}{(v_1 \mrg v_2') \bx (e : B)}}
+\and
+\inferrule*[right=sclos]{ }{\step{v}{\lambda(A{\to}B).e}{\langle v, \lambda(A{\to}B).e\rangle}}
+\and
+\inferrule*[right=sboxl]{\step{v}{e_1}{e_1'}}{\step{v}{e_1 \bx e_2}{e_1' \bx e_2}}
+\and
+\inferrule*[right=sboxr]{v_1\ \Val \\ \step{v_1}{e_2}{e_2'}}{\step{v}{v_1 \bx e_2}{v_1 \bx e_2'}}
+\and
+\inferrule*[right=sboxv]{v_1\ \Val \\ v_2\ \Val}{\step{v}{v_1 \bx v_2}{v_2}}
+\and
+\inferrule*[right=smrgl]{\step{v}{e_1}{e_1'}}{\step{v}{e_1 \mrg e_2}{e_1' \mrg e_2}}
+\and
+\inferrule*[right=smrgr]{v_1\ \Val \\ \step{v \mrg v_1}{e_2}{e_2'}}{\step{v}{v_1 \mrg e_2}{v_1 \mrg e_2'}}
+\and
+\inferrule*[right=sproj]{\step{v}{e}{e'}}{\step{v}{e.k}{e'.k}}
+\and
+\inferrule*[right=sprojv]{v_1\ \Val \\ \lk{v_1}{k}{v'}}{\step{v}{v_1.k}{v'}}
+\and
+\inferrule*[right=slrec]{\step{v}{e}{e'}}{\step{v}{\{\ell = e\}}{\{\ell = e'\}}}
+\and
+\inferrule*[right=srproj]{\step{v}{e}{e'}}{\step{v}{e.\ell}{e'.\ell}}
+\and
+\inferrule*[right=srprojv]{v_1\ \Val \\ \rlk{v_1}{\ell}{v'}}{\step{v}{v_1.\ell}{v'}}
+\and
+\inferrule*[right=sanno]{\step{v}{e}{e'}}{\step{v}{(e : A)}{(e' : A)}}
+\and
+\inferrule*[right=sannov]{v_1\ \Val \\ \cast{v_1}{A}{v'}}{\step{v}{(v_1 : A)}{v'}}
+\and
+\inferrule*[right=swrap]{\step{v}{e}{e'}}{\step{v}{\wrp{n}{e}}{\wrp{n}{e'}}}
+\and
+\inferrule*[right=sseal]{\step{v}{e}{e'}}{\step{v}{\sealE{n}{R}{S}{e}}{\sealE{n}{R}{S}{e'}}}
+\and
+\inferrule*[right=ssealv]{v_1\ \Val \\ \sealv{n}{R}{S}{v_1}{w}}{\step{v}{\sealE{n}{R}{S}{v_1}}{w}}
+\and
+\inferrule*[right=sunseal]{\step{v}{e}{e'}}{\step{v}{\unsealE{n}{R}{S}{e}}{\unsealE{n}{R}{S}{e'}}}
+\and
+\inferrule*[right=sunsealv]{v_1\ \Val \\ \unsealv{n}{R}{S}{v_1}{w}}{\step{v}{\unsealE{n}{R}{S}{v_1}}{w}}
+\end{mathpar}
+
+\begin{mathpar}
+\inferrule*[right=refl]{ }{\msteps{v}{e}{e}}
+\and
+\inferrule*[right=step]{\step{v}{e_1}{e_2} \\ \msteps{v}{e_2}{e_3}}{\msteps{v}{e_1}{e_3}}
+\end{mathpar}
+
+\subsection{Meta-theory}
+
+\begin{theorem}[\textsf{gdeterminism}]
+\[
+\hast{\Delta}{\Gamma}{e}{A} \;\wedge\; \hast{\Delta}{\tp}{v}{\Gamma} \;\wedge\;
+\step{v}{e}{e_1} \;\wedge\; \step{v}{e}{e_2} \;\Longrightarrow\; e_1 = e_2
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{gprogress}]
+\[
+\hast{\Delta}{\Gamma}{e}{A} \;\wedge\; v\ \Val \;\wedge\; \hast{\Delta}{\tp}{v}{\Gamma}
+\;\Longrightarrow\; e\ \Val \;\vee\; \exists e'.\ \step{v}{e}{e'}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{gpreservation}]
+\[
+\step{v}{e}{e'} \;\wedge\; \hast{\Delta}{\Gamma}{e}{A} \;\wedge\; \hast{\Delta}{\tp}{v}{\Gamma}
+\;\Longrightarrow\; \hast{\Delta}{\Gamma}{e'}{A}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{hastype\_weaken\_store}]
+\[
+\Delta \storele \Delta' \;\wedge\; \hast{\Delta}{\Gamma}{e}{A} \;\Longrightarrow\; \hast{\Delta'}{\Gamma}{e}{A}
+\]
+\end{theorem}
+
+\begin{definition}[\textsf{viewL}, \textsf{viewR}, \textsf{WrapRel}, \textsf{RawRel}, \textsf{LRg}, \textsf{LR}]
+$o \in \{\mathsf{none}\} \cup \mathbb{N}\times\mathsf{Typ}\times\mathsf{Typ}$; \quad
+$\eta : \mathbb{N} \to \mathsf{Exp} \to \mathsf{Exp} \to \mathsf{Prop}$; \quad stores $\Delta_1, \Delta_2$ ambient.
+\[
+\begin{array}{l@{\qquad}l}
+\mathsf{viewL}\,\mathsf{none}\,T = T & \mathsf{viewL}\,(n,R_1,R_2)\,T = \subs{T}{n}{R_1} \\
+\mathsf{viewR}\,\mathsf{none}\,T = T & \mathsf{viewR}\,(n,R_1,R_2)\,T = \subs{T}{n}{R_2}
+\end{array}
+\]
+\[
+\begin{array}{r@{\;}c@{\;}l}
+\mathsf{WrapRel}\ m\ (v_1,v_2) &=& \hast{\Delta_1}{\tp}{v_1}{\bra{m}} \wedge \hast{\Delta_2}{\tp}{v_2}{\bra{m}} \wedge
+  \exists w_1\,w_2.\ v_1 = \wrp{m}{w_1} \wedge v_2 = \wrp{m}{w_2} \wedge \eta\,m\,w_1\,w_2 \\
+\mathsf{RawRel}\ n\ R_1\ R_2\ (v_1,v_2) &=& v_1\ \Val \wedge v_2\ \Val \wedge
+  \hast{\Delta_1}{\tp}{v_1}{R_1} \wedge \hast{\Delta_2}{\tp}{v_2}{R_2} \wedge \eta\,n\,v_1\,v_2
+\end{array}
+\]
+\[
+\begin{array}{r@{\;}c@{\;}l}
+\LRg{o}{\Int}(v_1,v_2) &=& \exists i.\ v_1 = i \wedge v_2 = i \\
+\LRg{o}{\tp}(v_1,v_2) &=& v_1 = \tp \wedge v_2 = \tp \\
+\LRg{o}{\bra{m}}(v_1,v_2) &=& \begin{cases}
+    \mathsf{RawRel}\ n\ R_1\ R_2\ (v_1,v_2) & o = (n,R_1,R_2),\ m = n \\
+    \mathsf{WrapRel}\ m\ (v_1,v_2) & \text{otherwise}
+  \end{cases} \\
+\LRg{o}{A \& B}(v_1,v_2) &=& \hast{\Delta_1}{\tp}{v_1}{\mathsf{viewL}\,o\,(A\&B)} \wedge \hast{\Delta_2}{\tp}{v_2}{\mathsf{viewR}\,o\,(A\&B)} \;\wedge \\
+  && \exists a_1\,b_1\,a_2\,b_2.\ v_1 = a_1 \mrg b_1 \wedge v_2 = a_2 \mrg b_2 \wedge \LRg{o}{A}(a_1,a_2) \wedge \LRg{o}{B}(b_1,b_2) \\
+\LRg{o}{\{\ell:A\}}(v_1,v_2) &=& \exists w_1\,w_2.\ v_1 = \{\ell = w_1\} \wedge v_2 = \{\ell = w_2\} \wedge \LRg{o}{A}(w_1,w_2) \\
+\LRg{o}{A \to B}(v_1,v_2) &=& v_1\ \Val \wedge v_2\ \Val \wedge
+  \hast{\Delta_1}{\tp}{v_1}{\mathsf{viewL}\,o\,(A{\to}B)} \wedge \hast{\Delta_2}{\tp}{v_2}{\mathsf{viewR}\,o\,(A{\to}B)} \;\wedge \\
+  && \forall u_1\,u_2.\ \LRg{o}{A}(u_1,u_2) \Rightarrow \forall \rho_1\,\rho_2.\ \rho_1\ \Val \Rightarrow \rho_2\ \Val \Rightarrow \\
+  && \quad \exists w_1\,w_2.\ \msteps{\rho_1}{v_1\,u_1}{w_1} \wedge \msteps{\rho_2}{v_2\,u_2}{w_2} \wedge \LRg{o}{B}(w_1,w_2)
+\end{array}
+\]
+\[
+\LRc{T} \;:=\; \LRg{\mathsf{none}}{T}
+\]
+\end{definition}
+
+\begin{definition}[\textsf{OpenAdm}, \textsf{OpenBrand}, \textsf{SemTyp}]
+\[
+\begin{array}{r@{\;}c@{\;}l}
+\mathsf{OpenAdm}\ \eta\ o &=& \forall n\,R_1\,R_2.\ o = (n,R_1,R_2) \Rightarrow
+  \neg\tl{R_1} \wedge \neg\tl{R_2} \;\wedge \\
+&& (\forall w_1\,w_2.\ \eta\,n\,w_1\,w_2 \Rightarrow \forall w_1'\,w_2'.\ \cast{w_1}{R_1}{w_1'} \Rightarrow \cast{w_2}{R_2}{w_2'} \Rightarrow \eta\,n\,w_1'\,w_2')
+\end{array}
+\]
+\[
+\mathsf{OpenBrand}\ \Delta_1\ \Delta_2\ \eta\ n\ R_1\ R_2 \;=\;
+\left\{
+\begin{array}{l}
+\Delta_1\,n = R_1 \;\wedge\; \Delta_2\,n = R_2 \;\wedge\; \mathsf{NoRes}\ R_1 \;\wedge\; \mathsf{NoRes}\ R_2 \;\wedge\; \neg\tl{R_1} \;\wedge\; \neg\tl{R_2} \;\wedge \\
+\forall w_1\,w_2.\ \eta\,n\,w_1\,w_2 \Rightarrow \forall w_1'\,w_2'.\ \cast{w_1}{R_1}{w_1'} \Rightarrow \cast{w_2}{R_2}{w_2'} \Rightarrow \eta\,n\,w_1'\,w_2'
+\end{array}
+\right.
+\]
+\[
+\mathsf{SemTyp}\ \Delta_1\ \Delta_2\ \eta\ \Gamma\ e_1\ e_2\ A \;=\;
+\forall \rho_1\,\rho_2.\ \LRc{\Gamma}(\rho_1,\rho_2) \Rightarrow
+\exists w_1\,w_2.\ \msteps{\rho_1}{e_1}{w_1} \wedge \msteps{\rho_2}{e_2}{w_2} \wedge \LRc{A}(w_1,w_2)
+\]
+\end{definition}
+
+\begin{theorem}[\textsf{fundamental}]
+\[
+\hast{\emptyset}{\Gamma}{e}{A} \;\Longrightarrow\; \mathsf{SemTyp}\ \Delta_1\ \Delta_2\ \eta\ \Gamma\ e\ e\ A
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{normalization}]
+\[
+\hast{\emptyset}{\tp}{e}{A} \;\Longrightarrow\; \exists v.\ v\ \Val \;\wedge\; \msteps{\tp}{e}{v}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{sealing}]
+\[
+\LRc{A}(p_1',p_2') \;\wedge\; \hast{\emptyset}{A}{e}{\Int} \;\Longrightarrow\;
+\exists i.\ \msteps{p_1'}{e}{i} \;\wedge\; \msteps{p_2'}{e}{i}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{coe\_lr}]
+\[
+\mathsf{OpenBrand}\ \Delta_1\ \Delta_2\ \eta\ n\ R_1\ R_2 \;\wedge\;
+\mathsf{WfSig}\ n\ R_1\ S \;\wedge\; \mathsf{WfSig}\ n\ R_2\ S \;\Longrightarrow
+\]
+\[
+\begin{array}{l}
+\bigl(\forall v_1\,v_2\,w_1\,w_2.\
+  \LRg{(n,R_1,R_2)}{S}(v_1,v_2) \Rightarrow \sealv{n}{R_1}{S}{v_1}{w_1} \Rightarrow \sealv{n}{R_2}{S}{v_2}{w_2} \Rightarrow \LRc{S}(w_1,w_2)\bigr) \;\wedge \\
+\bigl(\forall v_1\,v_2\,w_1\,w_2.\
+  \LRc{S}(v_1,v_2) \Rightarrow \unsealv{n}{R_1}{S}{v_1}{w_1} \Rightarrow \unsealv{n}{R_2}{S}{v_2}{w_2} \Rightarrow \LRg{(n,R_1,R_2)}{S}(w_1,w_2)\bigr)
+\end{array}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{representation\_independence}]
+\[
+\begin{array}{l}
+\mathsf{OpenBrand}\ \Delta_1\ \Delta_2\ \eta\ n\ R_1\ R_2 \;\wedge\;
+\mathsf{WfSig}\ n\ R_1\ S \;\wedge\; \mathsf{WfSig}\ n\ R_2\ S \;\wedge\;
+\LRg{(n,R_1,R_2)}{S}(p_1,p_2) \;\wedge\; \hast{\emptyset}{S}{e}{\Int} \\
+\Longrightarrow\;
+\exists i.\ \msteps{\tp}{(\sealE{n}{R_1}{S}{p_1}) \bx e}{i} \;\wedge\; \msteps{\tp}{(\sealE{n}{R_2}{S}{p_2}) \bx e}{i}
+\end{array}
+\]
+\end{theorem}
+
+\section{$\lambda_{SCE}$ (SCE)}
+
+\subsection{Syntax}
+
+\[
+\begin{array}{r@{\;}c@{\;}l}
+T, A, B, R, S, \Gamma &::=& \Int \mid \tp \mid T \to T \mid T \,\&\, T \mid T \vee T \mid \{\ell : T\} \mid \mathsf{sig}\ \sigma \mid X_k \mid \mu T \mid \bra{n} \\
+\sigma &::=& \langle T \rangle \mid T \Rightarrow \sigma \\
+s &::=& \sbx \mid \opn \qquad\qquad \Delta \in \mathbb{N} \rightharpoonup \mathsf{Typ} \qquad \emptyset = \lambda n.\,\mathsf{none} \qquad \Delta \storele \Delta' := \forall n\,R.\ \Delta\,n = R \Rightarrow \Delta'\,n = R \\[4pt]
+e &::=& \qry \mid e.k \mid i \mid \tp \mid \lambda A.\,e \mid e_1 \bx e_2 \mid \langle e_1, \lambda A.\,e_2 \rangle \mid e_1\,e_2
+       \mid e_1 \mrg e_2 \mid \{\ell = e\} \mid e.\ell \\
+  &\mid& \mathsf{struct}^{s}\,e \mid \mathsf{functor}^{s}(A).\,e \mid \langle e_1, \mathsf{functor}(A).\,e_2 \rangle \mid e_1 \ltimes e_2 \mid e_1 \bullet e_2 \mid e_1 \ltimes^{\!*} e_2 \\
+  &\mid& e_1 \mathbin{,\!,} e_2 \mid \mathsf{let}^{A}\,e_1\ \mathsf{in}\ e_2 \mid \mathsf{open}\ e_1\ \mathsf{in}\ e_2 \\
+  &\mid& \mathsf{inl}^{B}\,e \mid \mathsf{inr}^{A}\,e \mid \mathsf{case}\ e\ \mathsf{of}\ e_1 \mid e_2
+       \mid \mu\lambda(A{\to}B).\,e \mid \langle e_1, \mu\lambda(A{\to}B).\,e_2 \rangle \mid \mathsf{fold}^{T} e \mid \mathsf{unfold}\ e \\
+  &\mid& \wrp{n}{e} \mid \sealE{n}{R}{S}{e} \mid \unsealE{n}{R}{S}{e} \\[4pt]
+v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{functor}(A).e \rangle \mid v_1 \mrg v_2 \mid \{\ell = v\}
+      \mid \mathsf{inl}^{B} v \mid \mathsf{inr}^{A} v \mid \langle v, \mu\lambda(A{\to}B).e\rangle \mid \mathsf{fold}^{T} v \mid \wrp{n}{v}
+\end{array}
+\]
+
+\[
+\begin{array}{l}
+\subs{X_k}{d}{S}^{\mu} = \begin{cases} S & k = d \\ X_k & k \neq d \end{cases} \qquad
+\subs{(\mu T)}{d}{S}^{\mu} = \mu\,(\subs{T}{d{+}1}{S}^{\mu}) \qquad
+\subs{\bra{n}}{d}{S}^{\mu} = \bra{n} \qquad \text{(homomorphic otherwise, incl.\ }\sigma\text{)} \\[3pt]
+\subs{\bra{m}}{n}{R} = \begin{cases} R & m = n \\ \bra{m} & m \neq n \end{cases} \qquad
+\subs{X_k}{n}{R} = X_k \qquad
+\subs{(\mu T)}{n}{R} = \mu\,(\subs{T}{n}{R}) \qquad \text{(homomorphic otherwise, incl.\ }\sigma\text{)}
+\end{array}
+\]
+
+\begin{mathpar}
+\inferrule*[right=zero]{ }{\lk{A \& B}{0}{B}}
+\and
+\inferrule*[right=succ]{\lk{A}{k}{C}}{\lk{A \& B}{k+1}{C}}
+\and
+\inferrule*[right=rcd]{ }{\lin{\ell}{\{\ell:T\}}}
+\and
+\inferrule*[right=andl]{\lin{\ell}{A}}{\lin{\ell}{A\&B}}
+\and
+\inferrule*[right=andr]{\lin{\ell}{B}}{\lin{\ell}{A\&B}}
+\and
+\inferrule*[right=sig]{\lin{\ell}{T}}{\lin{\ell}{\mathsf{sig}\,\langle T\rangle}}
+\and
+\inferrule*[right=zero]{ }{\rlk{\{\ell:T\}}{\ell}{T}}
+\and
+\inferrule*[right=andl]{\rlk{A}{\ell}{T} \\ \neg\,\lin{\ell}{B}}{\rlk{A\&B}{\ell}{T}}
+\and
+\inferrule*[right=andr]{\rlk{B}{\ell}{T} \\ \neg\,\lin{\ell}{A}}{\rlk{A\&B}{\ell}{T}}
+\and
+\inferrule*[right=sig]{\rlk{T}{\ell}{A}}{\rlk{\mathsf{sig}\,\langle T\rangle}{\ell}{A}}
+\end{mathpar}
+
+\subsection{Elaboration (SCE $\to \lambda_E^{\leq}$)}
+
+\subsubsection*{Type translation \quad $\sT{\cdot} : \mathsf{SCE.Typ} \to \mathsf{Seal.Typ}$, \; $\sT{\Delta} := \lambda n.\ \sT{\Delta\,n}$}
+\[
+\begin{array}{l}
+\sT{\Int} = \Int \quad
+\sT{\tp} = \tp \quad
+\sT{A \to B} = \sT{A} \to \sT{B} \quad
+\sT{A \& B} = \sT{A} \,\&\, \sT{B} \quad
+\sT{A \vee B} = \tp \quad
+\sT{\{\ell:A\}} = \{\ell : \sT{A}\} \\
+\sT{\mathsf{sig}\,\langle T\rangle} = \sT{T} \quad
+\sT{\mathsf{sig}\,(T \Rightarrow \sigma)} = \sT{T} \to \sT{\mathsf{sig}\,\sigma} \quad
+\sT{X_k} = \tp \quad
+\sT{\mu T} = \tp \quad
+\sT{\bra{n}} = \bra{n}
+\end{array}
+\]
+
+\subsubsection*{Import packages \quad $\wire{\Gamma}{c_1}{D}$, \; $\mathsf{WireOk}\ \Gamma\ \Gamma_1\ D$}
+\[
+\wire{\Gamma}{c_1}{\{\ell : A\}} = \{\ell = c_1.\ell\} \qquad
+\wire{\Gamma}{c_1}{D \& \{\ell : A\}} = \wire{\Gamma}{c_1}{D} \mrg \bigl((\qry : \Gamma) \bx \{\ell = c_1.\ell\}\bigr) \qquad
+\wire{\Gamma}{c_1}{\_} = \tp
+\]
+\begin{mathpar}
+\inferrule*[right=one]{\rlk{\Gamma_1}{\ell}{A}}{\mathsf{WireOk}\ \Gamma\ \Gamma_1\ \{\ell : A\}}
+\and
+\inferrule*[right=more]{\mathsf{WireOk}\ \Gamma\ \Gamma_1\ D \\ \rlk{\Gamma_1}{\ell}{A} \\ \sT{D} * \Gamma \\ \sT{D} * \{\ell : \sT{A}\}}
+  {\mathsf{WireOk}\ \Gamma\ \Gamma_1\ (D \& \{\ell : A\})}
+\end{mathpar}
+
+\subsubsection*{Elaboration \quad $\elab{\Delta}{\Gamma}{e}{A}{\overline{e}}$}
+\begin{mathpar}
+\inferrule*[right=equery]{ }{\elab{\Delta}{\Gamma}{\qry}{\Gamma}{\qry}}
+\and
+\inferrule*[right=elit]{ }{\elab{\Delta}{\Gamma}{i}{\Int}{i}}
+\and
+\inferrule*[right=eunit]{ }{\elab{\Delta}{\Gamma}{\tp}{\tp}{\tp}}
+\and
+\inferrule*[right=eapp]{\elab{\Delta}{\Gamma}{e_1}{A \to B}{\overline{e}_1} \\ \elab{\Delta}{\Gamma}{e_2}{A}{\overline{e}_2}}
+  {\elab{\Delta}{\Gamma}{e_1\,e_2}{B}{\overline{e}_1\,\overline{e}_2}}
+\and
+\inferrule*[right=eproj]{\elab{\Delta}{\Gamma}{e}{A}{\overline{e}} \\ \lk{A}{k}{B}}
+  {\elab{\Delta}{\Gamma}{e.k}{B}{\overline{e}.k}}
+\and
+\inferrule*[right=ebox]{\elab{\Delta}{\Gamma}{e_1}{\Gamma'}{\overline{e}_1} \\ \elab{\Delta}{\Gamma'}{e_2}{A}{\overline{e}_2}}
+  {\elab{\Delta}{\Gamma}{e_1 \bx e_2}{A}{\overline{e}_1 \bx \overline{e}_2}}
+\and
+\inferrule*[right=edmrg]{\elab{\Delta}{\Gamma}{e_1}{A}{\overline{e}_1} \\ \elab{\Delta}{\Gamma \& A}{e_2}{B}{\overline{e}_2} \\ \sT{A} * \sT{\Gamma} \\ \sT{A} * \sT{B}}
+  {\elab{\Delta}{\Gamma}{e_1 \mrg e_2}{A \& B}{\overline{e}_1 \mrg \overline{e}_2}}
+\and
+\inferrule*[right=evmrg]{v_1\ \Val \\ v_2\ \Val \\ \elab{\Delta}{\tp}{v_1}{A}{\overline{w}_1} \\ \elab{\Delta}{\tp}{v_2}{B}{\overline{w}_2} \\ \sT{A} * \sT{B}}
+  {\elab{\Delta}{\Gamma}{v_1 \mrg v_2}{A \& B}{\overline{w}_1 \mrg \overline{w}_2}}
+\and
+\inferrule*[right=enmrg]{\elab{\Delta}{\Gamma}{e_1}{A}{\overline{e}_1} \\ \elab{\Delta}{\Gamma}{e_2}{B}{\overline{e}_2} \\ \sT{A} * \sT{\Gamma} \\ \sT{A} * \sT{B}}
+  {\elab{\Delta}{\Gamma}{e_1 \mathbin{,\!,} e_2}{A \& B}{\overline{e}_1 \mrg \bigl((\qry : \sT{\Gamma}) \bx \overline{e}_2\bigr)}}
+\and
+\inferrule*[right=elam]{\elab{\Delta}{\Gamma \& A}{e}{B}{\overline{e}} \\ \sT{\Gamma} * \sT{A}}
+  {\elab{\Delta}{\Gamma}{\lambda A.e}{A \to B}{\lambda(\sT{A}{\to}\sT{B}).\overline{e}}}
+\and
+\inferrule*[right=erproj]{\elab{\Delta}{\Gamma}{e}{B}{\overline{e}} \\ \rlk{B}{\ell}{A}}
+  {\elab{\Delta}{\Gamma}{e.\ell}{A}{\overline{e}.\ell}}
+\and
+\inferrule*[right=eclos]{v_1\ \Val \\ \elab{\Delta}{\tp}{v_1}{\Gamma'}{\overline{v}_1} \\ \elab{\Delta}{\Gamma' \& A}{e_2}{B}{\overline{e}_2} \\ \sT{\Gamma'} * \sT{A}}
+  {\elab{\Delta}{\Gamma}{\langle v_1, \lambda A.e_2\rangle}{A \to B}{\langle \overline{v}_1, \lambda(\sT{A}{\to}\sT{B}).\overline{e}_2\rangle}}
+\and
+\inferrule*[right=elrec]{\elab{\Delta}{\Gamma}{e}{A}{\overline{e}}}
+  {\elab{\Delta}{\Gamma}{\{\ell = e\}}{\{\ell : A\}}{\{\ell = \overline{e}\}}}
+\and
+\inferrule*[right=eletb]{\elab{\Delta}{\Gamma}{e_1}{A}{\overline{e}_1} \\ \elab{\Delta}{\Gamma \& A}{e_2}{B}{\overline{e}_2} \\ \sT{\Gamma} * \sT{A}}
+  {\elab{\Delta}{\Gamma}{\mathsf{let}^{A} e_1\ \mathsf{in}\ e_2}{B}{\bigl(\lambda(\sT{A}{\to}\sT{B}).\overline{e}_2\bigr)\,\overline{e}_1}}
+\and
+\inferrule*[right=eopenm]{\elab{\Delta}{\Gamma}{e_1}{\{\ell : A\}}{\overline{e}_1} \\ \elab{\Delta}{\Gamma \& A}{e_2}{B}{\overline{e}_2} \\ \sT{\Gamma} * \sT{A}}
+  {\elab{\Delta}{\Gamma}{\mathsf{open}\ e_1\ \mathsf{in}\ e_2}{B}{\bigl(\lambda(\sT{A}{\to}\sT{B}).\overline{e}_2\bigr)\,(\overline{e}_1.\ell)}}
+\and
+\inferrule*[right=emstruct-$\sbx$]{\elab{\Delta}{\tp}{e}{B}{\overline{e}}}
+  {\elab{\Delta}{\Gamma}{\mathsf{struct}^{\sbx}\,e}{B}{\tp \bx \overline{e}}}
+\and
+\inferrule*[right=emstruct-$\opn$]{\elab{\Delta}{\Gamma}{e}{B}{\overline{e}}}
+  {\elab{\Delta}{\Gamma}{\mathsf{struct}^{\opn}\,e}{B}{\qry \bx \overline{e}}}
+\and
+\inferrule*[right=emfunctor-$\sbx$]{\elab{\Delta}{\tp \& A}{e}{B}{\overline{e}}}
+  {\elab{\Delta}{\Gamma}{\mathsf{functor}^{\sbx}(A).e}{\mathsf{sig}\,(A \Rightarrow \langle B\rangle)}{\tp \bx \lambda(\sT{A}{\to}\sT{B}).\overline{e}}}
+\and
+\inferrule*[right=emfunctor-$\opn$]{\elab{\Delta}{\Gamma \& A}{e}{B}{\overline{e}} \\ \sT{\Gamma} * \sT{A}}
+  {\elab{\Delta}{\Gamma}{\mathsf{functor}^{\opn}(A).e}{\mathsf{sig}\,(A \Rightarrow \langle B\rangle)}{\lambda(\sT{A}{\to}\sT{B}).\overline{e}}}
+\and
+\inferrule*[right=emclos]{v_1\ \Val \\ \elab{\Delta}{\tp}{v_1}{\Gamma'}{\overline{v}_1} \\ \elab{\Delta}{\Gamma' \& A}{e_2}{B}{\overline{e}_2} \\ \sT{\Gamma'} * \sT{A}}
+  {\elab{\Delta}{\Gamma}{\langle v_1, \mathsf{functor}(A).e_2\rangle}{\mathsf{sig}\,(A \Rightarrow \langle B\rangle)}{\langle \overline{v}_1, \lambda(\sT{A}{\to}\sT{B}).\overline{e}_2\rangle}}
+\and
+\inferrule*[right=emapp]{\elab{\Delta}{\Gamma}{e_1}{\mathsf{sig}\,(A \Rightarrow \langle B\rangle)}{\overline{e}_1} \\ \elab{\Delta}{\Gamma}{e_2}{A}{\overline{e}_2}}
+  {\elab{\Delta}{\Gamma}{e_1 \bullet e_2}{B}{\overline{e}_1\,\overline{e}_2}}
+\and
+\inferrule*[right=emlink]{\elab{\Delta}{\Gamma}{e_1}{\Gamma_1}{\overline{e}_1} \\ \elab{\Delta}{\Gamma}{e_2}{\mathsf{sig}\,(\{\ell:A\} \Rightarrow \langle B\rangle)}{\overline{e}_2} \\ \rlk{\Gamma_1}{\ell}{A} \\ \sT{\Gamma_1} * \sT{\Gamma} \\ \sT{\Gamma_1} * \sT{B}}
+  {\elab{\Delta}{\Gamma}{e_1 \ltimes e_2}{\Gamma_1 \& B}
+    {\overline{e}_1 \mrg \Bigl((\qry : \sT{\Gamma}) \bx \bigl(\overline{e}_2\ \{\ell = \overline{e}_1.\ell\}\bigr)\Bigr)}}
+\and
+\inferrule*[right=emlinkn]{\elab{\Delta}{\Gamma}{e_1}{\Gamma_1}{\overline{e}_1} \\ \elab{\Delta}{\Gamma}{e_2}{\mathsf{sig}\,(D \Rightarrow \langle B\rangle)}{\overline{e}_2} \\ \mathsf{WireOk}\ \sT{\Gamma}\ \Gamma_1\ D \\ \sT{\Gamma_1} * \sT{\Gamma} \\ \sT{\Gamma_1} * \sT{B}}
+  {\elab{\Delta}{\Gamma}{e_1 \ltimes^{\!*} e_2}{\Gamma_1 \& B}
+    {\overline{e}_1 \mrg \Bigl((\qry : \sT{\Gamma}) \bx \bigl(\overline{e}_2\ \wire{\sT{\Gamma}}{\overline{e}_1}{D}\bigr)\Bigr)}}
+\and
+\inferrule*[right=ewrap]{\Delta\,n = R \\ v\ \Val \\ \elab{\Delta}{\tp}{v}{R}{\overline{w}}}
+  {\elab{\Delta}{\Gamma}{\wrp{n}{v}}{\bra{n}}{\wrp{n}{\overline{w}}}}
+\and
+\inferrule*[right=emseal]{\Delta\,n = R \\ \mathsf{NoRes}\ \sT{R} \\ \mathsf{WfSig}\ n\ \sT{R}\ \sT{S} \\ \elab{\Delta}{\Gamma}{e}{\subs{S}{n}{R}}{\overline{e}}}
+  {\elab{\Delta}{\Gamma}{\sealE{n}{R}{S}{e}}{S}{\sealE{n}{\sT{R}}{\sT{S}}{\overline{e}}}}
+\and
+\inferrule*[right=emunseal]{\Delta\,n = R \\ \mathsf{NoRes}\ \sT{R} \\ \mathsf{WfSig}\ n\ \sT{R}\ \sT{S} \\ \elab{\Delta}{\Gamma}{e}{S}{\overline{e}}}
+  {\elab{\Delta}{\Gamma}{\unsealE{n}{R}{S}{e}}{\subs{S}{n}{R}}{\unsealE{n}{\sT{R}}{\sT{S}}{\overline{e}}}}
+\end{mathpar}
+
+\subsection{Semantics}
+
+\subsubsection*{Value lookups, selection, packages \quad $\lk{v}{k}{v'}$, \; $\sel{v}{\ell}{v'}$, \; $\selp{v}{D}{p}$}
+\begin{mathpar}
+\inferrule*[right=dmrg-zero]{ }{\lk{v_1 \mrg v_2}{0}{v_2}}
+\and
+\inferrule*[right=dmrg-succ]{\lk{v_1}{k}{v'}}{\lk{v_1 \mrg v_2}{k+1}{v'}}
+\and
+\inferrule*[right=nmrg-zero]{ }{\lk{v_1 \mathbin{,\!,} v_2}{0}{v_2}}
+\and
+\inferrule*[right=nmrg-succ]{\lk{v_1}{k}{v'}}{\lk{v_1 \mathbin{,\!,} v_2}{k+1}{v'}}
+\and
+\inferrule*[right=rcd]{ }{\sel{\{\ell = v\}}{\ell}{v}}
+\and
+\inferrule*[right=dmrg-left]{\sel{v_1}{\ell}{v'}}{\sel{v_1 \mrg v_2}{\ell}{v'}}
+\and
+\inferrule*[right=dmrg-right]{\sel{v_2}{\ell}{v'}}{\sel{v_1 \mrg v_2}{\ell}{v'}}
+\and
+\inferrule*[right=nmrg-left]{\sel{v_1}{\ell}{v'}}{\sel{v_1 \mathbin{,\!,} v_2}{\ell}{v'}}
+\and
+\inferrule*[right=nmrg-right]{\sel{v_2}{\ell}{v'}}{\sel{v_1 \mathbin{,\!,} v_2}{\ell}{v'}}
+\and
+\inferrule*[right=one]{\sel{v}{\ell}{v_\ell}}{\selp{v}{\{\ell:A\}}{\{\ell = v_\ell\}}}
+\and
+\inferrule*[right=more]{\selp{v}{D}{p} \\ \sel{v}{\ell}{v_\ell}}{\selp{v}{D \& \{\ell:A\}}{p \mrg \{\ell = v_\ell\}}}
+\end{mathpar}
+
+\subsubsection*{Sealing coercions \quad $\ssealv{n}{R}{S}{v}{w}$, \; $\sunsealv{n}{R}{S}{v}{w}$
+\qquad ($\mathsf{pxe}(c) := \pxe{c}$, \; $\mathsf{pxf} := \pxf$)}
+\begin{mathpar}
+\inferrule*[right=brand-eq]{ }{\ssealv{n}{R}{\bra{n}}{v}{\wrp{n}{v}}}
+\and
+\inferrule*[right=brand-ne]{m \neq n}{\ssealv{n}{R}{\bra{m}}{v}{v}}
+\and
+\inferrule*[right=int]{ }{\ssealv{n}{R}{\Int}{i}{i}}
+\and
+\inferrule*[right=top]{ }{\ssealv{n}{R}{\tp}{v}{\tp}}
+\and
+\inferrule*[right=and]{\ssealv{n}{R}{A}{v_1}{w_1} \\ \ssealv{n}{R}{B}{v_2}{w_2}}
+  {\ssealv{n}{R}{A \& B}{v_1 \mrg v_2}{w_1 \mrg w_2}}
+\and
+\inferrule*[right=rcd]{\ssealv{n}{R}{A}{v}{w}}
+  {\ssealv{n}{R}{\{\ell:A\}}{\{\ell = v\}}{\{\ell = w\}}}
+\and
+\inferrule*[right=arr]{ }
+  {\ssealv{n}{R}{A \to B}{c}{\langle \mathsf{pxe}(c), \lambda A.\ \sealE{n}{R}{B}{(\mathsf{pxf}\;(\unsealE{n}{R}{A}{\qry.0}))}\rangle}}
+\end{mathpar}
+\begin{mathpar}
+\inferrule*[right=brand-eq]{ }{\sunsealv{n}{R}{\bra{n}}{\wrp{n}{v}}{v}}
+\and
+\inferrule*[right=brand-ne]{m \neq n}{\sunsealv{n}{R}{\bra{m}}{v}{v}}
+\and
+\inferrule*[right=int]{ }{\sunsealv{n}{R}{\Int}{i}{i}}
+\and
+\inferrule*[right=top]{ }{\sunsealv{n}{R}{\tp}{v}{\tp}}
+\and
+\inferrule*[right=and]{\sunsealv{n}{R}{A}{v_1}{w_1} \\ \sunsealv{n}{R}{B}{v_2}{w_2}}
+  {\sunsealv{n}{R}{A \& B}{v_1 \mrg v_2}{w_1 \mrg w_2}}
+\and
+\inferrule*[right=rcd]{\sunsealv{n}{R}{A}{v}{w}}
+  {\sunsealv{n}{R}{\{\ell:A\}}{\{\ell = v\}}{\{\ell = w\}}}
+\and
+\inferrule*[right=arr]{ }
+  {\sunsealv{n}{R}{A \to B}{c}{\langle \mathsf{pxe}(c), \lambda\subs{A}{n}{R}.\ \unsealE{n}{R}{B}{(\mathsf{pxf}\;(\sealE{n}{R}{A}{\qry.0}))}\rangle}}
+\end{mathpar}
+
+\subsubsection*{Big-step evaluation \quad $\bstep{\rho}{e}{v}$ \qquad (all rules carry $\rho\ \Val$; value premises shown)}
+\begin{mathpar}
+\inferrule*[right=query]{ }{\bstep{\rho}{\qry}{\rho}}
+\and
+\inferrule*[right=lit]{ }{\bstep{\rho}{i}{i}}
+\and
+\inferrule*[right=unit]{ }{\bstep{\rho}{\tp}{\tp}}
+\and
+\inferrule*[right=clos-val]{v\ \Val}{\bstep{\rho}{\langle v, \lambda A.e\rangle}{\langle v, \lambda A.e\rangle}}
+\and
+\inferrule*[right=mclos-val]{v\ \Val}{\bstep{\rho}{\langle v, \mathsf{functor}(A).e\rangle}{\langle v, \mathsf{functor}(A).e\rangle}}
+\and
+\inferrule*[right=proj]{\bstep{\rho}{e}{v} \\ \lk{v}{k}{v'}}{\bstep{\rho}{e.k}{v'}}
+\and
+\inferrule*[right=lam]{ }{\bstep{\rho}{\lambda A.e}{\langle \rho, \lambda A.e\rangle}}
+\and
+\inferrule*[right=box]{\bstep{\rho}{e_1}{v_1} \\ \bstep{v_1}{e_2}{v}}{\bstep{\rho}{e_1 \bx e_2}{v}}
+\and
+\inferrule*[right=app-clos]{\bstep{\rho}{e_1}{\langle v_1, \lambda A.e\rangle} \\ \bstep{\rho}{e_2}{v_2} \\ \bstep{v_1 \mrg v_2}{e}{v}}
+  {\bstep{\rho}{e_1\,e_2}{v}}
+\and
+\inferrule*[right=app-fclos]{\bstep{\rho}{e_1}{\langle v_1, \mu\lambda(A{\to}B).e\rangle} \\ \bstep{\rho}{e_2}{v_2} \\ \bstep{(v_1 \mrg \langle v_1, \mu\lambda(A{\to}B).e\rangle) \mrg v_2}{e}{v}}
+  {\bstep{\rho}{e_1\,e_2}{v}}
+\and
+\inferrule*[right=app-mclos]{\bstep{\rho}{e_1}{\langle v_1, \mathsf{functor}(A).e\rangle} \\ \bstep{\rho}{e_2}{v_2} \\ \bstep{v_1 \mrg v_2}{e}{v}}
+  {\bstep{\rho}{e_1 \bullet e_2}{v}}
+\and
+\inferrule*[right=dmrg]{\bstep{\rho}{e_1}{v_1} \\ \bstep{\rho \mrg v_1}{e_2}{v_2}}
+  {\bstep{\rho}{e_1 \mrg e_2}{v_1 \mrg v_2}}
+\and
+\inferrule*[right=nmrg]{\bstep{\rho}{e_1}{v_1} \\ \bstep{\rho}{e_2}{v_2}}
+  {\bstep{\rho}{e_1 \mathbin{,\!,} e_2}{v_1 \mrg v_2}}
+\and
+\inferrule*[right=lrec]{\bstep{\rho}{e}{v}}{\bstep{\rho}{\{\ell = e\}}{\{\ell = v\}}}
+\and
+\inferrule*[right=rproj]{\bstep{\rho}{e}{v} \\ \sel{v}{\ell}{v'}}{\bstep{\rho}{e.\ell}{v'}}
+\and
+\inferrule*[right=letb]{\bstep{\rho}{e_1}{v_1} \\ \bstep{\rho \mrg v_1}{e_2}{v}}
+  {\bstep{\rho}{\mathsf{let}^{A} e_1\ \mathsf{in}\ e_2}{v}}
+\and
+\inferrule*[right=openm]{\bstep{\rho}{e_1}{\{\ell = v'\}} \\ \bstep{\rho \mrg v'}{e_2}{v}}
+  {\bstep{\rho}{\mathsf{open}\ e_1\ \mathsf{in}\ e_2}{v}}
+\and
+\inferrule*[right=mstruct-$\sbx$]{\bstep{\tp}{e}{v}}{\bstep{\rho}{\mathsf{struct}^{\sbx}\,e}{v}}
+\and
+\inferrule*[right=mstruct-$\opn$]{\bstep{\rho}{e}{v}}{\bstep{\rho}{\mathsf{struct}^{\opn}\,e}{v}}
+\and
+\inferrule*[right=mfunctor-$\sbx$]{ }{\bstep{\rho}{\mathsf{functor}^{\sbx}(A).e}{\langle \tp, \mathsf{functor}(A).e\rangle}}
+\and
+\inferrule*[right=mfunctor-$\opn$]{ }{\bstep{\rho}{\mathsf{functor}^{\opn}(A).e}{\langle \rho, \mathsf{functor}(A).e\rangle}}
+\and
+\inferrule*[right=mlink]{\bstep{\rho}{e_1}{v_1} \\ \bstep{\rho}{e_2}{\langle v_2, \mathsf{functor}(\{\ell:A\}).e\rangle} \\ \sel{v_1}{\ell}{v_\ell} \\ \bstep{v_2 \mrg \{\ell = v_\ell\}}{e}{v_3}}
+  {\bstep{\rho}{e_1 \ltimes e_2}{v_1 \mrg v_3}}
+\and
+\inferrule*[right=mlinkn]{\bstep{\rho}{e_1}{v_1} \\ \bstep{\rho}{e_2}{\langle v_2, \mathsf{functor}(D).e\rangle} \\ \selp{v_1}{D}{p} \\ \bstep{v_2 \mrg p}{e}{v_3}}
+  {\bstep{\rho}{e_1 \ltimes^{\!*} e_2}{v_1 \mrg v_3}}
+\and
+\inferrule*[right=inl]{\bstep{\rho}{e}{v}}{\bstep{\rho}{\mathsf{inl}^{B} e}{\mathsf{inl}^{B} v}}
+\and
+\inferrule*[right=inr]{\bstep{\rho}{e}{v}}{\bstep{\rho}{\mathsf{inr}^{A} e}{\mathsf{inr}^{A} v}}
+\and
+\inferrule*[right=case-inl]{\bstep{\rho}{e}{\mathsf{inl}^{B} v_1} \\ \bstep{\rho \mrg v_1}{e_1}{v}}
+  {\bstep{\rho}{\mathsf{case}\ e\ \mathsf{of}\ e_1 \mid e_2}{v}}
+\and
+\inferrule*[right=case-inr]{\bstep{\rho}{e}{\mathsf{inr}^{A} v_1} \\ \bstep{\rho \mrg v_1}{e_2}{v}}
+  {\bstep{\rho}{\mathsf{case}\ e\ \mathsf{of}\ e_1 \mid e_2}{v}}
+\and
+\inferrule*[right=fclos-val]{v\ \Val}{\bstep{\rho}{\langle v, \mu\lambda(A{\to}B).e\rangle}{\langle v, \mu\lambda(A{\to}B).e\rangle}}
+\and
+\inferrule*[right=flam]{ }{\bstep{\rho}{\mu\lambda(A{\to}B).e}{\langle \rho, \mu\lambda(A{\to}B).e\rangle}}
+\and
+\inferrule*[right=fold]{\bstep{\rho}{e}{v}}{\bstep{\rho}{\mathsf{fold}^{T} e}{\mathsf{fold}^{T} v}}
+\and
+\inferrule*[right=unfold]{\bstep{\rho}{e}{\mathsf{fold}^{T} v}}{\bstep{\rho}{\mathsf{unfold}\ e}{v}}
+\and
+\inferrule*[right=wrap]{\bstep{\rho}{e}{v}}{\bstep{\rho}{\wrp{n}{e}}{\wrp{n}{v}}}
+\and
+\inferrule*[right=mseal]{\bstep{\rho}{e}{v} \\ \ssealv{n}{R}{S}{v}{w}}{\bstep{\rho}{\sealE{n}{R}{S}{e}}{w}}
+\and
+\inferrule*[right=munseal]{\bstep{\rho}{e}{v} \\ \sunsealv{n}{R}{S}{v}{w}}{\bstep{\rho}{\unsealE{n}{R}{S}{e}}{w}}
+\end{mathpar}
+
+\subsection{Meta-theory}
+
+\begin{definition}[\textsf{EVal} \quad $\eva{\Delta}{v}{A}{\overline{v}}$]\
+\begin{mathpar}
+\inferrule*[right=lit]{ }{\eva{\Delta}{i}{\Int}{i}}
+\and
+\inferrule*[right=unit]{ }{\eva{\Delta}{\tp}{\tp}{\tp}}
+\and
+\inferrule*[right=mrg]{\eva{\Delta}{v_1}{A}{\overline{w}_1} \\ \eva{\Delta}{v_2}{B}{\overline{w}_2} \\ \sT{A} * \sT{B}}
+  {\eva{\Delta}{v_1 \mrg v_2}{A \& B}{\overline{w}_1 \mrg \overline{w}_2}}
+\and
+\inferrule*[right=rcd]{\eva{\Delta}{v}{A}{\overline{w}}}
+  {\eva{\Delta}{\{\ell = v\}}{\{\ell : A\}}{\{\ell = \overline{w}\}}}
+\and
+\inferrule*[right=clos]{\rho\ \Val \\ \eva{\Delta}{\rho}{\Gamma'}{\overline{\rho}} \\ \elab{\Delta}{\Gamma' \& A}{e}{B}{\overline{e}} \\ \sT{\Gamma'} * \sT{A}}
+  {\eva{\Delta}{\langle \rho, \lambda A.e\rangle}{A \to B}{\langle \overline{\rho}, \lambda(\sT{A}{\to}\sT{B}).\overline{e}\rangle}}
+\and
+\inferrule*[right=mclos]{\rho\ \Val \\ \eva{\Delta}{\rho}{\Gamma'}{\overline{\rho}} \\ \elab{\Delta}{\Gamma' \& A}{e}{B}{\overline{e}} \\ \sT{\Gamma'} * \sT{A}}
+  {\eva{\Delta}{\langle \rho, \mathsf{functor}(A).e\rangle}{\mathsf{sig}\,(A \Rightarrow \langle B\rangle)}{\langle \overline{\rho}, \lambda(\sT{A}{\to}\sT{B}).\overline{e}\rangle}}
+\and
+\inferrule*[right=gen]{\tl{\sT{A}} \\ v\ \Val \\ \elab{\Delta}{\tp}{v}{A}{\overline{w}}}
+  {\eva{\Delta}{v}{A}{\gen{\sT{A}}}}
+\and
+\inferrule*[right=wrap]{\Delta\,n = R \\ \eva{\Delta}{v}{R}{\overline{w}}}
+  {\eva{\Delta}{\wrp{n}{v}}{\bra{n}}{\wrp{n}{\overline{w}}}}
+\end{mathpar}
+\end{definition}
+
+\begin{theorem}[\textsf{seal\_type\_preservation}]
+\[
+\elab{\Delta}{\Gamma}{e}{A}{\overline{e}} \;\Longrightarrow\; \hast{\sT{\Delta}}{\sT{\Gamma}}{\overline{e}}{\sT{A}}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{elabSeal\_weaken\_store}]
+\[
+\Delta \storele \Delta' \;\wedge\; \elab{\Delta}{\Gamma}{e}{A}{\overline{e}} \;\Longrightarrow\; \elab{\Delta'}{\Gamma}{e}{A}{\overline{e}}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{seal\_semantic\_preservation}]
+\[
+\bstep{\rho}{e}{v} \;\wedge\; \elab{\Delta}{\Gamma}{e}{A}{\overline{e}} \;\wedge\; \rho\ \Val \;\wedge\; \eva{\Delta}{\rho}{\Gamma}{\overline{\rho}}
+\;\Longrightarrow\;
+\exists \overline{v}.\ \msteps{\overline{\rho}}{\overline{e}}{\overline{v}} \;\wedge\; \eva{\Delta}{v}{A}{\overline{v}}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{seal\_whole\_program\_correctness}]
+\[
+\elab{\Delta}{\tp}{e}{A}{\overline{e}} \;\wedge\; \bstep{\tp}{e}{v}
+\;\Longrightarrow\;
+\exists \overline{v}.\ \msteps{\tp}{\overline{e}}{\overline{v}} \;\wedge\; \eva{\Delta}{v}{A}{\overline{v}}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{seal\_separate\_compilation}]
+\[
+\begin{array}{l}
+\elab{\Delta}{\Gamma}{e_1}{\Gamma_1}{\overline{e}_1} \;\wedge\;
+\elab{\Delta}{\Gamma}{e_2}{\mathsf{sig}\,(\{\ell:A\} \Rightarrow \langle B\rangle)}{\overline{e}_2} \;\wedge\;
+\rlk{\Gamma_1}{\ell}{A} \;\wedge\;
+\sT{\Gamma_1} * \sT{\Gamma} \;\wedge\; \sT{\Gamma_1} * \sT{B} \;\wedge \\
+\bstep{\rho}{e_1 \ltimes e_2}{v} \;\wedge\; \rho\ \Val \;\wedge\; \eva{\Delta}{\rho}{\Gamma}{\overline{\rho}} \\
+\Longrightarrow\;
+\exists \overline{v}.\ \msteps{\overline{\rho}}{\,\overline{e}_1 \mrg \bigl((\qry : \sT{\Gamma}) \bx (\overline{e}_2\ \{\ell = \overline{e}_1.\ell\})\bigr)}{\overline{v}}
+\;\wedge\; \eva{\Delta}{v}{\Gamma_1 \& B}{\overline{v}}
+\end{array}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{seal\_separate\_compilation\_sealed}]
+\[
+\begin{array}{l}
+\Delta\,n = R \;\wedge\; \mathsf{NoRes}\ \sT{R} \;\wedge\; \mathsf{WfSig}\ n\ \sT{R}\ \sT{\Gamma_1} \;\wedge\;
+\elab{\Delta}{\Gamma}{e_1}{\subs{\Gamma_1}{n}{R}}{\overline{e}_1} \;\wedge\;
+\Delta_c \storele \Delta \;\wedge \\
+\elab{\Delta_c}{\Gamma}{e_2}{\mathsf{sig}\,(\{\ell:A\} \Rightarrow \langle B\rangle)}{\overline{e}_2} \;\wedge\;
+\rlk{\Gamma_1}{\ell}{A} \;\wedge\;
+\sT{\Gamma_1} * \sT{\Gamma} \;\wedge\; \sT{\Gamma_1} * \sT{B} \;\wedge \\
+\bstep{\rho}{(\sealE{n}{R}{\Gamma_1}{e_1}) \ltimes e_2}{v} \;\wedge\; \rho\ \Val \;\wedge\; \eva{\Delta}{\rho}{\Gamma}{\overline{\rho}} \\
+\Longrightarrow\;
+\exists \overline{v}.\ \msteps{\overline{\rho}}{\,\overline{s} \mrg \bigl((\qry : \sT{\Gamma}) \bx (\overline{e}_2\ \{\ell = \overline{s}.\ell\})\bigr)}{\overline{v}}
+\;\wedge\; \eva{\Delta}{v}{\Gamma_1 \& B}{\overline{v}}
+\qquad \text{where } \overline{s} := \sealE{n}{\sT{R}}{\sT{\Gamma_1}}{\overline{e}_1}
+\end{array}
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{source\_representation\_independence}]
+\[
+\begin{array}{l}
+\mathsf{OpenBrand}\ \sT{\Delta_1}\ \sT{\Delta_2}\ \eta\ n\ \sT{R_1}\ \sT{R_2} \;\wedge\;
+\Delta_1\,n = R_1 \;\wedge\; \Delta_2\,n = R_2 \;\wedge \\
+\mathsf{WfSig}\ n\ \sT{R_1}\ \sT{S} \;\wedge\; \mathsf{WfSig}\ n\ \sT{R_2}\ \sT{S} \;\wedge\;
+\elab{\Delta_1}{\tp}{p_1}{\subs{S}{n}{R_1}}{\overline{p}_1} \;\wedge\;
+\elab{\Delta_2}{\tp}{p_2}{\subs{S}{n}{R_2}}{\overline{p}_2} \;\wedge \\
+\LRg{(n,\sT{R_1},\sT{R_2})}{\sT{S}}(\overline{p}_1,\overline{p}_2) \;\wedge\;
+\elab{\emptyset}{S}{c}{\Int}{\overline{c}} \;\wedge \\
+\bstep{\tp}{(\sealE{n}{R_1}{S}{p_1}) \bx c}{v_1} \;\wedge\;
+\bstep{\tp}{(\sealE{n}{R_2}{S}{p_2}) \bx c}{v_2} \\
+\Longrightarrow\;
+\exists i.\ v_1 = i \;\wedge\; v_2 = i
+\end{array}
+\]
+\end{theorem}
+
+\end{document}
