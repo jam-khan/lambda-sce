@@ -1387,6 +1387,77 @@ theorem eval_int {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ .int vs vc)
   | lit => exact ⟨_, rfl, rfl⟩
   | gen htl _ _ => nomatch htl
 
+-- ── Elaborated code is in the normalizing fragment ───────────────────────────────────
+-- The elaboration has no rules for the source fixpoint forms (flam/fclos), so every term
+-- it emits is Finitary.  This discharges the fragment hypothesis of the relational layer
+-- for clients that come from elaboration.  [When elabSeal grows fixpoint rules, this
+-- lemma becomes conditional on a source-side fragment predicate.]
+
+theorem wireArgSeal_finitary {ctx : Seal.Typ} {ce₁ : Seal.Exp} (hce : Finitary ce₁)
+    : (D : SCE.Typ) → Finitary (wireArgSeal ctx ce₁ D)
+  | .int => Finitary.unit
+  | .top => Finitary.unit
+  | .arr _ _ => Finitary.unit
+  | .rcd _ _ => Finitary.lrec (Finitary.rproj hce)
+  | .sig _ => Finitary.unit
+  | .var _ => Finitary.unit
+  | .mu _ => Finitary.unit
+  | .brand _ => Finitary.unit
+  | .or _ _ => Finitary.unit
+  | .and D₁ D₂ => by
+    cases D₂ with
+    | rcd l A =>
+      exact Finitary.mrg (wireArgSeal_finitary hce D₁)
+        (Finitary.box (Finitary.anno Finitary.query) (Finitary.lrec (Finitary.rproj hce)))
+    | int => exact Finitary.unit
+    | top => exact Finitary.unit
+    | arr _ _ => exact Finitary.unit
+    | and _ _ => exact Finitary.unit
+    | or _ _ => exact Finitary.unit
+    | sig _ => exact Finitary.unit
+    | var _ => exact Finitary.unit
+    | mu _ => exact Finitary.unit
+    | brand _ => exact Finitary.unit
+
+theorem elabSeal_finitary {Γ : SCE.Typ} {e : SCE.Exp} {A : SCE.Typ} {ce : Seal.Exp}
+    (h : elabSeal Δ Γ e A ce) : Finitary ce := by
+  induction h with
+  | equery => exact Finitary.query
+  | elit _ _ => exact Finitary.lit
+  | eunit _ => exact Finitary.unit
+  | eapp _ _ ih₁ ih₂ => exact Finitary.app ih₁ ih₂
+  | eproj _ _ ih => exact Finitary.proj ih
+  | ebox _ _ ih₁ ih₂ => exact Finitary.box ih₁ ih₂
+  | edmrg _ _ _ _ ih₁ ih₂ => exact Finitary.mrg ih₁ ih₂
+  | evmrg _ _ _ _ _ ih₁ ih₂ => exact Finitary.mrg ih₁ ih₂
+  | enmrg _ _ _ _ ih₁ ih₂ =>
+    exact Finitary.mrg ih₁ (Finitary.box (Finitary.anno Finitary.query) ih₂)
+  | elam _ _ ih => exact Finitary.lam ih
+  | erproj _ _ ih => exact Finitary.rproj ih
+  | eclos _ _ _ _ ih₁ ih₂ => exact Finitary.clos ih₁ ih₂
+  | elrec _ ih => exact Finitary.lrec ih
+  | eletb _ _ _ ih₁ ih₂ => exact Finitary.app (Finitary.lam ih₂) ih₁
+  | eopenm _ _ _ ih₁ ih₂ => exact Finitary.app (Finitary.lam ih₂) (Finitary.rproj ih₁)
+  | @emstruct _ _ _ sb _ _ _ _ _ ih =>
+    cases sb with
+    | sandboxed => exact Finitary.box Finitary.unit ih
+    | open_ => exact Finitary.box Finitary.query ih
+  | @emfunctor _ _ _ _ sb _ _ _ _ _ _ ih =>
+    cases sb with
+    | sandboxed => exact Finitary.box Finitary.unit (Finitary.lam ih)
+    | open_ => exact Finitary.lam ih
+  | emclos _ _ _ _ ih₁ ih₂ => exact Finitary.clos ih₁ ih₂
+  | emapp _ _ ih₁ ih₂ => exact Finitary.app ih₁ ih₂
+  | emlink _ _ _ _ _ ih₁ ih₂ =>
+    exact Finitary.mrg ih₁ (Finitary.box (Finitary.anno Finitary.query)
+      (Finitary.app ih₂ (Finitary.lrec (Finitary.rproj ih₁))))
+  | emlinkn _ _ _ _ _ ih₁ ih₂ =>
+    exact Finitary.mrg ih₁ (Finitary.box (Finitary.anno Finitary.query)
+      (Finitary.app ih₂ (wireArgSeal_finitary ih₁ _)))
+  | ewrap _ _ _ ih => exact Finitary.wrap ih
+  | emseal _ _ _ _ ih => exact Finitary.seal ih
+  | emunseal _ _ _ _ _ ih => exact Finitary.unseal ih
+
 -- Source-level representation independence.  Two source providers p₁, p₂ of a signature
 -- S with abstract type α_n, over representations R₁, R₂, whose elaborations are related
 -- as implementations (LRg at the open brand, cf. Abstraction.lean); a source client c
@@ -1410,7 +1481,7 @@ theorem source_representation_independence
     : ∃ i, v₁ = .lit i ∧ v₂ = .lit i := by
   -- the client types with every brand opaque
   have hcl : HasType noBrands (sealTyp S) cc .int := seal_type_preservation hc
-  obtain ⟨i, r₁, r₂⟩ := representation_independence hb hwf₁ hwf₂ hrel hcl
+  obtain ⟨i, r₁, r₂⟩ := representation_independence hb hwf₁ hwf₂ hrel hcl (elabSeal_finitary hc)
   -- the two sealed programs elaborate and are simulated
   have helab₁ : elabSeal Δ₁ .top (.box (.mseal n R₁ S p₁) c) .int
       (.box (.seal n (sealTyp R₁) (sealTyp S) pc₁) cc) :=

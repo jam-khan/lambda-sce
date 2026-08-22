@@ -63,6 +63,16 @@ inductive Exp where
   | wrap   : Nat → Exp → Exp
   | seal   : Nat → Typ → Typ → Exp → Exp
   | unseal : Nat → Typ → Typ → Exp → Exp
+  -- Fixpoints (Eᵢ App. B, adapted to environment semantics): `flam A B e` is a recursive
+  -- function of type A → B whose body sees ?.0 = argument, ?.1 = the function itself.
+  -- `fclos v A B Bx e` is its closure.  It carries TWO codomains: the *internal* B is what
+  -- the body and the self-reference in beta see and is never rewritten; the *external* Bx
+  -- is the client-facing codomain, rewritten by casts exactly as a clos's codomain is.
+  -- One annotation cannot serve both: casting must be able to widen the visible codomain
+  -- (cast_progress along S-arr), but the body was typed with (A → B) in its context, and
+  -- there is no subsumption to absorb a widened self-entry.
+  | flam   : Typ → Typ → Exp → Exp
+  | fclos  : Exp → Typ → Typ → Typ → Exp → Exp
   deriving Repr
 
 inductive Value : Exp → Prop where
@@ -72,6 +82,13 @@ inductive Value : Exp → Prop where
   | vrcd  {v l}     : Value v → Value (.lrec l v)
   | vmrg  {v₁ v₂}   : Value v₁ → Value v₂ → Value (.mrg v₁ v₂)
   | vwrap {n v}     : Value v → Value (.wrap n v)
+  | vfclos {v A B Bx e} : Value v → Value (.fclos v A B Bx e)
+
+theorem value_clos_env {v : Exp} {A B : Typ} {e : Exp} (h : Value (.clos v A B e))
+    : Value v := by cases h with | vclos h' => exact h'
+
+theorem value_fclos_env {v : Exp} {A B Bx : Typ} {e : Exp} (h : Value (.fclos v A B Bx e))
+    : Value v := by cases h with | vfclos h' => exact h'
 
 -- Positional lookup on types (λE, unchanged): index 0 is the rightmost component.
 inductive Lookup : Typ → Nat → Typ → Prop where

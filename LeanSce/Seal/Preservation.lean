@@ -228,6 +228,30 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
     cases ht with
     | tlam hd hb =>
       exact HasType.tclos hv (value_weaken henv hv) hd hb (sub_refl _) (sub_refl _)
+  | sflam hv =>
+    cases ht with
+    | tflam hd₁ hd₂ hb =>
+      exact HasType.tfclos hv (value_weaken henv hv) hd₁ hd₂ hb (sub_refl _) (sub_refl _)
+        (sub_refl _)
+  -- Fixpoint beta: the environment (v₁ # self) # v₂' re-types via two tmergev's, with
+  -- consistency supplied by the two disjointness premises tfclos carries; the body is
+  -- resealed at the external codomain, reached through B' <: B <: Bx.
+  | sfbeta _ _ hv₂ hc =>
+    cases ht with
+    | tapp h₁ h₂ =>
+      cases h₁ with
+      | tfclos hu henv₁ hd₁ hd₂ hb hs₁ hs₂ _ =>
+        have hself : HasType Δ .top _ _ :=
+          HasType.tfclos hu henv₁ hd₁ hd₂ hb hs₁ (sub_refl _) (sub_refl _)
+        have hv₂' := cast_value hv₂ hc
+        have ht₂' : HasType Δ .top _ _ := value_weaken (cast_preservation hc hv₂ h₂) hv₂'
+        have hinner : HasType Δ .top _ _ :=
+          HasType.tmergev hu (Value.vfclos hu) henv₁ hself
+            (disjoint_consistent hu (Value.vfclos hu) henv₁ hself hd₁)
+        exact HasType.tbox
+          (HasType.tmergev (Value.vmrg hu (Value.vfclos hu)) hv₂' hinner ht₂'
+            (disjoint_consistent (Value.vmrg hu (Value.vfclos hu)) hv₂' hinner ht₂' hd₂))
+          (HasType.tanno hb (sub_trans hs₁ hs₂))
   | sboxl _ _ ih =>
     cases ht with
     | tbox h₁ h₂ => exact HasType.tbox (ih h₁ henv) h₂

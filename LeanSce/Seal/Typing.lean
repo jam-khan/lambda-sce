@@ -124,6 +124,29 @@ inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
     → HasType Δ Γ e S
     → T = substBrand n R S
     → HasType Δ Γ (.unseal n R S e) T
+  -- Fixpoints.  The body extends the context twice (self, then argument), so tflam carries
+  -- the disjointness premise for each extension — the same obligation every
+  -- context-extending rule discharges.  Like tlam, the body types exactly at the
+  -- annotation B.
+  | tflam {Δ : BrandStore} {Γ A B : Typ} {e : Exp}
+    : Disj Γ (.arr A B)
+    → Disj (.and Γ (.arr A B)) A
+    → HasType Δ (.and (.and Γ (.arr A B)) A) e B
+    → HasType Δ Γ (.flam A B e) (.arr A B)
+  -- The runtime rule mirrors tclos: input widening C <: A and body slack B' <: B are what
+  -- preservation of casting requires; additionally B <: Bx tracks the external codomain a
+  -- cast may have widened.  The conclusion codomain is the EXTERNAL Bx; the body and the
+  -- self-entry in its context use the internal B.
+  | tfclos {Δ : BrandStore} {Γ Γ₁ A B B' Bx C : Typ} {v e : Exp}
+    : Value v
+    → HasType Δ .top v Γ₁
+    → Disj Γ₁ (.arr A B)
+    → Disj (.and Γ₁ (.arr A B)) A
+    → HasType Δ (.and (.and Γ₁ (.arr A B)) A) e B'
+    → Sub B' B
+    → Sub B Bx
+    → Sub C A
+    → HasType Δ Γ (.fclos v A B Bx e) (.arr C Bx)
 
 -- Store extension: Δ' knows everything Δ knows.
 def StoreLe (Δ Δ' : BrandStore) : Prop := ∀ n R, Δ n = some R → Δ' n = some R
@@ -152,5 +175,7 @@ theorem hastype_weaken_store {Δ Δ' : BrandStore} (hle : StoreLe Δ Δ') {Γ : 
   | twrap hΔ hv _ ih => exact HasType.twrap (hle _ _ hΔ) hv ih
   | tseal hΔ hnr hwf _ ih => exact HasType.tseal (hle _ _ hΔ) hnr hwf ih
   | tunseal hΔ hnr hwf _ heq ih => exact HasType.tunseal (hle _ _ hΔ) hnr hwf ih heq
+  | tflam hd₁ hd₂ _ ih => exact HasType.tflam hd₁ hd₂ ih
+  | tfclos hv _ hd₁ hd₂ _ hs₁ hs₂ hs₃ ih₁ ih₂ => exact HasType.tfclos hv ih₁ hd₁ hd₂ ih₂ hs₁ hs₂ hs₃
 
 end Seal

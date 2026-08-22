@@ -87,6 +87,20 @@ inductive Step : Exp → Exp → Exp → Prop where
   | sclos {v A B e}
     : Value v
     → Step v (.lam A B e) (.clos v A B e)
+  | sflam {v A B e}
+    : Value v
+    → Step v (.flam A B e) (.fclos v A B B e)
+  -- Fixpoint beta: cast the argument at the stored domain (as sbeta does), reinstall the
+  -- self-reference with the external codomain RESET to the internal one (the body's
+  -- context expects (A → B) at slot 1), and reseal the result at the external codomain —
+  -- the client-facing type this closure was cast to.
+  | sfbeta {v v₁ A B Bx e v₂ v₂'}
+    : Value v
+    → Value v₁
+    → Value v₂
+    → Cast v₂ A v₂'
+    → Step v (.app (.fclos v₁ A B Bx e) v₂)
+             (.box (.mrg (.mrg v₁ (.fclos v₁ A B B e)) v₂') (.anno e Bx))
   | sboxl {v e₁ e₁' e₂}
     : Value v
     → Step v e₁ e₁'
@@ -195,6 +209,7 @@ theorem value_not_step {e : Exp} (hv : Value e) : ∀ {v e' : Exp}, Step v e e' 
     | smrgl _ hs => exact ih₁ hs
     | smrgr _ _ hs => exact ih₂ hs
   | vwrap _ ih => intro _ _ h; cases h with | swrap _ hs => exact ih hs
+  | vfclos _ => intro _ _ h; nomatch h
 
 -- The coercions produce values from values.
 theorem sealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SealV n R S v w)

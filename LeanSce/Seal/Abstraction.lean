@@ -345,7 +345,7 @@ theorem representation_independence {n : Nat} {R₁ R₂ : Typ}
     (hb : OpenBrand Δ₁ Δ₂ η n R₁ R₂)
     {S : Typ} (hwf₁ : WfSig n R₁ S) (hwf₂ : WfSig n R₂ S)
     {p₁ p₂ : Exp} (hrel : LRg Δ₁ Δ₂ η (some (n, R₁, R₂)) S p₁ p₂)
-    {e : Exp} (hcl : HasType noBrands S e .int)
+    {e : Exp} (hcl : HasType noBrands S e .int) (hfin : Finitary e)
     : ∃ i, MStep .unit (.box (.seal n R₁ S p₁) e) (.lit i)
          ∧ MStep .unit (.box (.seal n R₂ S p₂) e) (.lit i) := by
   have hvp := lr_value hrel
@@ -353,7 +353,7 @@ theorem representation_independence {n : Nat} {R₁ R₂ : Typ}
   obtain ⟨q₁, hq₁⟩ := sealv_progress (n := n) (R := R₁) S hvp.1 htp.1
   obtain ⟨q₂, hq₂⟩ := sealv_progress (n := n) (R := R₂) S hvp.2 htp.2
   have hq := (coe_lr hb S hwf₁ hwf₂).1 hrel hq₁ hq₂
-  obtain ⟨i, r₁, r₂⟩ := sealing hq hcl
+  obtain ⟨i, r₁, r₂⟩ := sealing hq hcl hfin
   have hvq₁ : Value q₁ := sealv_value hvp.1 hq₁
   have hvq₂ : Value q₂ := sealv_value hvp.2 hq₂
   refine ⟨i, ?_, ?_⟩

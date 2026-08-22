@@ -156,6 +156,11 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
           obtain ⟨v₂', hc⟩ := cast_progress hv₂ h₂ hs₂
           cases hv₁ with
           | vclos hu => exact Or.inr ⟨_, Step.sbeta hv hu hv₂ hc⟩
+        | tfclos _ _ _ _ _ _ _ hs₃ =>
+          obtain ⟨v₂', hc⟩ := cast_progress hv₂ h₂ hs₃
+          cases hv₁ with
+          | vfclos hu => exact Or.inr ⟨_, Step.sfbeta hv hu hv₂ hc⟩
+        | tflam _ _ _ => nomatch hv₁
         | tquery => nomatch hv₁
         | tapp _ _ => nomatch hv₁
         | tbox _ _ => nomatch hv₁
@@ -212,6 +217,8 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
   | tmergev hv₁ hv₂ _ _ _ _ _ => exact Or.inl (Value.vmrg hv₁ hv₂)
   | tlam _ _ _ => exact Or.inr ⟨_, Step.sclos hv⟩
   | tclos hu _ _ _ _ _ _ _ => exact Or.inl (Value.vclos hu)
+  | tflam _ _ _ _ => exact Or.inr ⟨_, Step.sflam hv⟩
+  | tfclos hu _ _ _ _ _ _ _ _ _ => exact Or.inl (Value.vfclos hu)
   | tanno h hsub ih =>
     cases ih hv henv with
     | inr hs =>

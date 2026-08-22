@@ -217,11 +217,16 @@ theorem client_typed : HasType noBrands Sig client .int :=
       (HasType.trproj HasType.tquery (RLookup.landl RLookup.zero (lin_rcd_ne (by decide))))
       HasType.tint)
 
+theorem client_finitary : Finitary client :=
+  Finitary.app (Finitary.rproj Finitary.query)
+    (Finitary.app (Finitary.rproj Finitary.query) Finitary.lit)
+
 -- Representation independence, instantiated: both sealed units give the client the same
 -- answer.
 example : ∃ i, MStep .unit (.box (.seal 0 .int Sig impl₁) client) (.lit i)
              ∧ MStep .unit (.box (.seal 0 R₂ Sig impl₂) client) (.lit i) :=
   representation_independence openbrand_ex wfsig_ex₁ wfsig_ex₂ impl_related client_typed
+    client_finitary
 
 -- ── The same example at the source level ────────────────────────────────────────────
 -- The providers and the client are SCE programs; the source sealing form `mseal`

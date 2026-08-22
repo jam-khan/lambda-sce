@@ -44,6 +44,20 @@ inductive Cast : Exp → Typ → Exp → Prop where
   -- preservation.  Branding is therefore installed by `seal`, never by a cast.
   | cwrap {n v}
     : Cast (.wrap n v) (.brand n) (.wrap n v)
+  -- Casting a fixpoint closure rewrites only the EXTERNAL codomain Bx; the internal B is
+  -- pinned because the body's context mentions (A → B) and beta reinstalls the
+  -- self-reference at it.  The Sub premise is on Bx (the value's visible codomain) so the
+  -- lemma layer treats fclos exactly as it treats clos.
+  | cfarrow {v A B Bx e C D}
+    : ¬ TopLike D
+    → Sub C A
+    → Sub Bx D
+    → Cast (.fclos v A B Bx e) (.arr C D) (.fclos v A B D e)
+  | cfarrowtl {v A B Bx e C D}
+    : TopLike D
+    → Sub C A
+    → Sub Bx D
+    → Cast (.fclos v A B Bx e) (.arr C D) (.clos .unit C D (genVal D))
 
 -- Eᵢ Definition 3.
 def Consistent (v₁ v₂ : Exp) : Prop :=
@@ -60,6 +74,8 @@ theorem cast_value {v : Exp} {A : Typ} {w : Exp} (hv : Value v) (h : Cast v A w)
   | cand _ _ ih₁ ih₂ => exact Value.vmrg (ih₁ hv) (ih₂ hv)
   | crcd _ ih => cases hv with | vrcd hv' => exact Value.vrcd (ih hv')
   | cwrap => exact hv
+  | cfarrow _ _ _ => cases hv with | vfclos hv' => exact Value.vfclos hv'
+  | cfarrowtl _ _ _ => exact Value.vclos Value.vunit
 
 -- Casting at a top-like type always yields the canonical generated value — the collapse
 -- that keeps casting deterministic at top-like targets (Eᵢ's Casting-arrowtl rationale).
@@ -79,5 +95,7 @@ theorem cast_toplike_gen {v : Exp} {A : Typ} {w : Exp} (htl : TopLike A) (h : Ca
     cases htl with
     | tlrcd h' => rw [ih h']; rfl
   | cwrap => nomatch htl
+  | cfarrow hntl _ _ => cases htl with | tlarr hD => exact absurd hD hntl
+  | cfarrowtl _ _ _ => rfl
 
 end Seal

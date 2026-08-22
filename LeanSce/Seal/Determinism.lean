@@ -23,6 +23,7 @@ theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
       | tapp ha _ => rw [ih ha henv hs₂]
     | sappr _ hv₁ _ => exact (value_not_step hv₁ hs).elim
     | sbeta _ hu _ _ => exact (value_not_step (Value.vclos hu) hs).elim
+    | sfbeta _ hu _ _ => exact (value_not_step (Value.vfclos hu) hs).elim
   | sappr _ hv₁ hs ih =>
     cases h₂ with
     | sappl _ hs₂ => exact (value_not_step hv₁ hs₂).elim
@@ -30,11 +31,22 @@ theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
       cases ht with
       | tapp _ hb => rw [ih hb henv hs₂]
     | sbeta _ _ hv₂ _ => exact (value_not_step hv₂ hs).elim
+    | sfbeta _ _ hv₂ _ => exact (value_not_step hv₂ hs).elim
   | sbeta _ hv₁ hv₂ hc =>
     cases h₂ with
     | sappl _ hs₂ => exact (value_not_step (Value.vclos hv₁) hs₂).elim
     | sappr _ _ hs₂ => exact (value_not_step hv₂ hs₂).elim
     | sbeta _ _ _ hc₂ =>
+      cases ht with
+      | tapp _ hb => rw [cast_determinism hc hv₂ hb hc₂]
+  | sflam _ =>
+    cases h₂ with
+    | sflam _ => rfl
+  | sfbeta _ hv₁ hv₂ hc =>
+    cases h₂ with
+    | sappl _ hs₂ => exact (value_not_step (Value.vfclos hv₁) hs₂).elim
+    | sappr _ _ hs₂ => exact (value_not_step hv₂ hs₂).elim
+    | sfbeta _ _ _ hc₂ =>
       cases ht with
       | tapp _ hb => rw [cast_determinism hc hv₂ hb hc₂]
   | sclos _ =>

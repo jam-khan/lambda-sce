@@ -364,21 +364,60 @@ theorem mstep_anno_inv {venv e r : Exp} {T : Typ} (h : MStep venv (.anno e T) r)
     (hr : Value r) : ∃ b, MStep venv e b ∧ Value b ∧ Cast b T r :=
   mstep_anno_inv_aux h rfl hr
 
--- ── Canonical forms and merge-cast reconciliation ────────────────────────────────────
+-- The first step of a terminating run of a fixpoint application is sfbeta.  Note the
+-- self-copy in the resulting environment carries the INTERNAL codomain in both slots —
+-- it is therefore the same for the original closure and for any codomain-recast of it.
+theorem mstep_fapp_val_inv {ρ u r : Exp} {venv : Exp} {A₀ B₀ Bx₀ : Typ} {e : Exp}
+    (h : MStep ρ (.app (.fclos venv A₀ B₀ Bx₀ e) u) r) (hvenv : Value venv) (hu : Value u)
+    (hr : Value r)
+    : ∃ u', Cast u A₀ u' ∧
+        MStep ρ (.box (.mrg (.mrg venv (.fclos venv A₀ B₀ B₀ e)) u') (.anno e Bx₀)) r := by
+  cases h with
+  | refl => nomatch hr
+  | step hs h' =>
+    cases hs with
+    | sappl _ hs' => exact (value_not_step (Value.vfclos hvenv) hs').elim
+    | sappr _ _ hs' => exact (value_not_step hu hs').elim
+    | sfbeta _ _ _ hc => exact ⟨_, hc, h'⟩
 
-theorem canonical_arr {Γ C D : Typ} {v : Exp} (hv : Value v) (ht : HasType Δ Γ v (.arr C D))
-    : ∃ u A₀ B₀ e, v = .clos u A₀ B₀ e := by
-  cases ht with
-  | tclos _ _ _ _ _ _ => exact ⟨_, _, _, _, rfl⟩
-  | tquery => nomatch hv
-  | tapp _ _ => nomatch hv
-  | tbox _ _ => nomatch hv
-  | tproj _ _ => nomatch hv
-  | trproj _ _ => nomatch hv
-  | tanno _ _ => nomatch hv
-  | tlam _ _ => nomatch hv
-  | tseal _ _ _ _ => nomatch hv
-  | tunseal _ _ _ _ _ => nomatch hv
+-- ── Recasting a closure's behavior (the per-side surgery of cast_lr's arrow case) ─────
+
+-- From a terminating run of the ORIGINAL closure applied to a pre-cast argument, rebuild
+-- a terminating run of the codomain-RECAST closure applied to the original argument:
+-- the argument casts compose by transitivity, and so do the result reseals.
+theorem clos_recast_run {ρ env u uc r s : Exp} {S A₀ B₀ T : Typ} {eb : Exp}
+    (hρ : Value ρ) (henv : Value env) (hvu : Value u) (hvuc : Value uc) (hvr : Value r)
+    (hcu : Cast u S uc) (run : MStep ρ (.app (.clos env A₀ B₀ eb) uc) r) (hcr : Cast r T s)
+    : MStep ρ (.app (.clos env A₀ T eb) u) s := by
+  obtain ⟨us, cus, runbox⟩ := mstep_app_val_inv run henv hvuc hvr
+  have hvm : Value (.mrg env us) := Value.vmrg henv (cast_value hvuc cus)
+  obtain ⟨rr, runbody, hvrr, hreq⟩ := mstep_box_inv runbox hvm hvr
+  obtain ⟨b, runb, hvb, hcb⟩ := mstep_anno_inv runbody hvrr
+  have hcs' : Cast b T s := cast_trans hcb (hreq ▸ hcr)
+  refine MStep.step (Step.sbeta hρ henv hvu (cast_trans hcu cus)) ?_
+  refine mstep_trans (mstep_boxr hρ hvm (mstep_anno hvm runb)) ?_
+  refine MStep.step (Step.sboxr hρ hvm (Step.sannov hvm hvb hcs')) ?_
+  exact MStep.step (Step.sboxv hρ hvm (cast_value hvb hcs')) MStep.refl
+
+-- The fixpoint analogue.  The self-copy inside the environment is unchanged by the
+-- recast (it always carries the internal codomain), so the box runs coincide.
+theorem fclos_recast_run {ρ env u uc r s : Exp} {S A₀ B₀ Bx₀ T : Typ} {eb : Exp}
+    (hρ : Value ρ) (henv : Value env) (hvu : Value u) (hvuc : Value uc) (hvr : Value r)
+    (hcu : Cast u S uc) (run : MStep ρ (.app (.fclos env A₀ B₀ Bx₀ eb) uc) r)
+    (hcr : Cast r T s)
+    : MStep ρ (.app (.fclos env A₀ B₀ T eb) u) s := by
+  obtain ⟨us, cus, runbox⟩ := mstep_fapp_val_inv run henv hvuc hvr
+  have hvm : Value (.mrg (.mrg env (.fclos env A₀ B₀ B₀ eb)) us) :=
+    Value.vmrg (Value.vmrg henv (Value.vfclos henv)) (cast_value hvuc cus)
+  obtain ⟨rr, runbody, hvrr, hreq⟩ := mstep_box_inv runbox hvm hvr
+  obtain ⟨b, runb, hvb, hcb⟩ := mstep_anno_inv runbody hvrr
+  have hcs' : Cast b T s := cast_trans hcb (hreq ▸ hcr)
+  refine MStep.step (Step.sfbeta hρ henv hvu (cast_trans hcu cus)) ?_
+  refine mstep_trans (mstep_boxr hρ hvm (mstep_anno hvm runb)) ?_
+  refine MStep.step (Step.sboxr hρ hvm (Step.sannov hvm hvb hcs')) ?_
+  exact MStep.step (Step.sboxv hρ hvm (cast_value hvb hcs')) MStep.refl
+
+-- ── Merge-cast reconciliation ────────────────────────────────────────────────────────
 
 -- Casting a well-typed merge at (a supertype of) its left component's type agrees with
 -- casting the component directly.  Ordinary targets close by determinism/consistency;
@@ -646,71 +685,143 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
   | @sarr C' D' C D hsC hsD ihC ihD =>
     obtain ⟨hv₁, hv₂, ht₁, ht₂, CL⟩ := hlr
     rw [viewL_arr] at ht₁; rw [viewR_arr] at ht₂
-    obtain ⟨u₁env, A₁₀, B₁₀, e₁b, hc₁eq⟩ := canonical_arr hv₁ ht₁
-    obtain ⟨u₂env, A₂₀, B₂₀, e₂b, hc₂eq⟩ := canonical_arr hv₂ ht₂
-    subst hc₁eq; subst hc₂eq
-    have hvenv₁ : Value u₁env := by cases hv₁ with | vclos h => exact h
-    have hvenv₂ : Value u₂env := by cases hv₂ with | vclos h => exact h
     rw [viewL_arr] at c₁; rw [viewR_arr] at c₂
+    -- The shared payload of every non-collapsing combination: cast the arguments down,
+    -- run the old behavior, reseal the results up, and rebuild each side's run with the
+    -- appropriate recast lemma (clos_recast_run / fclos_recast_run).
     cases c₁ with
+    | cmrgl hord _ => exact absurd ht₁ (by intro h; nomatch h)
+    | cmrgr hord _ => exact absurd ht₁ (by intro h; nomatch h)
     | carrowtl htlD hsc₁ hsb₁ =>
       cases c₂ with
+      | cmrgl _ _ => exact absurd ht₂ (by intro h; nomatch h)
+      | cmrgr _ _ => exact absurd ht₂ (by intro h; nomatch h)
       | carrow hntlD _ _ =>
+        exact absurd (toplike_viewR (toplike_viewL_inv hadm htlD)) hntlD
+      | cfarrow hntlD _ _ =>
         exact absurd (toplike_viewR (toplike_viewL_inv hadm htlD)) hntlD
       | carrowtl _ _ _ =>
         have := toplike_lr_gen hadm (TopLike.tlarr (toplike_viewL_inv hadm htlD))
           (Δ₁ := Δ₁) (Δ₂ := Δ₂) (o := o) (D := .arr C D) (η := η)
         rw [viewL_arr, viewR_arr] at this
         exact this
-    | carrow hntlD hsc₁ hsb₁ =>
+      | cfarrowtl _ _ _ =>
+        have := toplike_lr_gen hadm (TopLike.tlarr (toplike_viewL_inv hadm htlD))
+          (Δ₁ := Δ₁) (Δ₂ := Δ₂) (o := o) (D := .arr C D) (η := η)
+        rw [viewL_arr, viewR_arr] at this
+        exact this
+    | cfarrowtl htlD hsc₁ hsb₁ =>
       cases c₂ with
+      | cmrgl _ _ => exact absurd ht₂ (by intro h; nomatch h)
+      | cmrgr _ _ => exact absurd ht₂ (by intro h; nomatch h)
+      | carrow hntlD _ _ =>
+        exact absurd (toplike_viewR (toplike_viewL_inv hadm htlD)) hntlD
+      | cfarrow hntlD _ _ =>
+        exact absurd (toplike_viewR (toplike_viewL_inv hadm htlD)) hntlD
+      | carrowtl _ _ _ =>
+        have := toplike_lr_gen hadm (TopLike.tlarr (toplike_viewL_inv hadm htlD))
+          (Δ₁ := Δ₁) (Δ₂ := Δ₂) (o := o) (D := .arr C D) (η := η)
+        rw [viewL_arr, viewR_arr] at this
+        exact this
+      | cfarrowtl _ _ _ =>
+        have := toplike_lr_gen hadm (TopLike.tlarr (toplike_viewL_inv hadm htlD))
+          (Δ₁ := Δ₁) (Δ₂ := Δ₂) (o := o) (D := .arr C D) (η := η)
+        rw [viewL_arr, viewR_arr] at this
+        exact this
+    | carrow hntlD hsc₁ hsb₁ =>
+      have hvenv₁ := value_clos_env hv₁
+      cases c₂ with
+      | cmrgl _ _ => exact absurd ht₂ (by intro h; nomatch h)
+      | cmrgr _ _ => exact absurd ht₂ (by intro h; nomatch h)
       | carrowtl htlD _ _ =>
         exact absurd (toplike_viewL (toplike_viewR_inv hadm htlD)) hntlD
+      | cfarrowtl htlD _ _ =>
+        exact absurd (toplike_viewL (toplike_viewR_inv hadm htlD)) hntlD
       | carrow hntlD₂ hsc₂ hsb₂ =>
+        have hvenv₂ := value_clos_env hv₂
         refine ⟨Value.vclos hvenv₁, Value.vclos hvenv₂,
           by rw [viewL_arr]; exact cast_preservation (Cast.carrow hntlD hsc₁ hsb₁) hv₁ ht₁,
           by rw [viewR_arr]; exact cast_preservation (Cast.carrow hntlD₂ hsc₂ hsb₂) hv₂ ht₂, ?_⟩
         intro u₁ u₂ hu ρ₁ ρ₂ hρ₁ hρ₂
         have hvu := lr_value hu
         have htu := lr_typed hu
-        -- cast the arguments at the source domain and relate them there
         obtain ⟨u₁c, cu₁⟩ := cast_progress hvu.1 htu.1 (sub_viewL hsC)
         obtain ⟨u₂c, cu₂⟩ := cast_progress hvu.2 htu.2 (sub_viewR hsC)
-        have huc : LRg Δ₁ Δ₂ η o C' u₁c u₂c := ihC hu cu₁ cu₂
-        -- the old behavior at the cast arguments
-        obtain ⟨r₁, r₂, run₁, run₂, hr⟩ := CL u₁c u₂c huc ρ₁ ρ₂ hρ₁ hρ₂
+        obtain ⟨r₁, r₂, run₁, run₂, hr⟩ := CL u₁c u₂c (ihC hu cu₁ cu₂) ρ₁ ρ₂ hρ₁ hρ₂
         have hvr := lr_value hr
         have htr := lr_typed hr
-        -- dissect the old runs down to the body runs and their reseals
-        obtain ⟨u₁s, cu₁s, runbox₁⟩ :=
-          mstep_app_val_inv run₁ hvenv₁ (cast_value hvu.1 cu₁) hvr.1
-        obtain ⟨u₂s, cu₂s, runbox₂⟩ :=
-          mstep_app_val_inv run₂ hvenv₂ (cast_value hvu.2 cu₂) hvr.2
-        have hvu₁s : Value u₁s := cast_value (cast_value hvu.1 cu₁) cu₁s
-        have hvu₂s : Value u₂s := cast_value (cast_value hvu.2 cu₂) cu₂s
-        have hvm₁ : Value (.mrg u₁env u₁s) := Value.vmrg hvenv₁ hvu₁s
-        have hvm₂ : Value (.mrg u₂env u₂s) := Value.vmrg hvenv₂ hvu₂s
-        obtain ⟨rr₁, runbody₁, hvrr₁, hreq₁⟩ := mstep_box_inv runbox₁ hvm₁ hvr.1
-        obtain ⟨rr₂, runbody₂, hvrr₂, hreq₂⟩ := mstep_box_inv runbox₂ hvm₂ hvr.2
-        obtain ⟨b₁, runb₁, hvb₁, hcb₁⟩ := mstep_anno_inv runbody₁ hvrr₁
-        obtain ⟨b₂, runb₂, hvb₂, hcb₂⟩ := mstep_anno_inv runbody₂ hvrr₂
-        -- reseal the old results at the wider codomain and relate them there
         obtain ⟨s₁, cs₁⟩ := cast_progress hvr.1 htr.1 (sub_viewL hsD)
         obtain ⟨s₂, cs₂⟩ := cast_progress hvr.2 htr.2 (sub_viewR hsD)
-        have hcs₁' : Cast b₁ (viewL o D) s₁ := cast_trans hcb₁ (hreq₁ ▸ cs₁)
-        have hcs₂' : Cast b₂ (viewR o D) s₂ := cast_trans hcb₂ (hreq₂ ▸ cs₂)
-        -- rebuild the runs of the recast closures
-        have newrun₁ : MStep ρ₁ (.app (.clos u₁env A₁₀ (viewL o D) e₁b) u₁) s₁ := by
-          refine MStep.step (Step.sbeta hρ₁ hvenv₁ hvu.1 (cast_trans cu₁ cu₁s)) ?_
-          refine mstep_trans (mstep_boxr hρ₁ hvm₁ (mstep_anno hvm₁ runb₁)) ?_
-          refine MStep.step (Step.sboxr hρ₁ hvm₁ (Step.sannov hvm₁ hvb₁ hcs₁')) ?_
-          exact MStep.step (Step.sboxv hρ₁ hvm₁ (cast_value hvb₁ hcs₁')) MStep.refl
-        have newrun₂ : MStep ρ₂ (.app (.clos u₂env A₂₀ (viewR o D) e₂b) u₂) s₂ := by
-          refine MStep.step (Step.sbeta hρ₂ hvenv₂ hvu.2 (cast_trans cu₂ cu₂s)) ?_
-          refine mstep_trans (mstep_boxr hρ₂ hvm₂ (mstep_anno hvm₂ runb₂)) ?_
-          refine MStep.step (Step.sboxr hρ₂ hvm₂ (Step.sannov hvm₂ hvb₂ hcs₂')) ?_
-          exact MStep.step (Step.sboxv hρ₂ hvm₂ (cast_value hvb₂ hcs₂')) MStep.refl
-        exact ⟨s₁, s₂, newrun₁, newrun₂, ihD hr cs₁ cs₂⟩
+        exact ⟨s₁, s₂,
+          clos_recast_run hρ₁ hvenv₁ hvu.1 (cast_value hvu.1 cu₁) hvr.1 cu₁ run₁ cs₁,
+          clos_recast_run hρ₂ hvenv₂ hvu.2 (cast_value hvu.2 cu₂) hvr.2 cu₂ run₂ cs₂,
+          ihD hr cs₁ cs₂⟩
+      | cfarrow hntlD₂ hsc₂ hsb₂ =>
+        have hvenv₂ := value_fclos_env hv₂
+        refine ⟨Value.vclos hvenv₁, Value.vfclos hvenv₂,
+          by rw [viewL_arr]; exact cast_preservation (Cast.carrow hntlD hsc₁ hsb₁) hv₁ ht₁,
+          by rw [viewR_arr]; exact cast_preservation (Cast.cfarrow hntlD₂ hsc₂ hsb₂) hv₂ ht₂, ?_⟩
+        intro u₁ u₂ hu ρ₁ ρ₂ hρ₁ hρ₂
+        have hvu := lr_value hu
+        have htu := lr_typed hu
+        obtain ⟨u₁c, cu₁⟩ := cast_progress hvu.1 htu.1 (sub_viewL hsC)
+        obtain ⟨u₂c, cu₂⟩ := cast_progress hvu.2 htu.2 (sub_viewR hsC)
+        obtain ⟨r₁, r₂, run₁, run₂, hr⟩ := CL u₁c u₂c (ihC hu cu₁ cu₂) ρ₁ ρ₂ hρ₁ hρ₂
+        have hvr := lr_value hr
+        have htr := lr_typed hr
+        obtain ⟨s₁, cs₁⟩ := cast_progress hvr.1 htr.1 (sub_viewL hsD)
+        obtain ⟨s₂, cs₂⟩ := cast_progress hvr.2 htr.2 (sub_viewR hsD)
+        exact ⟨s₁, s₂,
+          clos_recast_run hρ₁ hvenv₁ hvu.1 (cast_value hvu.1 cu₁) hvr.1 cu₁ run₁ cs₁,
+          fclos_recast_run hρ₂ hvenv₂ hvu.2 (cast_value hvu.2 cu₂) hvr.2 cu₂ run₂ cs₂,
+          ihD hr cs₁ cs₂⟩
+    | cfarrow hntlD hsc₁ hsb₁ =>
+      have hvenv₁ := value_fclos_env hv₁
+      cases c₂ with
+      | cmrgl _ _ => exact absurd ht₂ (by intro h; nomatch h)
+      | cmrgr _ _ => exact absurd ht₂ (by intro h; nomatch h)
+      | carrowtl htlD _ _ =>
+        exact absurd (toplike_viewL (toplike_viewR_inv hadm htlD)) hntlD
+      | cfarrowtl htlD _ _ =>
+        exact absurd (toplike_viewL (toplike_viewR_inv hadm htlD)) hntlD
+      | carrow hntlD₂ hsc₂ hsb₂ =>
+        have hvenv₂ := value_clos_env hv₂
+        refine ⟨Value.vfclos hvenv₁, Value.vclos hvenv₂,
+          by rw [viewL_arr]; exact cast_preservation (Cast.cfarrow hntlD hsc₁ hsb₁) hv₁ ht₁,
+          by rw [viewR_arr]; exact cast_preservation (Cast.carrow hntlD₂ hsc₂ hsb₂) hv₂ ht₂, ?_⟩
+        intro u₁ u₂ hu ρ₁ ρ₂ hρ₁ hρ₂
+        have hvu := lr_value hu
+        have htu := lr_typed hu
+        obtain ⟨u₁c, cu₁⟩ := cast_progress hvu.1 htu.1 (sub_viewL hsC)
+        obtain ⟨u₂c, cu₂⟩ := cast_progress hvu.2 htu.2 (sub_viewR hsC)
+        obtain ⟨r₁, r₂, run₁, run₂, hr⟩ := CL u₁c u₂c (ihC hu cu₁ cu₂) ρ₁ ρ₂ hρ₁ hρ₂
+        have hvr := lr_value hr
+        have htr := lr_typed hr
+        obtain ⟨s₁, cs₁⟩ := cast_progress hvr.1 htr.1 (sub_viewL hsD)
+        obtain ⟨s₂, cs₂⟩ := cast_progress hvr.2 htr.2 (sub_viewR hsD)
+        exact ⟨s₁, s₂,
+          fclos_recast_run hρ₁ hvenv₁ hvu.1 (cast_value hvu.1 cu₁) hvr.1 cu₁ run₁ cs₁,
+          clos_recast_run hρ₂ hvenv₂ hvu.2 (cast_value hvu.2 cu₂) hvr.2 cu₂ run₂ cs₂,
+          ihD hr cs₁ cs₂⟩
+      | cfarrow hntlD₂ hsc₂ hsb₂ =>
+        have hvenv₂ := value_fclos_env hv₂
+        refine ⟨Value.vfclos hvenv₁, Value.vfclos hvenv₂,
+          by rw [viewL_arr]; exact cast_preservation (Cast.cfarrow hntlD hsc₁ hsb₁) hv₁ ht₁,
+          by rw [viewR_arr]; exact cast_preservation (Cast.cfarrow hntlD₂ hsc₂ hsb₂) hv₂ ht₂, ?_⟩
+        intro u₁ u₂ hu ρ₁ ρ₂ hρ₁ hρ₂
+        have hvu := lr_value hu
+        have htu := lr_typed hu
+        obtain ⟨u₁c, cu₁⟩ := cast_progress hvu.1 htu.1 (sub_viewL hsC)
+        obtain ⟨u₂c, cu₂⟩ := cast_progress hvu.2 htu.2 (sub_viewR hsC)
+        obtain ⟨r₁, r₂, run₁, run₂, hr⟩ := CL u₁c u₂c (ihC hu cu₁ cu₂) ρ₁ ρ₂ hρ₁ hρ₂
+        have hvr := lr_value hr
+        have htr := lr_typed hr
+        obtain ⟨s₁, cs₁⟩ := cast_progress hvr.1 htr.1 (sub_viewL hsD)
+        obtain ⟨s₂, cs₂⟩ := cast_progress hvr.2 htr.2 (sub_viewR hsD)
+        exact ⟨s₁, s₂,
+          fclos_recast_run hρ₁ hvenv₁ hvu.1 (cast_value hvu.1 cu₁) hvr.1 cu₁ run₁ cs₁,
+          fclos_recast_run hρ₂ hvenv₂ hvu.2 (cast_value hvu.2 cu₂) hvr.2 cu₂ run₂ cs₂,
+          ihD hr cs₁ cs₂⟩
 
 -- ── Semantic typing and the fundamental lemma ────────────────────────────────────────
 
@@ -764,10 +875,53 @@ theorem lr_rlookup {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     obtain ⟨s₁, s₂, l₁, l₂, hlr'⟩ := ih hB
     exact ⟨s₁, s₂, RLookupV.vlandr l₁, RLookupV.vlandr l₂, hlr'⟩
 
--- The fundamental lemma: every well-typed term is semantically self-related.  Strong
--- normalization of λE^≤ is an immediate corollary.
+-- The normalizing fragment: every term former except the fixpoints.  The relational
+-- layer (fundamental lemma, normalization, sealing, RI) is stated for clients in this
+-- fragment — with general recursion the calculus is not normalizing and the
+-- termination-flavored fundamental lemma below is simply false.  The SAFETY layer
+-- (determinism, progress, preservation) covers fixpoints unconditionally.  Restoring the
+-- relational results over fixpoints would need a step-indexed relation (future work).
+inductive Finitary : Exp → Prop where
+  | query : Finitary .query
+  | proj {e : Exp} {n : Nat} : Finitary e → Finitary (.proj e n)
+  | lit {n : Nat} : Finitary (.lit n)
+  | unit : Finitary .unit
+  | lam {A B : Typ} {e : Exp} : Finitary e → Finitary (.lam A B e)
+  | box {e₁ e₂ : Exp} : Finitary e₁ → Finitary e₂ → Finitary (.box e₁ e₂)
+  | clos {v : Exp} {A B : Typ} {e : Exp} : Finitary v → Finitary e → Finitary (.clos v A B e)
+  | app {e₁ e₂ : Exp} : Finitary e₁ → Finitary e₂ → Finitary (.app e₁ e₂)
+  | mrg {e₁ e₂ : Exp} : Finitary e₁ → Finitary e₂ → Finitary (.mrg e₁ e₂)
+  | lrec {l : String} {e : Exp} : Finitary e → Finitary (.lrec l e)
+  | rproj {e : Exp} {l : String} : Finitary e → Finitary (.rproj e l)
+  | anno {e : Exp} {A : Typ} : Finitary e → Finitary (.anno e A)
+  | wrap {n : Nat} {e : Exp} : Finitary e → Finitary (.wrap n e)
+  | seal {n : Nat} {R S : Typ} {e : Exp} : Finitary e → Finitary (.seal n R S e)
+  | unseal {n : Nat} {R S : Typ} {e : Exp} : Finitary e → Finitary (.unseal n R S e)
+
+theorem Finitary.proj_inv {e : Exp} {n : Nat} (h : Finitary (.proj e n)) : Finitary e := by
+  cases h with | proj h' => exact h'
+theorem Finitary.lam_inv {A B : Typ} {e : Exp} (h : Finitary (.lam A B e)) : Finitary e := by
+  cases h with | lam h' => exact h'
+theorem Finitary.box_inv {e₁ e₂ : Exp} (h : Finitary (.box e₁ e₂))
+    : Finitary e₁ ∧ Finitary e₂ := by cases h with | box h₁ h₂ => exact ⟨h₁, h₂⟩
+theorem Finitary.clos_inv {v : Exp} {A B : Typ} {e : Exp} (h : Finitary (.clos v A B e))
+    : Finitary v ∧ Finitary e := by cases h with | clos h₁ h₂ => exact ⟨h₁, h₂⟩
+theorem Finitary.app_inv {e₁ e₂ : Exp} (h : Finitary (.app e₁ e₂))
+    : Finitary e₁ ∧ Finitary e₂ := by cases h with | app h₁ h₂ => exact ⟨h₁, h₂⟩
+theorem Finitary.mrg_inv {e₁ e₂ : Exp} (h : Finitary (.mrg e₁ e₂))
+    : Finitary e₁ ∧ Finitary e₂ := by cases h with | mrg h₁ h₂ => exact ⟨h₁, h₂⟩
+theorem Finitary.lrec_inv {l : String} {e : Exp} (h : Finitary (.lrec l e)) : Finitary e := by
+  cases h with | lrec h' => exact h'
+theorem Finitary.rproj_inv {e : Exp} {l : String} (h : Finitary (.rproj e l)) : Finitary e := by
+  cases h with | rproj h' => exact h'
+theorem Finitary.anno_inv {e : Exp} {A : Typ} (h : Finitary (.anno e A)) : Finitary e := by
+  cases h with | anno h' => exact h'
+
+-- The fundamental lemma: every well-typed term of the normalizing fragment is
+-- semantically self-related.  Strong normalization of that fragment is an immediate
+-- corollary.
 theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A)
-    : SemTyp Δ₁ Δ₂ η Γ e e A := by
+    (hfin : Finitary e) : SemTyp Δ₁ Δ₂ η Γ e e A := by
   induction ht with
   | tquery =>
     intro ρ₁ ρ₂ hρ
@@ -781,9 +935,10 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     exact ⟨_, _, MStep.refl, MStep.refl, rfl, rfl⟩
   | tapp _ _ ih₁ ih₂ =>
     intro ρ₁ ρ₂ hρ
+    obtain ⟨hf₁, hf₂⟩ := Finitary.app_inv hfin
     have hvρ := lr_value hρ
-    obtain ⟨f₁, f₂, rf₁, rf₂, hf⟩ := ih₁ hρ
-    obtain ⟨a₁, a₂, ra₁, ra₂, ha⟩ := ih₂ hρ
+    obtain ⟨f₁, f₂, rf₁, rf₂, hf⟩ := ih₁ hf₁ hρ
+    obtain ⟨a₁, a₂, ra₁, ra₂, ha⟩ := ih₂ hf₂ hρ
     obtain ⟨hvf₁, hvf₂, _, _, CL⟩ := hf
     obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := CL a₁ a₂ ha ρ₁ ρ₂ hvρ.1 hvρ.2
     refine ⟨w₁, w₂, ?_, ?_, hw⟩
@@ -793,10 +948,11 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
         (mstep_trans (mstep_appr hvρ.2 hvf₂ ra₂) rw₂)
   | tbox _ _ ih₁ ih₂ =>
     intro ρ₁ ρ₂ hρ
+    obtain ⟨hf₁, hf₂⟩ := Finitary.box_inv hfin
     have hvρ := lr_value hρ
-    obtain ⟨g₁, g₂, rg₁, rg₂, hg⟩ := ih₁ hρ
+    obtain ⟨g₁, g₂, rg₁, rg₂, hg⟩ := ih₁ hf₁ hρ
     have hvg := lr_value hg
-    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih₂ hg
+    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih₂ hf₂ hg
     have hvw := lr_value hw
     refine ⟨w₁, w₂, ?_, ?_, hw⟩
     · exact mstep_trans (mstep_boxl hvρ.1 rg₁)
@@ -808,7 +964,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
   | tproj _ hl ih =>
     intro ρ₁ ρ₂ hρ
     have hvρ := lr_value hρ
-    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih hρ
+    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih (Finitary.proj_inv hfin) hρ
     have hvr := lr_value hr
     obtain ⟨s₁, s₂, l₁, l₂, hs⟩ := lr_lookup hl hr
     refine ⟨s₁, s₂, ?_, ?_, hs⟩
@@ -817,12 +973,12 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
   | trcd _ ih =>
     intro ρ₁ ρ₂ hρ
     have hvρ := lr_value hρ
-    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih hρ
+    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.lrec_inv hfin) hρ
     exact ⟨_, _, mstep_lrec hvρ.1 rw₁, mstep_lrec hvρ.2 rw₂, _, _, rfl, rfl, hw⟩
   | trproj _ hl ih =>
     intro ρ₁ ρ₂ hρ
     have hvρ := lr_value hρ
-    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih hρ
+    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih (Finitary.rproj_inv hfin) hρ
     have hvr := lr_value hr
     obtain ⟨s₁, s₂, l₁, l₂, hs⟩ := lr_rlookup hl hr
     refine ⟨s₁, s₂, ?_, ?_, hs⟩
@@ -830,9 +986,10 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     · exact mstep_trans (mstep_rproj hvρ.2 rr₂) (mstep_one (Step.srprojv hvρ.2 hvr.2 l₂))
   | tmrg _ _ hd₁ hd₂ ih₁ ih₂ =>
     intro ρ₁ ρ₂ hρ
+    obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
     have hvρ := lr_value hρ
     have htρ := lr_typed hρ
-    obtain ⟨a₁, a₂, ra₁, ra₂, ha⟩ := ih₁ hρ
+    obtain ⟨a₁, a₂, ra₁, ra₂, ha⟩ := ih₁ hf₁ hρ
     have hva := lr_value ha
     have hta := lr_typed ha
     have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ a₁) (.mrg ρ₂ a₂) :=
@@ -841,7 +998,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
         HasType.tmergev hvρ.2 hva.2 htρ.2 hta.2
           (disjoint_consistent hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁)),
         _, _, _, _, rfl, rfl, hρ, ha⟩
-    obtain ⟨b₁, b₂, rb₁, rb₂, hb⟩ := ih₂ hρ'
+    obtain ⟨b₁, b₂, rb₁, rb₂, hb⟩ := ih₂ hf₂ hρ'
     have hvb := lr_value hb
     have htb := lr_typed hb
     refine ⟨.mrg a₁ b₁, .mrg a₂ b₂, ?_, ?_, ?_⟩
@@ -854,14 +1011,16 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
         _, _, _, _, rfl, rfl, ha, hb⟩
   | tmergev hv₁ hv₂ hp hq hcons ih₁ ih₂ =>
     intro ρ₁ ρ₂ _
+    obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
     exact ⟨_, _, MStep.refl, MStep.refl,
       HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
         (hastype_weaken_store storele_noBrands hq) hcons,
       HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
         (hastype_weaken_store storele_noBrands hq) hcons,
-      _, _, _, _, rfl, rfl, semtyp_value_self ih₁ hv₁, semtyp_value_self ih₂ hv₂⟩
+      _, _, _, _, rfl, rfl, semtyp_value_self (ih₁ hf₁) hv₁, semtyp_value_self (ih₂ hf₂) hv₂⟩
   | tlam hd hb ih =>
     intro ρ₁ ρ₂ hρ
+    have hfb := Finitary.lam_inv hfin
     have hvρ := lr_value hρ
     have htρ := lr_typed hρ
     refine ⟨_, _, mstep_one (Step.sclos hvρ.1), mstep_one (Step.sclos hvρ.2), ?_⟩
@@ -884,7 +1043,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
         HasType.tmergev hvρ.2 hvu'.2 htρ.2 htu'.2
           (disjoint_consistent hvρ.2 hvu'.2 htρ.2 htu'.2 hd),
         _, _, _, _, rfl, rfl, hρ, hu'⟩
-    obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih hρ'
+    obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih hfb hρ'
     have hvb := lr_value hbb
     have htb := lr_typed hbb
     obtain ⟨s₁, cs₁⟩ := cast_progress hvb.1 htb.1 (sub_refl _)
@@ -902,7 +1061,8 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
       exact MStep.step (Step.sboxv hσ₂ hvm₂ (cast_value hvb.2 cs₂)) MStep.refl
   | tclos hv henv₁ hd hb hs₁ hs₂ ih_env ih_b =>
     intro ρ₁ ρ₂ _
-    have hgg := semtyp_value_self ih_env hv
+    obtain ⟨hfv, hfb⟩ := Finitary.clos_inv hfin
+    have hgg := semtyp_value_self (ih_env hfv) hv
     refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
     refine ⟨Value.vclos hv, Value.vclos hv,
       HasType.tclos hv (hastype_weaken_store storele_noBrands henv₁) hd
@@ -925,7 +1085,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
         HasType.tmergev hgv.2 hvu'.2 hgt.2 htu'.2
           (disjoint_consistent hgv.2 hvu'.2 hgt.2 htu'.2 hd),
         _, _, _, _, rfl, rfl, hgg, hu'⟩
-    obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih_b hρ'
+    obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih_b hfb hρ'
     have hvb := lr_value hbb
     have htb := lr_typed hbb
     obtain ⟨s₁, cs₁⟩ := cast_progress hvb.1 htb.1 hs₁
@@ -944,7 +1104,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
   | tanno _ hsub ih =>
     intro ρ₁ ρ₂ hρ
     have hvρ := lr_value hρ
-    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih hρ
+    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih (Finitary.anno_inv hfin) hρ
     have hvr := lr_value hr
     have htr := lr_typed hr
     obtain ⟨s₁, cs₁⟩ := cast_progress hvr.1 htr.1 hsub
@@ -956,15 +1116,18 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
   | twrap hΔ _ _ _ => nomatch hΔ
   | tseal hΔ _ _ _ _ => nomatch hΔ
   | tunseal hΔ _ _ _ _ _ => nomatch hΔ
+  -- Fixpoints are outside the normalizing fragment.
+  | tflam _ _ _ _ => nomatch hfin
+  | tfclos _ _ _ _ _ _ _ _ _ _ => nomatch hfin
 
 -- ── Corollaries ──────────────────────────────────────────────────────────────────────
 
 -- Strong normalization of well-typed λE^≤ programs (λE Theorem 4.16 for the extended
 -- calculus; genuinely new for a TDOS merge calculus).
 theorem normalization {e : Exp} {A : Typ} (ht : HasType noBrands .top e A)
-    : ∃ v, Value v ∧ MStep .unit e v := by
+    (hfin : Finitary e) : ∃ v, Value v ∧ MStep .unit e v := by
   obtain ⟨w₁, _, r₁, _, hlr⟩ :=
-    fundamental (Δ₁ := noBrands) (Δ₂ := noBrands) (η := fun _ _ _ => False) ht lr_top_unit
+    fundamental (Δ₁ := noBrands) (Δ₂ := noBrands) (η := fun _ _ _ => False) ht hfin lr_top_unit
   exact ⟨w₁, (lr_value hlr).1, r₁⟩
 
 -- THE SEALING THEOREM.  A client typed against the seal A and observing at Int cannot
@@ -972,9 +1135,9 @@ theorem normalization {e : Exp} {A : Typ} (ht : HasType noBrands .top e A)
 -- literal.  Equality holds at base observations; at higher types agreement is the
 -- logical relation (extensional at arrows), not syntactic equality.
 theorem sealing {A : Typ} {p₁' p₂' : Exp} (hagree : LR Δ₁ Δ₂ η A p₁' p₂')
-    {e : Exp} (hcl : HasType noBrands A e .int)
+    {e : Exp} (hcl : HasType noBrands A e .int) (hfin : Finitary e)
     : ∃ i, MStep p₁' e (.lit i) ∧ MStep p₂' e (.lit i) := by
-  obtain ⟨w₁, w₂, r₁, r₂, hlr⟩ := fundamental hcl hagree
+  obtain ⟨w₁, w₂, r₁, r₂, hlr⟩ := fundamental hcl hfin hagree
   obtain ⟨i, e₁, e₂⟩ := hlr
   subst e₁; subst e₂
   exact ⟨i, r₁, r₂⟩
@@ -987,10 +1150,10 @@ theorem sealing_providers {B₁ B₂ A : Typ} {p₁ p₂ p₁' p₂' : Exp}
     (_ht₁ : HasType Δ₁ .top p₁ B₁) (_ht₂ : HasType Δ₂ .top p₂ B₂)
     (hc₁ : Cast p₁ A p₁') (hc₂ : Cast p₂ A p₂')
     (hagree : LR Δ₁ Δ₂ η A p₁' p₂')
-    {e : Exp} (hcl : HasType noBrands A e .int)
+    {e : Exp} (hcl : HasType noBrands A e .int) (hfin : Finitary e)
     {ρ₁ ρ₂ : Exp} (hρ₁ : Value ρ₁) (hρ₂ : Value ρ₂)
     : ∃ i, MStep ρ₁ (.box p₁' e) (.lit i) ∧ MStep ρ₂ (.box p₂' e) (.lit i) := by
-  obtain ⟨i, r₁, r₂⟩ := sealing hagree hcl
+  obtain ⟨i, r₁, r₂⟩ := sealing hagree hcl hfin
   have hvp₁ : Value p₁' := cast_value hv₁ hc₁
   have hvp₂ : Value p₂' := cast_value hv₂ hc₂
   refine ⟨i, ?_, ?_⟩
