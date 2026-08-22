@@ -239,7 +239,7 @@ inductive elabSeal (Δ : SCE.BrandStore) : SCE.Typ → SCE.Exp → SCE.Typ → S
     : elabSeal Δ ctx se₁ A ce₁
     → elabSeal Δ (.and ctx A) se₂ B ce₂
     → Seal.Disj (sealTyp ctx) (sealTyp A)
-    → elabSeal Δ ctx (.letb se₁ A se₂) B
+    → elabSeal Δ ctx (.letb se₁ se₂) B
         (.app (.lam (sealTyp A) (sealTyp B) ce₂) ce₁)
   | eopenm {ctx A B : SCE.Typ} {se₁ se₂ : SCE.Exp} {ce₁ ce₂ : Seal.Exp} {l : String}
     : elabSeal Δ ctx se₁ (.rcd l A) ce₁
