@@ -162,17 +162,17 @@ inductive SRLookup : Typ → String → Typ → Prop
     SRLookup B label T →
     ¬ LabelIn label A →
     SRLookup (Typ.and A B) label T
--- `elabTyp` erases `sig` over an interface, so at the target a label sitting
--- under one is reachable by Core.RLookup.  Selection has to see through it too,
--- or the source would refuse lookups the target performs; this is the case that
--- makes `type_safe_record_lookup` total.  It mirrors `LabelIn.sig`.
+-- `sealTyp` erases `sig` over an interface, so at the target a label sitting
+-- under one is reachable by the target record lookup.  Selection has to see
+-- through it too, or the source would refuse lookups the target performs.
+-- It mirrors `LabelIn.sig`.
 | sig (label : String) (T A : Typ) :
     SRLookup T label A →
     SRLookup (Typ.sig (ModTyp.TyIntf T)) label A
 
 -- A successful lookup witnesses containment.  This is why the `and` rules above
 -- carry only the negative half of their disjointness condition: the positive
--- half follows from the first premise.  Core.RLookup is stated the same way.
+-- half follows from the first premise.  The target RLookup is stated the same way.
 theorem srlookup_labelin {A : Typ} {l : String} {T : Typ} : SRLookup A l T → LabelIn l A := by
   intro h
   induction h with

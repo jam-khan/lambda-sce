@@ -5,10 +5,8 @@ import LeanSce.Seal.Correctness
 
 open SCE S_Sem
 
--- Source-side determinism and uniqueness, re-witnessed by the sealing elaboration
--- (elabSeal, SCE → λE^≤).  Supersedes the elabExp-witnessed half of SCE/Theories.lean
--- (inference/elaboration_uniqueness, sel/selpkg_deterministic, bigstep_deterministic),
--- which will be deleted together with LeanSce/Core.
+-- Source-side determinism and uniqueness, witnessed by the sealing elaboration
+-- (elabSeal, SCE → λE^≤).
 
 namespace Seal
 
@@ -16,7 +14,7 @@ variable {Δ : SCE.BrandStore}
 
 -- ── Uniqueness of inference and elaboration, in one pass ─────────────────────────────
 
--- The two elabExp uniqueness theorems merged: the inferred type and the elaborated term
+-- Inference and elaboration uniqueness merged: the inferred type and the elaborated term
 -- are unique.  The statement is generalized over the two contexts, equal OR the subject
 -- a value (value elaborations are context-irrelevant): this is exactly what the mixed
 -- edmrg/evmrg inversions of a value merge need.
