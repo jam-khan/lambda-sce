@@ -114,7 +114,7 @@ theorem sgprogress
     intro v hv henv
     have prog1 := ih1 hv henv
     match prog1 with
-    | .inr ⟨e', hstep⟩ => right; exact ⟨.letb e' _ se2, SStep.ssletbl hv hstep⟩
+    | .inr ⟨e', hstep⟩ => right; exact ⟨.letb e' se2, SStep.ssletbl hv hstep⟩
     | .inl hve1 => right; exact ⟨.box (.mrg v se1) se2, SStep.ssletbv hv hve1⟩
   | @openm _ _ _ se1 se2 _ _ _ h1 h2 ih1 ih2 =>
     intro v hv henv

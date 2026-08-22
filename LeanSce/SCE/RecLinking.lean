@@ -35,8 +35,8 @@ def recWrap (l : String) (A₁ A₂ : Typ) : Exp :=
 
 /-- Recursive linking: bind the functor, then apply it to a package whose
     `l` import is the recursive wrapper. -/
-def mrecExp (l : String) (A₁ A₂ B : Typ) (e : Exp) : Exp :=
-  .letb e (FunctorTy l A₁ A₂ B)
+def mrecExp (l : String) (A₁ A₂ : Typ) (e : Exp) : Exp :=
+  .letb e
     (.mapp (.proj .query 0) (.lrec l (recWrap l A₁ A₂)))
 
 /-- `mrecExp` elaborates using only the existing rules: recursive linking
@@ -45,7 +45,7 @@ theorem mrec_elab
     {Γ B : Typ} {l : String} {A₁ A₂ : Typ} {e : Exp} {ce : Core.Exp}
     (helab : elabExp Γ e (FunctorTy l A₁ A₂ B) ce)
     (hknot : SRLookup B l (.arr A₁ A₂))
-    : ∃ ce', elabExp Γ (mrecExp l A₁ A₂ B e) B ce' :=
+    : ∃ ce', elabExp Γ (mrecExp l A₁ A₂ e) B ce' :=
   ⟨_, .letb _ _ _ _ _ _ _ helab
     (.mapp _ _ _ _ _ _ _
       (.eproj _ _ _ _ _ _ .equery (.zero _ _))
@@ -69,8 +69,8 @@ theorem mrec_progress
     {B : Typ} {l : String} {A₁ A₂ : Typ} {e : Exp} {ce : Core.Exp}
     (helab : elabExp .top e (FunctorTy l A₁ A₂ B) ce)
     (hknot : SRLookup B l (.arr A₁ A₂))
-    : SCE.Value (mrecExp l A₁ A₂ B e)
-      ∨ ∃ e', SStep .unit (mrecExp l A₁ A₂ B e) e' :=
+    : SCE.Value (mrecExp l A₁ A₂ e)
+      ∨ ∃ e', SStep .unit (mrecExp l A₁ A₂ e) e' :=
   sprogress (mrec_elab helab hknot)
 
 /-- Stepping a closed recursive module preserves its type (preservation). -/
@@ -78,7 +78,7 @@ theorem mrec_preservation
     {B : Typ} {l : String} {A₁ A₂ : Typ} {e e' : Exp} {ce : Core.Exp}
     (helab : elabExp .top e (FunctorTy l A₁ A₂ B) ce)
     (hknot : SRLookup B l (.arr A₁ A₂))
-    (hstep : SStep .unit (mrecExp l A₁ A₂ B e) e')
+    (hstep : SStep .unit (mrecExp l A₁ A₂ e) e')
     : ∃ ce', elabExp .top e' B ce' :=
   spreservation (mrec_elab helab hknot) hstep
 
@@ -87,8 +87,8 @@ theorem mrec_deterministic
     {B : Typ} {l : String} {A₁ A₂ : Typ} {e v₁ v₂ : Exp} {ce : Core.Exp}
     (helab : elabExp .top e (FunctorTy l A₁ A₂ B) ce)
     (hknot : SRLookup B l (.arr A₁ A₂))
-    (h₁ : BStep .unit (mrecExp l A₁ A₂ B e) v₁)
-    (h₂ : BStep .unit (mrecExp l A₁ A₂ B e) v₂)
+    (h₁ : BStep .unit (mrecExp l A₁ A₂ e) v₁)
+    (h₂ : BStep .unit (mrecExp l A₁ A₂ e) v₂)
     : v₁ = v₂ :=
   bigstep_deterministic (mrec_elab helab hknot) h₁ h₂
 
@@ -97,7 +97,7 @@ theorem mrec_core_typed
     {Γ B : Typ} {l : String} {A₁ A₂ : Typ} {e : Exp} {ce : Core.Exp}
     (helab : elabExp Γ e (FunctorTy l A₁ A₂ B) ce)
     (hknot : SRLookup B l (.arr A₁ A₂))
-    : ∃ ce', elabExp Γ (mrecExp l A₁ A₂ B e) B ce'
+    : ∃ ce', elabExp Γ (mrecExp l A₁ A₂ e) B ce'
              ∧ HasType (elabTyp Γ) ce' (elabTyp B) := by
   obtain ⟨ce', h⟩ := mrec_elab helab hknot
   exact ⟨ce', h, type_preservation h⟩
@@ -108,8 +108,8 @@ theorem mrec_correctness
     {B : Typ} {l : String} {A₁ A₂ : Typ} {e vs : Exp} {ce : Core.Exp}
     (helab : elabExp .top e (FunctorTy l A₁ A₂ B) ce)
     (hknot : SRLookup B l (.arr A₁ A₂))
-    (heval : BStep .unit (mrecExp l A₁ A₂ B e) vs)
-    : ∃ ce' vc, elabExp .top (mrecExp l A₁ A₂ B e) B ce'
+    (heval : BStep .unit (mrecExp l A₁ A₂ e) vs)
+    : ∃ ce' vc, elabExp .top (mrecExp l A₁ A₂ e) B ce'
                 ∧ EBig .unit ce' vc
                 ∧ elabExp .top vs B vc := by
   obtain ⟨ce', h⟩ := mrec_elab helab hknot

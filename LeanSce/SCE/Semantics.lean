@@ -199,11 +199,11 @@ inductive BStep : Exp → Exp → Exp → Prop where
     → BStep ρ e v
     → Sel v l v'
     → BStep ρ (.rproj e l) v'
-  | letb {ρ e₁ e₂ v₁ v : Exp} {A : Typ}
+  | letb {ρ e₁ e₂ v₁ v : Exp}
     : Value ρ
     → BStep ρ e₁ v₁
     → BStep (.mrg ρ v₁) e₂ v
-    → BStep ρ (.letb e₁ A e₂) v
+    → BStep ρ (.letb e₁ e₂) v
   | openm {ρ e₁ e₂ v' v : Exp} {l : String}
     : Value ρ
     → BStep ρ e₁ (.lrec l v')

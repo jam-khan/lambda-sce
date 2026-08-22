@@ -180,7 +180,7 @@ inductive elabExp : TyCtx → Exp → Typ → Core.Exp → Prop
   | letb (ctx A B : Typ) (se1 se2 : Exp) (ce1 ce2 : Core.Exp)
     : elabExp ctx se1 A ce1
     → elabExp (Typ.and ctx A) se2 B ce2
-    → elabExp ctx (Exp.letb se1 A se2) B
+    → elabExp ctx (Exp.letb se1 se2) B
         (Core.Exp.app (Core.Exp.lam (elabTyp A) ce2) ce1)
   | openm (ctx A B : Typ) (se1 se2 : Exp) (ce1 ce2 : Core.Exp) (l : String)
     : elabExp ctx se1 (Typ.rcd l A) ce1

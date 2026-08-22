@@ -180,9 +180,9 @@ theorem smstep_nmrg_right {v v1 e2 e2' : Exp}
   | step hs _ ih => exact SMStep.step (SStep.ssnmrgr hv hv1 hs) ih
 
 -- Congruence: letb
-theorem smstep_letb {v e1 e1' : Exp} {A : Typ}
+theorem smstep_letb {v e1 e1' : Exp}
     (h : SMStep v e1 e1') (e2 : Exp)
-    : SMStep v (.letb e1 A e2) (.letb e1' A e2) := by
+    : SMStep v (.letb e1 e2) (.letb e1' e2) := by
   induction h with
   | refl hv => exact SMStep.refl hv
   | step hs _ ih => exact SMStep.step (SStep.ssletbl (sstep_env_value hs) hs) ih

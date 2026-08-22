@@ -206,7 +206,9 @@ theorem inference_uniqueness
   | letb ctx A B se1 se2 ce1 ce2 _ _ ih1 ih2 =>
     intro ce₂ T₂ h₂
     cases h₂ with
-    | letb _ _ b' _ _ ce1' ce2' h1' h2' =>
+    | letb _ a' b' _ _ ce1' ce2' h1' h2' =>
+      have hA := ih1 h1'
+      cases hA
       exact ih2 h2'
   | openm ctx A B se1 se2 ce1 ce2 l _ _ ih1 ih2 =>
     intro ce₂ T₂ h₂
@@ -392,10 +394,12 @@ theorem elaboration_uniqueness
     | elrec _ a' _ ce' _ h' =>
       have hce := ih h'
       rw [hce]
-  | letb ctx A B se1 se2 ce1 ce2 _ _ ih1 ih2 =>
+  | letb ctx A B se1 se2 ce1 ce2 h1_orig _ ih1 ih2 =>
     intro ce₂ T₂ h₂
     cases h₂ with
-    | letb _ _ b' _ _ ce1' ce2' h1' h2' =>
+    | letb _ a' b' _ _ ce1' ce2' h1' h2' =>
+      have hA := inference_uniqueness h1_orig h1'
+      cases hA
       have hce1 := ih1 h1'
       have hce2 := ih2 h2'
       rw [hce1, hce2]
