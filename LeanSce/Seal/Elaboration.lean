@@ -1,4 +1,5 @@
 import LeanSce.SCE.Syntax
+import LeanSce.SCE.Semantics
 import LeanSce.Seal.CastingLemmas
 
 -- Type-preserving elaboration of λSCE's module/linking fragment into λE^≤.
@@ -612,5 +613,190 @@ theorem seal_type_preservation {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce :
     subst heq
     rw [sealTyp_substTyp]
     exact HasType.tunfold ih rfl
+
+-- ── Value elaborations are context-irrelevant ────────────────────────────────────────
+
+-- Mirror of SCE's elab_value_weaken; the edmrg case re-elaborates through the
+-- context-free evmrg.
+theorem elabSeal_weaken {Γ A : SCE.Typ} {v : SCE.Exp} {ce : Seal.Exp}
+    (helab : elabSeal Δ Γ v A ce) (hv : SCE.Value v)
+    : ∀ Γ', elabSeal Δ Γ' v A ce := by
+  induction helab with
+  | equery => nomatch hv
+  | elit _ n => intro Γ'; exact elabSeal.elit Γ' n
+  | eunit _ => intro Γ'; exact elabSeal.eunit Γ'
+  | eapp _ _ _ _ => nomatch hv
+  | eproj _ _ _ => nomatch hv
+  | ebox _ _ _ _ => nomatch hv
+  | edmrg _ _ _ hd₂ ih₁ ih₂ =>
+    intro Γ'
+    cases hv with
+    | vmrg hv₁ hv₂ => exact elabSeal.evmrg hv₁ hv₂ (ih₁ hv₁ .top) (ih₂ hv₂ .top) hd₂
+  | evmrg hv₁ hv₂ h₁ h₂ hd _ _ =>
+    intro Γ'
+    exact elabSeal.evmrg hv₁ hv₂ h₁ h₂ hd
+  | enmrg _ _ _ _ _ _ => nomatch hv
+  | elam _ _ _ => nomatch hv
+  | erproj _ _ _ => nomatch hv
+  | eclos hval h₁ h₂ hd _ _ =>
+    intro Γ'
+    exact elabSeal.eclos hval h₁ h₂ hd
+  | elrec _ ih =>
+    intro Γ'
+    cases hv with
+    | vlrec hv' => exact elabSeal.elrec (ih hv' Γ')
+  | eletb _ _ _ _ _ => nomatch hv
+  | eopenm _ _ _ _ _ => nomatch hv
+  | emstruct _ _ _ _ => nomatch hv
+  | emfunctor _ _ _ _ _ => nomatch hv
+  | emclos hval h₁ h₂ hd _ _ =>
+    intro Γ'
+    exact elabSeal.emclos hval h₁ h₂ hd
+  | emapp _ _ _ _ => nomatch hv
+  | emlink _ _ _ _ _ _ _ => nomatch hv
+  | emlinkn _ _ _ _ _ _ _ => nomatch hv
+  | ewrap hΔ hv' h _ =>
+    intro Γ'
+    exact elabSeal.ewrap hΔ hv' h
+  | emseal _ _ _ _ _ => nomatch hv
+  | emunseal _ _ _ _ _ _ => nomatch hv
+  | einl _ ih =>
+    intro Γ'
+    cases hv with
+    | vinl hv' => exact elabSeal.einl (ih hv' Γ')
+  | einr _ ih =>
+    intro Γ'
+    cases hv with
+    | vinr hv' => exact elabSeal.einr (ih hv' Γ')
+  | ecase _ _ _ _ _ _ _ _ => nomatch hv
+  | eflam _ _ _ _ => nomatch hv
+  | efclos hval h₁ h₂ hd₁ hd₂ _ _ =>
+    intro Γ'
+    exact elabSeal.efclos hval h₁ h₂ hd₁ hd₂
+  | efold _ ih =>
+    intro Γ'
+    cases hv with
+    | vfold hv' => exact elabSeal.efold (ih hv' Γ')
+  | eunfold _ _ _ => nomatch hv
+
+-- ── Source-side selection lemmas on elaboration witnesses ────────────────────────────
+
+-- No value elaborates at a bare interface type.
+theorem value_elab_sig_intf {Γ : SCE.Typ} {v : SCE.Exp} {T : SCE.Typ} {w : Seal.Exp}
+    (h : elabSeal Δ Γ v (.sig (.TyIntf T)) w) (hv : SCE.Value v) : False := by
+  cases h <;> nomatch hv
+
+theorem elabSeal_lookup_pres {A B : SCE.Typ} {n : Nat} (hl : SCE.SLookup A n B)
+    : ∀ {Γ : SCE.Typ} {v v' : SCE.Exp} {ce : Seal.Exp}, elabSeal Δ Γ v A ce → SCE.Value v
+    → S_Sem.LookupV v n v' → ∃ w, elabSeal Δ .top v' B w := by
+  induction hl with
+  | zero A B =>
+    intro Γ v v' ce helab hv hlv
+    cases hlv with
+    | dmrg_zero =>
+      cases helab with
+      | edmrg _ h₂ _ _ =>
+        cases hv with
+        | vmrg _ hv₂ => exact ⟨_, elabSeal_weaken h₂ hv₂ .top⟩
+      | evmrg _ _ _ h₂ _ => exact ⟨_, h₂⟩
+    | nmrg_zero => nomatch hv
+  | succ A B n C _ ih =>
+    intro Γ v v' ce helab hv hlv
+    cases hlv with
+    | dmrg_succ hlv' =>
+      cases helab with
+      | edmrg h₁ _ _ _ =>
+        cases hv with
+        | vmrg hv₁ _ => exact ih h₁ hv₁ hlv'
+      | evmrg hv₁ _ h₁ _ _ => exact ih h₁ hv₁ hlv'
+    | nmrg_succ _ => nomatch hv
+
+theorem elabSeal_sel_absent {v v' : SCE.Exp} {l : String} (hsel : S_Sem.Sel v l v')
+    : ∀ {Γ B : SCE.Typ} {ce : Seal.Exp}, elabSeal Δ Γ v B ce → SCE.Value v
+    → ¬ SCE.LabelIn l B → False := by
+  induction hsel with
+  | rcd =>
+    intro Γ B ce helab hv hnl
+    cases helab with
+    | elrec _ => exact hnl (SCE.LabelIn.rcd _ _)
+  | dmrg_left _ ih =>
+    intro Γ B ce helab hv hnl
+    cases helab with
+    | edmrg h₁ _ _ _ =>
+      cases hv with
+      | vmrg hv₁ _ => exact ih h₁ hv₁ (fun hli => hnl (SCE.LabelIn.andl _ _ _ hli))
+    | evmrg hv₁ _ h₁ _ _ => exact ih h₁ hv₁ (fun hli => hnl (SCE.LabelIn.andl _ _ _ hli))
+  | dmrg_right _ ih =>
+    intro Γ B ce helab hv hnl
+    cases helab with
+    | edmrg _ h₂ _ _ =>
+      cases hv with
+      | vmrg _ hv₂ => exact ih h₂ hv₂ (fun hli => hnl (SCE.LabelIn.andr _ _ _ hli))
+    | evmrg _ hv₂ _ h₂ _ => exact ih h₂ hv₂ (fun hli => hnl (SCE.LabelIn.andr _ _ _ hli))
+  | nmrg_left _ _ =>
+    intro Γ B ce _ hv _
+    nomatch hv
+  | nmrg_right _ _ =>
+    intro Γ B ce _ hv _
+    nomatch hv
+
+theorem elabSeal_sel_pres {B : SCE.Typ} {l : String} {A : SCE.Typ}
+    (hl : SCE.SRLookup B l A)
+    : ∀ {Γ : SCE.Typ} {v v' : SCE.Exp} {ce : Seal.Exp}, elabSeal Δ Γ v B ce → SCE.Value v
+    → S_Sem.Sel v l v' → ∃ w, elabSeal Δ .top v' A w := by
+  induction hl with
+  | zero label T =>
+    intro Γ v v' ce helab hv hsel
+    cases hsel with
+    | rcd =>
+      cases helab with
+      | elrec h =>
+        cases hv with
+        | vlrec hv' => exact ⟨_, elabSeal_weaken h hv' .top⟩
+    | dmrg_left _ => nomatch helab
+    | dmrg_right _ => nomatch helab
+    | nmrg_left _ => nomatch hv
+    | nmrg_right _ => nomatch hv
+  | andl A' B' label T hl' hnl ih =>
+    intro Γ v v' ce helab hv hsel
+    cases hsel with
+    | rcd =>
+      cases helab
+    | dmrg_left hsel' =>
+      cases helab with
+      | edmrg h₁ _ _ _ =>
+        cases hv with
+        | vmrg hv₁ _ => exact ih h₁ hv₁ hsel'
+      | evmrg hv₁ _ h₁ _ _ => exact ih h₁ hv₁ hsel'
+    | dmrg_right hsel' =>
+      cases helab with
+      | edmrg _ h₂ _ _ =>
+        cases hv with
+        | vmrg _ hv₂ => exact (elabSeal_sel_absent hsel' h₂ hv₂ hnl).elim
+      | evmrg _ hv₂ _ h₂ _ => exact (elabSeal_sel_absent hsel' h₂ hv₂ hnl).elim
+    | nmrg_left _ => nomatch hv
+    | nmrg_right _ => nomatch hv
+  | andr A' B' label T hl' hnl ih =>
+    intro Γ v v' ce helab hv hsel
+    cases hsel with
+    | rcd =>
+      cases helab
+    | dmrg_right hsel' =>
+      cases helab with
+      | edmrg _ h₂ _ _ =>
+        cases hv with
+        | vmrg _ hv₂ => exact ih h₂ hv₂ hsel'
+      | evmrg _ hv₂ _ h₂ _ => exact ih h₂ hv₂ hsel'
+    | dmrg_left hsel' =>
+      cases helab with
+      | edmrg h₁ _ _ _ =>
+        cases hv with
+        | vmrg hv₁ _ => exact (elabSeal_sel_absent hsel' h₁ hv₁ hnl).elim
+      | evmrg hv₁ _ h₁ _ _ => exact (elabSeal_sel_absent hsel' h₁ hv₁ hnl).elim
+    | nmrg_left _ => nomatch hv
+    | nmrg_right _ => nomatch hv
+  | sig label T A' _ _ =>
+    intro Γ v v' ce helab hv hsel
+    exact (value_elab_sig_intf helab hv).elim
 
 end Seal
