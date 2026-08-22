@@ -29,6 +29,7 @@ import LeanSce.SCE.Theories
 import LeanSce.SCE.SmallStep
 import LeanSce.SCE.Preservation
 import LeanSce.SCE.Progress
+import LeanSce.SCE.Determinism
 import LeanSce.SCE.Equivalence
 import LeanSce.SCE.Capabilities
 import LeanSce.SCE.RecLinking
