@@ -62,6 +62,24 @@ theorem elabSeal_weaken {Γ A : SCE.Typ} {v : SCE.Exp} {ce : Seal.Exp}
     exact elabSeal.ewrap hΔ hv' h
   | emseal _ _ _ _ _ => nomatch hv
   | emunseal _ _ _ _ _ _ => nomatch hv
+  | einl _ ih =>
+    intro Γ'
+    cases hv with
+    | vinl hv' => exact elabSeal.einl (ih hv' Γ')
+  | einr _ ih =>
+    intro Γ'
+    cases hv with
+    | vinr hv' => exact elabSeal.einr (ih hv' Γ')
+  | ecase _ _ _ _ _ _ _ _ => nomatch hv
+  | eflam _ _ _ _ => nomatch hv
+  | efclos hval h₁ h₂ hd₁ hd₂ _ _ =>
+    intro Γ'
+    exact elabSeal.efclos hval h₁ h₂ hd₁ hd₂
+  | efold _ ih =>
+    intro Γ'
+    cases hv with
+    | vfold hv' => exact elabSeal.efold (ih hv' Γ')
+  | eunfold _ _ _ => nomatch hv
 
 -- ── The simulation relation on values ────────────────────────────────────────────────
 
@@ -102,6 +120,27 @@ inductive EVal (Δ : SCE.BrandStore) : SCE.Typ → SCE.Exp → Seal.Exp → Prop
     : Δ n = some R
     → EVal Δ R v w
     → EVal Δ (.brand n) (.wrap n v) (.wrap n w)
+  -- unions: related under the same tag, the other component sealed pointwise
+  | inl {A B : SCE.Typ} {v : SCE.Exp} {w : Seal.Exp}
+    : EVal Δ A v w
+    → EVal Δ (.or A B) (.inl B v) (.inl (sealTyp B) w)
+  | inr {A B : SCE.Typ} {v : SCE.Exp} {w : Seal.Exp}
+    : EVal Δ B v w
+    → EVal Δ (.or A B) (.inr A v) (.inr (sealTyp A) w)
+  -- fixpoint closures: both codomains of the target fclos are the sealed source codomain
+  -- (elaboration introduces them equal, and the simulation only ever self-casts)
+  | fclos {ctx' A B : SCE.Typ} {ρs se₂ : SCE.Exp} {ρc ce₂ : Seal.Exp}
+    : SCE.Value ρs
+    → EVal Δ ctx' ρs ρc
+    → elabSeal Δ (.and (.and ctx' (.arr A B)) A) se₂ B ce₂
+    → Seal.Disj (sealTyp ctx') (.arr (sealTyp A) (sealTyp B))
+    → Seal.Disj (.and (sealTyp ctx') (.arr (sealTyp A) (sealTyp B))) (sealTyp A)
+    → EVal Δ (.arr A B) (.fclos ρs A B se₂)
+        (.fclos ρc (sealTyp A) (sealTyp B) (sealTyp B) ce₂)
+  -- iso-recursive folds: payloads related at the unfolding
+  | fold {T : SCE.Typ} {v : SCE.Exp} {w : Seal.Exp}
+    : EVal Δ (SCE.substTyp 0 (.mu T) T) v w
+    → EVal Δ (.mu T) (.fold T v) (.fold (sealTyp T) w)
 
 theorem eval_value_src {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A vs vc)
     : SCE.Value vs := by
@@ -114,6 +153,10 @@ theorem eval_value_src {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ
   | mclos hρ _ _ _ _ => exact SCE.Value.vmclos hρ
   | gen _ hv _ => exact hv
   | wrap _ _ ih => exact SCE.Value.vwrap ih
+  | inl _ ih => exact SCE.Value.vinl ih
+  | inr _ ih => exact SCE.Value.vinr ih
+  | fclos hρ _ _ _ _ _ => exact SCE.Value.vfclos hρ
+  | fold _ ih => exact SCE.Value.vfold ih
 
 theorem eval_value {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A vs vc)
     : Seal.Value vc := by
@@ -126,6 +169,10 @@ theorem eval_value {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A v
   | mclos _ _ _ _ ih => exact Value.vclos ih
   | gen _ _ _ => exact genVal_value _
   | wrap _ _ ih => exact Value.vwrap ih
+  | inl _ ih => exact Value.vinl ih
+  | inr _ ih => exact Value.vinr ih
+  | fclos _ _ _ _ _ ih => exact Value.vfclos ih
+  | fold _ ih => exact Value.vfold ih
 
 -- Every related source value still elaborates (at the empty context).
 theorem eval_elab {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A vs vc)
@@ -150,6 +197,18 @@ theorem eval_elab {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A vs
   | wrap hΔ h ih =>
     obtain ⟨w, hw⟩ := ih
     exact ⟨_, elabSeal.ewrap hΔ (eval_value_src h) hw⟩
+  | inl _ ih =>
+    obtain ⟨w, hw⟩ := ih
+    exact ⟨_, elabSeal.einl hw⟩
+  | inr _ ih =>
+    obtain ⟨w, hw⟩ := ih
+    exact ⟨_, elabSeal.einr hw⟩
+  | fclos hρ _ hbody hd₁ hd₂ ih =>
+    obtain ⟨w, hw⟩ := ih
+    exact ⟨_, elabSeal.efclos hρ hw hbody hd₁ hd₂⟩
+  | fold _ ih =>
+    obtain ⟨w, hw⟩ := ih
+    exact ⟨_, elabSeal.efold hw⟩
 
 -- Related target values inhabit the sealed type.
 theorem eval_typed {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A vs vc)
@@ -169,6 +228,14 @@ theorem eval_typed {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A v
       (sub_refl _) (sub_refl _)
   | gen htl _ _ => exact genVal_typed htl .top
   | wrap hΔ h ih => exact HasType.twrap (sealStore_some hΔ) (eval_value h) ih
+  | inl _ ih => exact HasType.tinl ih
+  | inr _ ih => exact HasType.tinr ih
+  | fclos _ h hbody hd₁ hd₂ ih =>
+    exact HasType.tfclos (eval_value h) ih hd₁ hd₂ (seal_type_preservation hbody)
+      (sub_refl _) (sub_refl _) (sub_refl _)
+  | fold h ih =>
+    rw [sealTyp_substTyp] at ih
+    exact HasType.tfold ih
 
 -- Raw value elaborations embed into the relation.
 theorem elab_eval {Γ A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp}
@@ -204,6 +271,20 @@ theorem elab_eval {Γ A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp}
   | ewrap hΔ hv' _ ih => exact EVal.wrap hΔ (ih hv')
   | emseal _ _ _ _ _ => nomatch hv
   | emunseal _ _ _ _ _ _ => nomatch hv
+  | einl _ ih =>
+    cases hv with
+    | vinl hv' => exact EVal.inl (ih hv')
+  | einr _ ih =>
+    cases hv with
+    | vinr hv' => exact EVal.inr (ih hv')
+  | ecase _ _ _ _ _ _ _ _ => nomatch hv
+  | eflam _ _ _ _ => nomatch hv
+  | efclos hval h₁ h₂ hd₁ hd₂ ih₁ _ =>
+    exact EVal.fclos hval (ih₁ hval) h₂ hd₁ hd₂
+  | efold _ ih =>
+    cases hv with
+    | vfold hv' => exact EVal.fold (ih hv')
+  | eunfold _ _ _ => nomatch hv
 
 -- ── Generator lookups and top-like propagation ───────────────────────────────────────
 
@@ -277,6 +358,21 @@ theorem eval_cast_self {A : SCE.Typ} {vs : SCE.Exp} {vc vc' : Seal.Exp}
   | wrap hΔ h _ =>
     cases hc with
     | cwrap => exact EVal.wrap hΔ h
+  | inl h ih =>
+    cases hc with
+    | cinl d => exact EVal.inl (ih d)
+  | inr h ih =>
+    cases hc with
+    | cinr d => exact EVal.inr (ih d)
+  | fclos hρ hEV hbody hd₁ hd₂ ih =>
+    cases hc with
+    | cfarrow _ _ _ => exact EVal.fclos hρ hEV hbody hd₁ hd₂
+    | cfarrowtl htl _ _ =>
+      obtain ⟨w, hw⟩ := eval_elab (EVal.fclos hρ hEV hbody hd₁ hd₂)
+      exact EVal.gen (TopLike.tlarr htl) (SCE.Value.vfclos hρ) hw
+  | fold h ih =>
+    cases hc with
+    | cfold => exact EVal.fold h
 
 -- Package: cast at own type exists and stays related.
 theorem eval_cast_ex {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A vs vc)
@@ -503,6 +599,22 @@ theorem beta_mstep {ρ env arg arg' body bres sres : Seal.Exp} {A B : Seal.Typ}
     : MStep ρ (.app (.clos env A B body) arg) sres := by
   have hvm : Value (.mrg env arg') := Value.vmrg henv (cast_value harg hc)
   refine MStep.step (Step.sbeta hρ henv harg hc) ?_
+  refine mstep_trans (mstep_boxr hρ hvm (mstep_anno hvm hrun)) ?_
+  refine MStep.step (Step.sboxr hρ hvm (Step.sannov hvm hbv hcr)) ?_
+  exact MStep.step (Step.sboxv hρ hvm (cast_value hbv hcr)) MStep.refl
+
+-- The fixpoint beta run: cast the argument, run the body under the environment extended
+-- with the self-copy (external codomain reset to internal) and the cast argument, reseal
+-- the result at the external codomain.
+theorem fbeta_mstep {ρ env arg arg' body bres sres : Seal.Exp} {A B Bx : Seal.Typ}
+    (hρ : Value ρ) (henv : Value env) (harg : Value arg)
+    (hc : Cast arg A arg')
+    (hrun : MStep (.mrg (.mrg env (.fclos env A B B body)) arg') body bres)
+    (hbv : Value bres) (hcr : Cast bres Bx sres)
+    : MStep ρ (.app (.fclos env A B Bx body) arg) sres := by
+  have hvm : Value (.mrg (.mrg env (.fclos env A B B body)) arg') :=
+    Value.vmrg (Value.vmrg henv (Value.vfclos henv)) (cast_value harg hc)
+  refine MStep.step (Step.sfbeta hρ henv harg hc) ?_
   refine mstep_trans (mstep_boxr hρ hvm (mstep_anno hvm hrun)) ?_
   refine MStep.step (Step.sboxr hρ hvm (Step.sannov hvm hbv hcr)) ?_
   exact MStep.step (Step.sboxv hρ hvm (cast_value hbv hcr)) MStep.refl
@@ -1200,37 +1312,127 @@ theorem seal_semantic_preservation {ρs es vs : SCE.Exp} (heval : S_Sem.BStep ρ
             refine EVal.mrg hEVm ?_ hd2
             rw [hg']
             exact EVal.gen hB' (eval_produces_value (SCE.Value.vmrg hval₂ hpkg_v) h3) hwv
-  | inl _ _ _ =>
-    intro Γ A ce ρc helab _ _
-    nomatch helab
-  | inr _ _ _ =>
-    intro Γ A ce ρc helab _ _
-    nomatch helab
-  | case_inl _ _ _ _ _ =>
-    intro Γ A ce ρc helab _ _
-    nomatch helab
-  | case_inr _ _ _ _ _ =>
-    intro Γ A ce ρc helab _ _
-    nomatch helab
-  | fclos_val _ _ =>
-    intro Γ A ce ρc helab _ _
-    nomatch helab
-  | flam _ =>
-    intro Γ A ce ρc helab _ _
-    nomatch helab
-  | app_fclos _ h1 _ _ ih1 _ _ =>
+  | inl _ h ih =>
     intro Γ A ce ρc helab henv_val henv
     cases helab with
-    | eapp ha _ =>
-      obtain ⟨fc, _, hEVf⟩ := ih1 ha henv_val henv
+    | einl ha =>
+      obtain ⟨vc, hrun, hEV⟩ := ih ha henv_val henv
+      exact ⟨_, mstep_inl (eval_value henv) hrun, EVal.inl hEV⟩
+  | inr _ h ih =>
+    intro Γ A ce ρc helab henv_val henv
+    cases helab with
+    | einr ha =>
+      obtain ⟨vc, hrun, hEV⟩ := ih ha henv_val henv
+      exact ⟨_, mstep_inr (eval_value henv) hrun, EVal.inr hEV⟩
+  | case_inl _ h1 h2 ih1 ih2 =>
+    intro Γ A ce ρc helab henv_val henv
+    cases helab with
+    | ecase ha hb₁ hb₂ hd₁ hd₂ =>
+      obtain ⟨sc, hrs, hEVs⟩ := ih1 ha henv_val henv
+      cases hEVs with
+      | inl hEVp =>
+        obtain ⟨bc, hrb, hEVb⟩ := ih2 hb₁
+          (SCE.Value.vmrg henv_val (eval_value_src hEVp)) (EVal.mrg henv hEVp hd₁)
+        have hvm : Value (.mrg ρc _) := Value.vmrg (eval_value henv) (eval_value hEVp)
+        exact ⟨bc,
+          mstep_trans (mstep_case (eval_value henv) hrs)
+            (MStep.step (Step.scasel (eval_value henv) (eval_value hEVp))
+              (mstep_trans (mstep_boxr (eval_value henv) hvm hrb)
+                (mstep_one (Step.sboxv (eval_value henv) hvm (eval_value hEVb))))),
+          hEVb⟩
+      | gen htl _ _ => simp only [sealTyp] at htl; nomatch htl
+  | case_inr _ h1 h2 ih1 ih2 =>
+    intro Γ A ce ρc helab henv_val henv
+    cases helab with
+    | ecase ha hb₁ hb₂ hd₁ hd₂ =>
+      obtain ⟨sc, hrs, hEVs⟩ := ih1 ha henv_val henv
+      cases hEVs with
+      | inr hEVp =>
+        obtain ⟨bc, hrb, hEVb⟩ := ih2 hb₂
+          (SCE.Value.vmrg henv_val (eval_value_src hEVp)) (EVal.mrg henv hEVp hd₂)
+        have hvm : Value (.mrg ρc _) := Value.vmrg (eval_value henv) (eval_value hEVp)
+        exact ⟨bc,
+          mstep_trans (mstep_case (eval_value henv) hrs)
+            (MStep.step (Step.scaser (eval_value henv) (eval_value hEVp))
+              (mstep_trans (mstep_boxr (eval_value henv) hvm hrb)
+                (mstep_one (Step.sboxv (eval_value henv) hvm (eval_value hEVb))))),
+          hEVb⟩
+      | gen htl _ _ => simp only [sealTyp] at htl; nomatch htl
+  | fclos_val _ hval =>
+    intro Γ A ce ρc helab henv_val henv
+    cases helab with
+    | efclos hval' h₁ h₂ hd₁ hd₂ =>
+      exact ⟨_, MStep.refl, EVal.fclos hval' (elab_eval h₁ hval') h₂ hd₁ hd₂⟩
+  | flam _ =>
+    intro Γ A ce ρc helab henv_val henv
+    cases helab with
+    | eflam hbody hd₁ hd₂ =>
+      exact ⟨_, mstep_one (Step.sflam (eval_value henv)),
+        EVal.fclos henv_val henv hbody hd₁ hd₂⟩
+  | app_fclos _ h1 h2 h3 ih1 ih2 ih3 =>
+    intro Γ A ce ρc helab henv_val henv
+    cases helab with
+    | eapp ha hb =>
+      obtain ⟨fc, hrf, hEVf⟩ := ih1 ha henv_val henv
+      obtain ⟨ac, hra, hEVa⟩ := ih2 hb henv_val henv
+      have harg_v := eval_produces_value henv_val h2
       cases hEVf with
-      | gen _ _ hw => nomatch hw
-  | fold _ _ _ =>
-    intro Γ A ce ρc helab _ _
-    nomatch helab
-  | unfold _ _ _ =>
-    intro Γ A ce ρc helab _ _
-    nomatch helab
+      | fclos hρ₁ hEVenv hbody hd₁ hd₂ =>
+        obtain ⟨ac', hca, hEVa'⟩ := eval_cast_ex hEVa
+        obtain ⟨bc, hrb, hEVb⟩ := ih3 hbody
+          (SCE.Value.vmrg (SCE.Value.vmrg hρ₁ (SCE.Value.vfclos hρ₁)) harg_v)
+          (EVal.mrg (EVal.mrg hEVenv (EVal.fclos hρ₁ hEVenv hbody hd₁ hd₂) hd₁) hEVa' hd₂)
+        obtain ⟨rc, hcr, hEVr⟩ := eval_cast_ex hEVb
+        exact ⟨rc, mstep_trans (mstep_appl (eval_value henv) hrf)
+          (mstep_trans
+            (mstep_appr (eval_value henv) (Value.vfclos (eval_value hEVenv)) hra)
+            (fbeta_mstep (eval_value henv) (eval_value hEVenv) (eval_value hEVa) hca hrb
+              (eval_value hEVb) hcr)), hEVr⟩
+      | gen htl hv hw =>
+        simp only [sealTyp] at htl
+        cases htl with
+        | tlarr hB' =>
+          obtain ⟨ac', hca, _⟩ := eval_cast_ex hEVa
+          obtain ⟨g', hcg⟩ := cast_progress (genVal_value _)
+            (genVal_typed (Δ := sealStore Δ) hB' .top) (sub_refl _)
+          have hg' := (toplike_gen_cast hB' hcg).1
+          cases hw with
+          | efclos hval₁ hw₁ hw₂ hdw₁ hdw₂ =>
+            obtain ⟨wa, hwa⟩ := eval_elab hEVa
+            obtain ⟨bc', _, hEVb'⟩ := ih3 hw₂
+              (SCE.Value.vmrg (SCE.Value.vmrg hval₁ (SCE.Value.vfclos hval₁)) harg_v)
+              (EVal.mrg
+                (EVal.mrg (elab_eval hw₁ hval₁)
+                  (elab_eval (elabSeal.efclos (ctx := .top) hval₁ hw₁ hw₂ hdw₁ hdw₂)
+                    (SCE.Value.vfclos hval₁)) hdw₁)
+                (elab_eval hwa harg_v) hdw₂)
+            obtain ⟨wv, hwv⟩ := eval_elab hEVb'
+            refine ⟨g', mstep_trans (mstep_appl (eval_value henv) hrf)
+              (mstep_trans (mstep_appr (eval_value henv) (genVal_value _) hra)
+                (beta_mstep (eval_value henv) Value.vunit (eval_value hEVa) hca
+                  MStep.refl (genVal_value _) hcg)), ?_⟩
+            rw [hg']
+            exact EVal.gen hB'
+              (eval_produces_value
+                (SCE.Value.vmrg (SCE.Value.vmrg hval₁ (SCE.Value.vfclos hval₁)) harg_v) h3)
+              hwv
+  | fold _ h ih =>
+    intro Γ A ce ρc helab henv_val henv
+    cases helab with
+    | efold ha =>
+      obtain ⟨vc, hrun, hEV⟩ := ih ha henv_val henv
+      exact ⟨_, mstep_fold (eval_value henv) hrun, EVal.fold hEV⟩
+  | unfold _ h ih =>
+    intro Γ A ce ρc helab henv_val henv
+    cases helab with
+    | eunfold ha heq =>
+      subst heq
+      obtain ⟨vc, hrun, hEV⟩ := ih ha henv_val henv
+      cases hEV with
+      | fold hEVp =>
+        exact ⟨_, mstep_trans (mstep_unfold (eval_value henv) hrun)
+          (mstep_one (Step.sunfoldv (eval_value henv) (eval_value hEVp))), hEVp⟩
+      | gen htl _ _ => simp only [sealTyp] at htl; nomatch htl
   -- Sealing forms: branded values are values (evaluate to themselves); the coercions
   -- run the operand and then simulate the source coercion by the target one.
   | wrap _ h _ =>
@@ -1420,43 +1622,52 @@ theorem wireArgSeal_finitary {ctx : Seal.Typ} {ce₁ : Seal.Exp} (hce : Finitary
     | brand _ => exact Finitary.unit
 
 theorem elabSeal_finitary {Γ : SCE.Typ} {e : SCE.Exp} {A : SCE.Typ} {ce : Seal.Exp}
-    (h : elabSeal Δ Γ e A ce) : Finitary ce := by
+    (h : elabSeal Δ Γ e A ce) (hsf : SCE.SFinitary e) : Finitary ce := by
   induction h with
   | equery => exact Finitary.query
   | elit _ _ => exact Finitary.lit
   | eunit _ => exact Finitary.unit
-  | eapp _ _ ih₁ ih₂ => exact Finitary.app ih₁ ih₂
-  | eproj _ _ ih => exact Finitary.proj ih
-  | ebox _ _ ih₁ ih₂ => exact Finitary.box ih₁ ih₂
-  | edmrg _ _ _ _ ih₁ ih₂ => exact Finitary.mrg ih₁ ih₂
-  | evmrg _ _ _ _ _ ih₁ ih₂ => exact Finitary.mrg ih₁ ih₂
+  | eapp _ _ ih₁ ih₂ => exact Finitary.app (ih₁ hsf.1) (ih₂ hsf.2)
+  | eproj _ _ ih => exact Finitary.proj (ih hsf)
+  | ebox _ _ ih₁ ih₂ => exact Finitary.box (ih₁ hsf.1) (ih₂ hsf.2)
+  | edmrg _ _ _ _ ih₁ ih₂ => exact Finitary.mrg (ih₁ hsf.1) (ih₂ hsf.2)
+  | evmrg _ _ _ _ _ ih₁ ih₂ => exact Finitary.mrg (ih₁ hsf.1) (ih₂ hsf.2)
   | enmrg _ _ _ _ ih₁ ih₂ =>
-    exact Finitary.mrg ih₁ (Finitary.box (Finitary.anno Finitary.query) ih₂)
-  | elam _ _ ih => exact Finitary.lam ih
-  | erproj _ _ ih => exact Finitary.rproj ih
-  | eclos _ _ _ _ ih₁ ih₂ => exact Finitary.clos ih₁ ih₂
-  | elrec _ ih => exact Finitary.lrec ih
-  | eletb _ _ _ ih₁ ih₂ => exact Finitary.app (Finitary.lam ih₂) ih₁
-  | eopenm _ _ _ ih₁ ih₂ => exact Finitary.app (Finitary.lam ih₂) (Finitary.rproj ih₁)
+    exact Finitary.mrg (ih₁ hsf.1) (Finitary.box (Finitary.anno Finitary.query) (ih₂ hsf.2))
+  | elam _ _ ih => exact Finitary.lam (ih hsf)
+  | erproj _ _ ih => exact Finitary.rproj (ih hsf)
+  | eclos _ _ _ _ ih₁ ih₂ => exact Finitary.clos (ih₁ hsf.1) (ih₂ hsf.2)
+  | elrec _ ih => exact Finitary.lrec (ih hsf)
+  | eletb _ _ _ ih₁ ih₂ => exact Finitary.app (Finitary.lam (ih₂ hsf.2)) (ih₁ hsf.1)
+  | eopenm _ _ _ ih₁ ih₂ =>
+    exact Finitary.app (Finitary.lam (ih₂ hsf.2)) (Finitary.rproj (ih₁ hsf.1))
   | @emstruct _ _ _ sb _ _ _ _ _ ih =>
     cases sb with
-    | sandboxed => exact Finitary.box Finitary.unit ih
-    | open_ => exact Finitary.box Finitary.query ih
+    | sandboxed => exact Finitary.box Finitary.unit (ih hsf)
+    | open_ => exact Finitary.box Finitary.query (ih hsf)
   | @emfunctor _ _ _ _ sb _ _ _ _ _ _ ih =>
     cases sb with
-    | sandboxed => exact Finitary.box Finitary.unit (Finitary.lam ih)
-    | open_ => exact Finitary.lam ih
-  | emclos _ _ _ _ ih₁ ih₂ => exact Finitary.clos ih₁ ih₂
-  | emapp _ _ ih₁ ih₂ => exact Finitary.app ih₁ ih₂
+    | sandboxed => exact Finitary.box Finitary.unit (Finitary.lam (ih hsf))
+    | open_ => exact Finitary.lam (ih hsf)
+  | emclos _ _ _ _ ih₁ ih₂ => exact Finitary.clos (ih₁ hsf.1) (ih₂ hsf.2)
+  | emapp _ _ ih₁ ih₂ => exact Finitary.app (ih₁ hsf.1) (ih₂ hsf.2)
   | emlink _ _ _ _ _ ih₁ ih₂ =>
-    exact Finitary.mrg ih₁ (Finitary.box (Finitary.anno Finitary.query)
-      (Finitary.app ih₂ (Finitary.lrec (Finitary.rproj ih₁))))
+    exact Finitary.mrg (ih₁ hsf.1) (Finitary.box (Finitary.anno Finitary.query)
+      (Finitary.app (ih₂ hsf.2) (Finitary.lrec (Finitary.rproj (ih₁ hsf.1)))))
   | emlinkn _ _ _ _ _ ih₁ ih₂ =>
-    exact Finitary.mrg ih₁ (Finitary.box (Finitary.anno Finitary.query)
-      (Finitary.app ih₂ (wireArgSeal_finitary ih₁ _)))
-  | ewrap _ _ _ ih => exact Finitary.wrap ih
-  | emseal _ _ _ _ ih => exact Finitary.seal ih
-  | emunseal _ _ _ _ _ ih => exact Finitary.unseal ih
+    exact Finitary.mrg (ih₁ hsf.1) (Finitary.box (Finitary.anno Finitary.query)
+      (Finitary.app (ih₂ hsf.2) (wireArgSeal_finitary (ih₁ hsf.1) _)))
+  | ewrap _ _ _ ih => exact Finitary.wrap (ih hsf)
+  | emseal _ _ _ _ ih => exact Finitary.seal (ih hsf)
+  | emunseal _ _ _ _ _ ih => exact Finitary.unseal (ih hsf)
+  | einl _ ih => exact Finitary.inl (ih hsf)
+  | einr _ ih => exact Finitary.inr (ih hsf)
+  | ecase _ _ _ _ _ ih ih₁ ih₂ =>
+    exact Finitary.case (ih hsf.1) (ih₁ hsf.2.1) (ih₂ hsf.2.2)
+  | eflam _ _ _ _ => exact hsf.elim
+  | efclos _ _ _ _ _ _ _ => exact hsf.elim
+  | efold _ _ => exact hsf.elim
+  | eunfold _ _ _ => exact hsf.elim
 
 -- Source-level representation independence.  Two source providers p₁, p₂ of a signature
 -- S with abstract type α_n, over representations R₁, R₂, whose elaborations are related
@@ -1475,13 +1686,15 @@ theorem source_representation_independence
     (hrel : LRg (sealStore Δ₁) (sealStore Δ₂) η (some (n, sealTyp R₁, sealTyp R₂))
       (sealTyp S) pc₁ pc₂)
     {c : SCE.Exp} {cc : Seal.Exp} (hc : elabSeal SCE.noBrands S c .int cc)
+    (hsf : SCE.SFinitary c)
     {v₁ v₂ : SCE.Exp}
     (hev₁ : S_Sem.BStep .unit (.box (.mseal n R₁ S p₁) c) v₁)
     (hev₂ : S_Sem.BStep .unit (.box (.mseal n R₂ S p₂) c) v₂)
     : ∃ i, v₁ = .lit i ∧ v₂ = .lit i := by
   -- the client types with every brand opaque
   have hcl : HasType noBrands (sealTyp S) cc .int := seal_type_preservation hc
-  obtain ⟨i, r₁, r₂⟩ := representation_independence hb hwf₁ hwf₂ hrel hcl (elabSeal_finitary hc)
+  obtain ⟨i, r₁, r₂⟩ :=
+    representation_independence hb hwf₁ hwf₂ hrel hcl (elabSeal_finitary hc hsf)
   -- the two sealed programs elaborate and are simulated
   have helab₁ : elabSeal Δ₁ .top (.box (.mseal n R₁ S p₁) c) .int
       (.box (.seal n (sealTyp R₁) (sealTyp S) pc₁) cc) :=

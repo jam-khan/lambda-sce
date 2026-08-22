@@ -384,7 +384,8 @@ example {v₁ v₂ : SCE.Exp}
     (h₂ : S_Sem.BStep .unit (.box (.mseal 0 sR₂ sSig sImpl₂) sClient) v₂)
     : ∃ i, v₁ = .lit i ∧ v₂ = .lit i :=
   source_representation_independence openbrand_src rfl rfl wfsig_ex₁ wfsig_ex₂
-    sImpl₁_elab sImpl₂_elab impl_related sClient_elab h₁ h₂
+    sImpl₁_elab sImpl₂_elab impl_related sClient_elab
+    (by simp [sClient, SCE.SFinitary]) h₁ h₂
 
 end RIExample
 

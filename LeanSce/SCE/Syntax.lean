@@ -192,4 +192,40 @@ inductive LinkOk : Typ → Typ → Prop where
     → SRLookup Γ₁ l A
     → LinkOk Γ₁ (.and D (.rcd l A))
 
+-- The source normalizing fragment: no fixpoints, no iso-recursive folds.  This is the
+-- source-side mirror of Seal.Finitary; elaboration maps it into the target fragment
+-- (Seal/Correctness.lean: elabSeal_finitary), which is what the relational results
+-- (sealing, representation independence) are stated over.
+def SFinitary : Exp → Prop
+  | .query => True
+  | .proj e _ => SFinitary e
+  | .lit _ => True
+  | .unit => True
+  | .lam _ e => SFinitary e
+  | .box e₁ e₂ => SFinitary e₁ ∧ SFinitary e₂
+  | .clos v _ e => SFinitary v ∧ SFinitary e
+  | .app e₁ e₂ => SFinitary e₁ ∧ SFinitary e₂
+  | .mrg e₁ e₂ => SFinitary e₁ ∧ SFinitary e₂
+  | .lrec _ e => SFinitary e
+  | .rproj e _ => SFinitary e
+  | .mstruct _ e => SFinitary e
+  | .mfunctor _ _ e => SFinitary e
+  | .mclos v _ e => SFinitary v ∧ SFinitary e
+  | .mlink e₁ e₂ => SFinitary e₁ ∧ SFinitary e₂
+  | .mapp e₁ e₂ => SFinitary e₁ ∧ SFinitary e₂
+  | .nmrg e₁ e₂ => SFinitary e₁ ∧ SFinitary e₂
+  | .letb e₁ e₂ => SFinitary e₁ ∧ SFinitary e₂
+  | .openm e₁ e₂ => SFinitary e₁ ∧ SFinitary e₂
+  | .mlinkn e₁ e₂ => SFinitary e₁ ∧ SFinitary e₂
+  | .inl _ e => SFinitary e
+  | .inr _ e => SFinitary e
+  | .case e e₁ e₂ => SFinitary e ∧ SFinitary e₁ ∧ SFinitary e₂
+  | .flam _ _ _ => False
+  | .fclos _ _ _ _ => False
+  | .fold _ _ => False
+  | .unfold _ => False
+  | .wrap _ e => SFinitary e
+  | .mseal _ _ _ e => SFinitary e
+  | .munseal _ _ _ e => SFinitary e
+
 end SCE

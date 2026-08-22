@@ -39,11 +39,11 @@ def sealTyp : SCE.Typ → Seal.Typ
   | .top       => .top
   | .arr A B   => .arr (sealTyp A) (sealTyp B)
   | .and A B   => .and (sealTyp A) (sealTyp B)
-  | .or _ _    => .top
+  | .or A B    => .or (sealTyp A) (sealTyp B)
   | .rcd l A   => .rcd l (sealTyp A)
   | .sig mt    => sealModTyp mt
-  | .var _     => .top
-  | .mu _      => .top
+  | .var n     => .var n
+  | .mu T      => .mu (sealTyp T)
   | .brand n   => .brand n
 
 @[simp]
@@ -81,12 +81,15 @@ theorem sealTyp_substBrand (n : Nat) (R : SCE.Typ) : (S : SCE.Typ)
   | .and A B => by
     simp only [SCE.substBrand, sealTyp, Seal.substBrand,
       sealTyp_substBrand n R A, sealTyp_substBrand n R B]
-  | .or _ _ => rfl
+  | .or A B => by
+    simp only [SCE.substBrand, sealTyp, Seal.substBrand,
+      sealTyp_substBrand n R A, sealTyp_substBrand n R B]
   | .rcd l A => by
     simp only [SCE.substBrand, sealTyp, Seal.substBrand, sealTyp_substBrand n R A]
   | .sig mt => sealModTyp_substBrand n R mt
   | .var _ => rfl
-  | .mu _ => rfl
+  | .mu T => by
+    simp only [SCE.substBrand, sealTyp, Seal.substBrand, sealTyp_substBrand n R T]
   | .brand m => by
     simp only [SCE.substBrand, sealTyp, Seal.substBrand]
     split <;> rfl
@@ -97,6 +100,40 @@ theorem sealModTyp_substBrand (n : Nat) (R : SCE.Typ) : (mt : SCE.ModTyp)
   | .TyArrM T mt => by
     simp only [SCE.substBrandModTyp, sealModTyp, Seal.substBrand,
       sealTyp_substBrand n R T, sealModTyp_substBrand n R mt]
+end
+
+-- sealTyp commutes with the μ-unfolding substitution (what efold/eunfold's type
+-- preservation needs).
+mutual
+theorem sealTyp_substTyp (d : Nat) (S : SCE.Typ) : (T : SCE.Typ)
+    → sealTyp (SCE.substTyp d S T) = Seal.substTyp d (sealTyp S) (sealTyp T)
+  | .int => rfl
+  | .top => rfl
+  | .arr A B => by
+    simp only [SCE.substTyp, sealTyp, Seal.substTyp,
+      sealTyp_substTyp d S A, sealTyp_substTyp d S B]
+  | .and A B => by
+    simp only [SCE.substTyp, sealTyp, Seal.substTyp,
+      sealTyp_substTyp d S A, sealTyp_substTyp d S B]
+  | .or A B => by
+    simp only [SCE.substTyp, sealTyp, Seal.substTyp,
+      sealTyp_substTyp d S A, sealTyp_substTyp d S B]
+  | .rcd l A => by
+    simp only [SCE.substTyp, sealTyp, Seal.substTyp, sealTyp_substTyp d S A]
+  | .sig mt => by
+    simp only [SCE.substTyp, sealTyp, sealModTyp_substTyp d S mt]
+  | .var m => by
+    by_cases h : m = d <;> simp [SCE.substTyp, sealTyp, Seal.substTyp, h]
+  | .mu T => by
+    simp only [SCE.substTyp, sealTyp, Seal.substTyp, sealTyp_substTyp (d + 1) S T]
+  | .brand _ => rfl
+
+theorem sealModTyp_substTyp (d : Nat) (S : SCE.Typ) : (mt : SCE.ModTyp)
+    → sealModTyp (SCE.substModTyp d S mt) = Seal.substTyp d (sealTyp S) (sealModTyp mt)
+  | .TyIntf T => sealTyp_substTyp d S T
+  | .TyArrM T mt => by
+    simp only [SCE.substModTyp, sealModTyp, Seal.substTyp,
+      sealTyp_substTyp d S T, sealModTyp_substTyp d S mt]
 end
 
 -- ── Transport of the lookup judgments along sealTyp ──────────────────────────────────
@@ -247,6 +284,43 @@ inductive elabSeal (Δ : SCE.BrandStore) : SCE.Typ → SCE.Exp → SCE.Typ → S
     → Seal.Disj (sealTyp ctx) (sealTyp A)
     → elabSeal Δ ctx (.openm se₁ se₂) B
         (.app (.lam (sealTyp A) (sealTyp B) ce₂) (.rproj ce₁ l))
+  -- unions: injections are free; case extends the context per branch, hence the Disj
+  -- premises on the sealTyp images
+  | einl {ctx A B : SCE.Typ} {se : SCE.Exp} {ce : Seal.Exp}
+    : elabSeal Δ ctx se A ce
+    → elabSeal Δ ctx (.inl B se) (.or A B) (.inl (sealTyp B) ce)
+  | einr {ctx A B : SCE.Typ} {se : SCE.Exp} {ce : Seal.Exp}
+    : elabSeal Δ ctx se B ce
+    → elabSeal Δ ctx (.inr A se) (.or A B) (.inr (sealTyp A) ce)
+  | ecase {ctx A B C : SCE.Typ} {se se₁ se₂ : SCE.Exp} {ce ce₁ ce₂ : Seal.Exp}
+    : elabSeal Δ ctx se (.or A B) ce
+    → elabSeal Δ (.and ctx A) se₁ C ce₁
+    → elabSeal Δ (.and ctx B) se₂ C ce₂
+    → Seal.Disj (sealTyp ctx) (sealTyp A)
+    → Seal.Disj (sealTyp ctx) (sealTyp B)
+    → elabSeal Δ ctx (.case se se₁ se₂) C (.case ce ce₁ ce₂)
+  -- fixpoints: the body extends the context twice (self, then argument)
+  | eflam {ctx A B : SCE.Typ} {se : SCE.Exp} {ce : Seal.Exp}
+    : elabSeal Δ (.and (.and ctx (.arr A B)) A) se B ce
+    → Seal.Disj (sealTyp ctx) (.arr (sealTyp A) (sealTyp B))
+    → Seal.Disj (.and (sealTyp ctx) (.arr (sealTyp A) (sealTyp B))) (sealTyp A)
+    → elabSeal Δ ctx (.flam A B se) (.arr A B) (.flam (sealTyp A) (sealTyp B) ce)
+  | efclos {ctx ctx' A B : SCE.Typ} {se₁ se₂ : SCE.Exp} {ce₁ ce₂ : Seal.Exp}
+    : SCE.Value se₁
+    → elabSeal Δ .top se₁ ctx' ce₁
+    → elabSeal Δ (.and (.and ctx' (.arr A B)) A) se₂ B ce₂
+    → Seal.Disj (sealTyp ctx') (.arr (sealTyp A) (sealTyp B))
+    → Seal.Disj (.and (sealTyp ctx') (.arr (sealTyp A) (sealTyp B))) (sealTyp A)
+    → elabSeal Δ ctx (.fclos se₁ A B se₂) (.arr A B)
+        (.fclos ce₁ (sealTyp A) (sealTyp B) (sealTyp B) ce₂)
+  -- iso-recursive types: one-to-one; eunfold's result type is equation-guarded
+  | efold {ctx T : SCE.Typ} {se : SCE.Exp} {ce : Seal.Exp}
+    : elabSeal Δ ctx se (SCE.substTyp 0 (.mu T) T) ce
+    → elabSeal Δ ctx (.fold T se) (.mu T) (.fold (sealTyp T) ce)
+  | eunfold {ctx T A : SCE.Typ} {se : SCE.Exp} {ce : Seal.Exp}
+    : elabSeal Δ ctx se (.mu T) ce
+    → A = SCE.substTyp 0 (.mu T) T
+    → elabSeal Δ ctx (.unfold se) A (.unfold ce)
   | emstruct {ctx ctxInner B : SCE.Typ} {sb : SCE.Sandbox} {se : SCE.Exp} {ce : Seal.Exp}
     : (sb = .sandboxed → ctxInner = .top)
     → (sb = .open_ → ctxInner = ctx)
@@ -359,6 +433,14 @@ theorem elabSeal_value {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce : Seal.Ex
   | ewrap _ hv' _ ih => exact Value.vwrap (ih hv')
   | emseal _ _ _ _ _ => nomatch hv
   | emunseal _ _ _ _ _ _ => nomatch hv
+  | einl _ ih => cases hv with | vinl hv' => exact Value.vinl (ih hv')
+  | einr _ ih => cases hv with | vinr hv' => exact Value.vinr (ih hv')
+  | ecase _ _ _ _ _ _ _ _ => nomatch hv
+  | eflam _ _ _ _ => nomatch hv
+  | efclos hval _ _ _ _ ih₁ _ =>
+    cases hv with | vfclos _ => exact Value.vfclos (ih₁ hval)
+  | efold _ ih => cases hv with | vfold hv' => exact Value.vfold (ih hv')
+  | eunfold _ _ _ => nomatch hv
 
 -- ── Store weakening: an elaboration derivation survives extending the store ──────────
 
@@ -393,6 +475,13 @@ theorem elabSeal_weaken_store {Δ' : SCE.BrandStore} (hle : SCE.StoreLe Δ Δ')
   | ewrap hΔ hv _ ih => exact elabSeal.ewrap (hle _ _ hΔ) hv ih
   | emseal hΔ hnr hwf _ ih => exact elabSeal.emseal (hle _ _ hΔ) hnr hwf ih
   | emunseal hΔ hnr hwf _ heq ih => exact elabSeal.emunseal (hle _ _ hΔ) hnr hwf ih heq
+  | einl _ ih => exact elabSeal.einl ih
+  | einr _ ih => exact elabSeal.einr ih
+  | ecase _ _ _ hd₁ hd₂ ih ih₁ ih₂ => exact elabSeal.ecase ih ih₁ ih₂ hd₁ hd₂
+  | eflam _ hd₁ hd₂ ih => exact elabSeal.eflam ih hd₁ hd₂
+  | efclos hv _ _ hd₁ hd₂ ih₁ ih₂ => exact elabSeal.efclos hv ih₁ ih₂ hd₁ hd₂
+  | efold _ ih => exact elabSeal.efold ih
+  | eunfold _ heq ih => exact elabSeal.eunfold ih heq
 
 -- ── Type preservation: elaborated code is well-typed λE^≤ ────────────────────────────
 
@@ -462,5 +551,23 @@ theorem seal_type_preservation {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce :
   | emunseal hΔ hnr hwf _ heq ih =>
     subst heq
     exact HasType.tunseal (sealStore_some hΔ) hnr hwf ih (sealTyp_substBrand _ _ _)
+  | einl _ ih =>
+    exact HasType.tinl ih
+  | einr _ ih =>
+    exact HasType.tinr ih
+  | ecase _ _ _ hd₁ hd₂ ih ih₁ ih₂ =>
+    exact HasType.tcase ih hd₁ hd₂ ih₁ ih₂
+  | eflam _ hd₁ hd₂ ih =>
+    exact HasType.tflam hd₁ hd₂ ih
+  | efclos hv h₁ _ hd₁ hd₂ ih₁ ih₂ =>
+    exact HasType.tfclos (elabSeal_value h₁ hv) ih₁ hd₁ hd₂ ih₂ (sub_refl _) (sub_refl _)
+      (sub_refl _)
+  | efold _ ih =>
+    rw [sealTyp_substTyp] at ih
+    exact HasType.tfold ih
+  | eunfold _ heq ih =>
+    subst heq
+    rw [sealTyp_substTyp]
+    exact HasType.tunfold ih rfl
 
 end Seal

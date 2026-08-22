@@ -367,6 +367,18 @@ theorem mstep_case {v e e' e₁ e₂ : Exp} (hv : Value v) (h : MStep v e e')
   | refl => exact MStep.refl
   | step hs _ ih => exact MStep.step (Step.scase hv hs) ih
 
+theorem mstep_fold {v e e' : Exp} {T : Typ} (hv : Value v) (h : MStep v e e')
+    : MStep v (.fold T e) (.fold T e') := by
+  induction h with
+  | refl => exact MStep.refl
+  | step hs _ ih => exact MStep.step (Step.sfold hv hs) ih
+
+theorem mstep_unfold {v e e' : Exp} (hv : Value v) (h : MStep v e e')
+    : MStep v (.unfold e) (.unfold e') := by
+  induction h with
+  | refl => exact MStep.refl
+  | step hs _ ih => exact MStep.step (Step.sunfold hv hs) ih
+
 -- ── Run inversions (for the surgery inside cast_lr's arrow case) ─────────────────────
 
 -- The first step of a terminating run of an application of values is beta.
