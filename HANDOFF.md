@@ -6,7 +6,10 @@ The 4-phase plan lives at `~/.claude/plans/read-through-the-mech-majestic-ritchi
 (full rationale, costing of F_E-style polymorphism, sepcomp obligations for brand
 polymorphism, motivating example).  This file is the execution log + precise next steps.
 
-Everything below is committed on `main` and green: `lake build` succeeds (60 jobs),
+**ALL WORK LIVES ON `lambdae-sub` — `main` mirrors `origin/main` and must stay
+clean/untouched until the user says otherwise.**
+
+Everything below is committed on `lambdae-sub` and green: `lake build` succeeds (60 jobs),
 **zero `sorry`, only standard axioms** (the flagship
 `Seal.source_representation_independence` still uses `propext` only; the ported
 determinism/preservation results use at most `propext, Quot.sound`; nothing uses
@@ -24,8 +27,10 @@ are empty.
 ## 1. DONE
 
 ### Phase 0 — branch unification ✅ (session 1)
-`main` and `lambdae-sub` merged; work continues on `main`.  Commits `13a5907`,
-`d357355`, `c67ffbb`.
+`main` and `lambdae-sub` merged so they share history.  Commits `13a5907`,
+`d357355`, `c67ffbb`.  (Session 2 initially continued on `main` by mistake; all
+34 unpushed commits were moved to `lambdae-sub` and local `main` was reset to
+`origin/main`.  **Work on `lambdae-sub` only.**)
 
 ### Phase 1 — fix/unions/μ in λE^≤ + retargeted elaboration ✅ (session 1)
 Commits `da5407a` (fixpoints, two-annotation fclos design), `0097e35` (unions,
