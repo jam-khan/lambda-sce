@@ -119,14 +119,14 @@ inductive SStep : Exp → Exp → Exp → Prop where
     → Value v1
     → Value v2
     → SStep v (.nmrg v1 v2) (.mrg v1 v2)
-  | ssletbl {v e1 e1' e2 A}
+  | ssletbl {v e1 e1' e2}
     : Value v
     → SStep v e1 e1'
-    → SStep v (.letb e1 A e2) (.letb e1' A e2)
-  | ssletbv {v v1 A e2}
+    → SStep v (.letb e1 e2) (.letb e1' e2)
+  | ssletbv {v v1 e2}
     : Value v
     → Value v1
-    → SStep v (.letb v1 A e2) (.box (.mrg v v1) e2)
+    → SStep v (.letb v1 e2) (.box (.mrg v v1) e2)
   | ssmlinkl {v e1 e1' e2}
     : Value v
     → SStep v e1 e1'

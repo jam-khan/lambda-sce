@@ -67,7 +67,7 @@ inductive Exp where
   | mapp : Exp → Exp → Exp
   -- more terms
   | nmrg  : Exp → Exp → Exp
-  | letb  : Exp → Typ → Exp → Exp
+  | letb  : Exp → Exp → Exp
   | openm : Exp → Exp → Exp
   -- n-ary linking: satisfy every labeled import of a functor at once
   | mlinkn : Exp → Exp → Exp
