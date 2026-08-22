@@ -827,6 +827,55 @@ theorem eval_sealv {n : Nat} {R S : SCE.Typ} {v w : SCE.Exp}
             (SCE.SRLookup.zero _ _))
           (elabSeal.emunseal hΔ hnr hwfA (elabSeal.eproj elabSeal.equery (SCE.SLookup.zero _ _))
             rfl))
+  | @sig A B c =>
+    intro vc hΔ hnr hwf h
+    simp only [SCE.substBrand, SCE.substBrandModTyp] at h
+    cases hwf with
+    | arr hwfA hwfB =>
+      refine ⟨_, SealV.arr, ?_⟩
+      refine EVal.mclos (SCE.Value.vmrg SCE.Value.vunit (SCE.Value.vlrec (eval_value_src h)))
+        (EVal.mrg EVal.unit (EVal.rcd h) disj_top) ?_ (disj_proxyEnv (wfsig_nores hwfA))
+      exact elabSeal.emseal hΔ hnr hwfB
+        (elabSeal.emapp
+          (elabSeal.erproj
+            (elabSeal.eproj elabSeal.equery (SCE.SLookup.succ _ _ _ _ (SCE.SLookup.zero _ _)))
+            (SCE.SRLookup.zero _ _))
+          (elabSeal.emunseal hΔ hnr hwfA (elabSeal.eproj elabSeal.equery (SCE.SLookup.zero _ _))
+            rfl))
+  | @inl A B v w _ ih =>
+    intro vc hΔ hnr hwf h
+    cases hwf with
+    | or hwfA hwfB =>
+      simp only [SCE.substBrand] at h
+      cases h with
+      | inl h' =>
+        obtain ⟨wc, hs', he⟩ := ih hΔ hnr hwfA h'
+        refine ⟨_, ?_, EVal.inl he⟩
+        rw [sealTyp_substBrand n R B]
+        exact SealV.inl hs'
+      | gen htl _ _ => nomatch htl
+  | @inr A B v w _ ih =>
+    intro vc hΔ hnr hwf h
+    cases hwf with
+    | or hwfA hwfB =>
+      simp only [SCE.substBrand] at h
+      cases h with
+      | inr h' =>
+        obtain ⟨wc, hs', he⟩ := ih hΔ hnr hwfB h'
+        refine ⟨_, ?_, EVal.inr he⟩
+        rw [sealTyp_substBrand n R A]
+        exact SealV.inr hs'
+      | gen htl _ _ => nomatch htl
+  | var =>
+    intro vc _ _ _ h
+    cases h with
+    | gen htl _ _ => nomatch htl
+  | @mu T v =>
+    intro vc hΔ hnr hwf h
+    cases hwf with
+    | mu hnin _ =>
+      rw [sce_substBrand_notin hnin] at h
+      exact ⟨_, SealV.mu, h⟩
 
 -- The converse: source `SUnsealV` is simulated by target `UnsealV`.
 theorem eval_unsealv {n : Nat} {R S : SCE.Typ} {v w : SCE.Exp}
@@ -924,6 +973,59 @@ theorem eval_unsealv {n : Nat} {R S : SCE.Typ} {v w : SCE.Exp}
           rfl
       · rw [sealTyp_substBrand]
         exact disj_proxyEnv (nores_subst hnr (wfsig_nores hwfA))
+  | @sig A B c =>
+    intro vc hΔ hnr hwf h
+    cases hwf with
+    | arr hwfA hwfB =>
+      refine ⟨_, UnsealV.arr, ?_⟩
+      simp only [sealTyp, sealModTyp]
+      rw [← sealTyp_substBrand n R A, ← sealTyp_substBrand n R B]
+      simp only [SCE.substBrand, SCE.substBrandModTyp]
+      refine EVal.mclos (SCE.Value.vmrg SCE.Value.vunit (SCE.Value.vlrec (eval_value_src h)))
+        (EVal.mrg EVal.unit (EVal.rcd h) disj_top) ?_ ?_
+      · exact elabSeal.emunseal hΔ hnr hwfB
+          (elabSeal.emapp
+            (elabSeal.erproj
+              (elabSeal.eproj elabSeal.equery (SCE.SLookup.succ _ _ _ _ (SCE.SLookup.zero _ _)))
+              (SCE.SRLookup.zero _ _))
+            (elabSeal.emseal hΔ hnr hwfA (elabSeal.eproj elabSeal.equery (SCE.SLookup.zero _ _))))
+          rfl
+      · rw [sealTyp_substBrand]
+        exact disj_proxyEnv (nores_subst hnr (wfsig_nores hwfA))
+  | @inl A B v w _ ih =>
+    intro vc hΔ hnr hwf h
+    cases hwf with
+    | or hwfA hwfB =>
+      cases h with
+      | inl h' =>
+        obtain ⟨wc, hs', he⟩ := ih hΔ hnr hwfA h'
+        refine ⟨_, UnsealV.inl hs', ?_⟩
+        simp only [SCE.substBrand]
+        rw [← sealTyp_substBrand n R B]
+        exact EVal.inl he
+      | gen htl _ _ => nomatch htl
+  | @inr A B v w _ ih =>
+    intro vc hΔ hnr hwf h
+    cases hwf with
+    | or hwfA hwfB =>
+      cases h with
+      | inr h' =>
+        obtain ⟨wc, hs', he⟩ := ih hΔ hnr hwfB h'
+        refine ⟨_, UnsealV.inr hs', ?_⟩
+        simp only [SCE.substBrand]
+        rw [← sealTyp_substBrand n R A]
+        exact EVal.inr he
+      | gen htl _ _ => nomatch htl
+  | var =>
+    intro vc _ _ _ h
+    cases h with
+    | gen htl _ _ => nomatch htl
+  | @mu T v =>
+    intro vc hΔ hnr hwf h
+    cases hwf with
+    | mu hnin _ =>
+      rw [sce_substBrand_notin hnin]
+      exact ⟨_, UnsealV.mu, h⟩
 
 -- ── Semantic preservation ────────────────────────────────────────────────────────────
 

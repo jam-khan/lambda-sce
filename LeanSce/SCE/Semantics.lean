@@ -78,6 +78,19 @@ inductive SSealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
   | arr {A B c}
     : SSealV n R (.arr A B) c
         (.clos (proxyEnv c) A (.mseal n R B (.app proxyFun (.munseal n R A (.proj .query 0)))))
+  -- functor signatures: the same proxy pattern with the module forms (an mclos proxy,
+  -- applied with mapp) — sealTyp maps both to the target arrow proxy
+  | sig {A B : Typ} {c}
+    : SSealV n R (.sig (.TyArrM A (.TyIntf B))) c
+        (.mclos (proxyEnv c) A
+          (.mseal n R B (.mapp proxyFun (.munseal n R A (.proj .query 0)))))
+  -- unions coerce under the tag; μ (and stray variables) are opaque to sealing
+  | inl {A B v w}
+    : SSealV n R A v w → SSealV n R (.or A B) (.inl (substBrand n R B) v) (.inl B w)
+  | inr {A B v w}
+    : SSealV n R B v w → SSealV n R (.or A B) (.inr (substBrand n R A) v) (.inr A w)
+  | var {m v} : SSealV n R (.var m) v v
+  | mu {T v} : SSealV n R (.mu T) v v
 
 inductive SUnsealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
   | brand_eq {v} : SUnsealV n R (.brand n) (.wrap n v) v
@@ -92,6 +105,16 @@ inductive SUnsealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
     : SUnsealV n R (.arr A B) c
         (.clos (proxyEnv c) (substBrand n R A)
           (.munseal n R B (.app proxyFun (.mseal n R A (.proj .query 0)))))
+  | sig {A B : Typ} {c}
+    : SUnsealV n R (.sig (.TyArrM A (.TyIntf B))) c
+        (.mclos (proxyEnv c) (substBrand n R A)
+          (.munseal n R B (.mapp proxyFun (.mseal n R A (.proj .query 0)))))
+  | inl {A B v w}
+    : SUnsealV n R A v w → SUnsealV n R (.or A B) (.inl B v) (.inl (substBrand n R B) w)
+  | inr {A B v w}
+    : SUnsealV n R B v w → SUnsealV n R (.or A B) (.inr A v) (.inr (substBrand n R A) w)
+  | var {m v} : SUnsealV n R (.var m) v v
+  | mu {T v} : SUnsealV n R (.mu T) v v
 
 theorem ssealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SSealV n R S v w)
     : Value w := by
@@ -103,6 +126,11 @@ theorem ssealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SSeal
   | and _ _ ih₁ ih₂ => cases hv with | vmrg h₁ h₂ => exact Value.vmrg (ih₁ h₁) (ih₂ h₂)
   | rcd _ ih => cases hv with | vlrec h' => exact Value.vlrec (ih h')
   | arr => exact Value.vclos (Value.vmrg Value.vunit (Value.vlrec hv))
+  | sig => exact Value.vmclos (Value.vmrg Value.vunit (Value.vlrec hv))
+  | inl _ ih => cases hv with | vinl h' => exact Value.vinl (ih h')
+  | inr _ ih => cases hv with | vinr h' => exact Value.vinr (ih h')
+  | var => exact hv
+  | mu => exact hv
 
 theorem sunsealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SUnsealV n R S v w)
     : Value w := by
@@ -114,6 +142,11 @@ theorem sunsealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SUn
   | and _ _ ih₁ ih₂ => cases hv with | vmrg h₁ h₂ => exact Value.vmrg (ih₁ h₁) (ih₂ h₂)
   | rcd _ ih => cases hv with | vlrec h' => exact Value.vlrec (ih h')
   | arr => exact Value.vclos (Value.vmrg Value.vunit (Value.vlrec hv))
+  | sig => exact Value.vmclos (Value.vmrg Value.vunit (Value.vlrec hv))
+  | inl _ ih => cases hv with | vinl h' => exact Value.vinl (ih h')
+  | inr _ ih => cases hv with | vinr h' => exact Value.vinr (ih h')
+  | var => exact hv
+  | mu => exact hv
 
 theorem ssealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : SSealV n R S v w₁)
     : ∀ {w₂ : Exp}, SSealV n R S v w₂ → w₁ = w₂ := by
@@ -125,6 +158,11 @@ theorem ssealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : SSealV n R S v w
   | and _ _ ih₁ ih₂ => intro _ h₂; cases h₂ with | and a b => rw [ih₁ a, ih₂ b]
   | rcd _ ih => intro _ h₂; cases h₂ with | rcd a => rw [ih a]
   | arr => intro _ h₂; cases h₂; rfl
+  | sig => intro _ h₂; cases h₂; rfl
+  | inl _ ih => intro _ h₂; cases h₂ with | inl a => rw [ih a]
+  | inr _ ih => intro _ h₂; cases h₂ with | inr a => rw [ih a]
+  | var => intro _ h₂; cases h₂; rfl
+  | mu => intro _ h₂; cases h₂; rfl
 
 theorem sunsealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : SUnsealV n R S v w₁)
     : ∀ {w₂ : Exp}, SUnsealV n R S v w₂ → w₁ = w₂ := by
@@ -136,6 +174,11 @@ theorem sunsealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : SUnsealV n R S
   | and _ _ ih₁ ih₂ => intro _ h₂; cases h₂ with | and a b => rw [ih₁ a, ih₂ b]
   | rcd _ ih => intro _ h₂; cases h₂ with | rcd a => rw [ih a]
   | arr => intro _ h₂; cases h₂; rfl
+  | sig => intro _ h₂; cases h₂; rfl
+  | inl _ ih => intro _ h₂; cases h₂ with | inl a => rw [ih a]
+  | inr _ ih => intro _ h₂; cases h₂ with | inr a => rw [ih a]
+  | var => intro _ h₂; cases h₂; rfl
+  | mu => intro _ h₂; cases h₂; rfl
 
 inductive BStep : Exp → Exp → Exp → Prop where
   | query {ρ : Exp}

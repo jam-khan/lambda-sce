@@ -136,6 +136,49 @@ theorem sealModTyp_substTyp (d : Nat) (S : SCE.Typ) : (mt : SCE.ModTyp)
       sealTyp_substTyp d S T, sealModTyp_substTyp d S mt]
 end
 
+-- A source type whose image is brand-free is untouched by source brand substitution
+-- (sealTyp preserves brands exactly, so occurrence in the image reflects occurrence in
+-- the source).  This is what makes the identity coercion at brand-free μ signatures
+-- type-correct at the source.
+mutual
+theorem sce_substBrand_notin {n : Nat} {R : SCE.Typ}
+    : {S : SCE.Typ} → ¬ Seal.BrandIn n (sealTyp S) → SCE.substBrand n R S = S
+  | .int, _ => rfl
+  | .top, _ => rfl
+  | .arr A B, h => by
+    simp only [SCE.substBrand,
+      sce_substBrand_notin (fun h' => h (BrandIn.arrl h')),
+      sce_substBrand_notin (fun h' => h (BrandIn.arrr h'))]
+  | .and A B, h => by
+    simp only [SCE.substBrand,
+      sce_substBrand_notin (fun h' => h (BrandIn.andl h')),
+      sce_substBrand_notin (fun h' => h (BrandIn.andr h'))]
+  | .or A B, h => by
+    simp only [SCE.substBrand,
+      sce_substBrand_notin (fun h' => h (BrandIn.orl h')),
+      sce_substBrand_notin (fun h' => h (BrandIn.orr h'))]
+  | .rcd l A, h => by
+    simp only [SCE.substBrand, sce_substBrand_notin (fun h' => h (BrandIn.rcd h'))]
+  | .sig mt, h => by
+    simp only [SCE.substBrand, sce_substBrandModTyp_notin h]
+  | .var _, _ => rfl
+  | .mu T, h => by
+    simp only [SCE.substBrand, sce_substBrand_notin (fun h' => h (BrandIn.mu h'))]
+  | .brand m, h => by
+    by_cases hm : m = n
+    · subst hm; exact absurd BrandIn.self h
+    · simp only [SCE.substBrand, hm, if_false]
+
+theorem sce_substBrandModTyp_notin {n : Nat} {R : SCE.Typ}
+    : {mt : SCE.ModTyp} → ¬ Seal.BrandIn n (sealModTyp mt) → SCE.substBrandModTyp n R mt = mt
+  | .TyIntf T, h => by
+    simp only [SCE.substBrandModTyp, sce_substBrand_notin h]
+  | .TyArrM T mt, h => by
+    simp only [SCE.substBrandModTyp,
+      sce_substBrand_notin (fun h' => h (BrandIn.arrl h')),
+      sce_substBrandModTyp_notin (fun h' => h (BrandIn.arrr h'))]
+end
+
 -- ── Transport of the lookup judgments along sealTyp ──────────────────────────────────
 
 theorem slookup_seal {A : SCE.Typ} {n : Nat} {B : SCE.Typ} (h : SCE.SLookup A n B)
