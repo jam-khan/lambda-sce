@@ -41,6 +41,12 @@ inductive SealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
     : SealV n R (.arr A B) c
         (.clos (proxyEnv c) A B
           (.seal n R B (.app proxyFun (.unseal n R A (.proj .query 0)))))
+  | inl {A B v w}
+    : SealV n R A v w
+    → SealV n R (.or A B) (.inl (substBrand n R B) v) (.inl B w)
+  | inr {A B v w}
+    : SealV n R B v w
+    → SealV n R (.or A B) (.inr (substBrand n R A) v) (.inr A w)
 
 -- UnsealV n R S v w: the converse coercion S ⇒ S[n:=R].
 inductive UnsealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
@@ -64,6 +70,12 @@ inductive UnsealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
     : UnsealV n R (.arr A B) c
         (.clos (proxyEnv c) (substBrand n R A) (substBrand n R B)
           (.unseal n R B (.app proxyFun (.seal n R A (.proj .query 0)))))
+  | inl {A B v w}
+    : UnsealV n R A v w
+    → UnsealV n R (.or A B) (.inl B v) (.inl (substBrand n R B) w)
+  | inr {A B v w}
+    : UnsealV n R B v w
+    → UnsealV n R (.or A B) (.inr A v) (.inr (substBrand n R A) w)
 
 inductive Step : Exp → Exp → Exp → Prop where
   | squery {v}
@@ -87,6 +99,26 @@ inductive Step : Exp → Exp → Exp → Prop where
   | sclos {v A B e}
     : Value v
     → Step v (.lam A B e) (.clos v A B e)
+  | sinl {v e e' B}
+    : Value v
+    → Step v e e'
+    → Step v (.inl B e) (.inl B e')
+  | sinr {v e e' A}
+    : Value v
+    → Step v e e'
+    → Step v (.inr A e) (.inr A e')
+  | scase {v e e' e₁ e₂}
+    : Value v
+    → Step v e e'
+    → Step v (.case e e₁ e₂) (.case e' e₁ e₂)
+  | scasel {v v₁ B e₁ e₂}
+    : Value v
+    → Value v₁
+    → Step v (.case (.inl B v₁) e₁ e₂) (.box (.mrg v v₁) e₁)
+  | scaser {v v₁ A e₁ e₂}
+    : Value v
+    → Value v₁
+    → Step v (.case (.inr A v₁) e₁ e₂) (.box (.mrg v v₁) e₂)
   | sflam {v A B e}
     : Value v
     → Step v (.flam A B e) (.fclos v A B B e)
@@ -209,6 +241,8 @@ theorem value_not_step {e : Exp} (hv : Value e) : ∀ {v e' : Exp}, Step v e e' 
     | smrgl _ hs => exact ih₁ hs
     | smrgr _ _ hs => exact ih₂ hs
   | vwrap _ ih => intro _ _ h; cases h with | swrap _ hs => exact ih hs
+  | vinl _ ih => intro _ _ h; cases h with | sinl _ hs => exact ih hs
+  | vinr _ ih => intro _ _ h; cases h with | sinr _ hs => exact ih hs
   | vfclos _ => intro _ _ h; nomatch h
 
 -- The coercions produce values from values.
@@ -222,6 +256,8 @@ theorem sealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SealV 
   | and _ _ ih₁ ih₂ => cases hv with | vmrg h₁ h₂ => exact Value.vmrg (ih₁ h₁) (ih₂ h₂)
   | rcd _ ih => cases hv with | vrcd h' => exact Value.vrcd (ih h')
   | arr => exact Value.vclos (Value.vmrg Value.vunit (Value.vrcd hv))
+  | inl _ ih => cases hv with | vinl h' => exact Value.vinl (ih h')
+  | inr _ ih => cases hv with | vinr h' => exact Value.vinr (ih h')
 
 theorem unsealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : UnsealV n R S v w)
     : Value w := by
@@ -233,6 +269,8 @@ theorem unsealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : Unse
   | and _ _ ih₁ ih₂ => cases hv with | vmrg h₁ h₂ => exact Value.vmrg (ih₁ h₁) (ih₂ h₂)
   | rcd _ ih => cases hv with | vrcd h' => exact Value.vrcd (ih h')
   | arr => exact Value.vclos (Value.vmrg Value.vunit (Value.vrcd hv))
+  | inl _ ih => cases hv with | vinl h' => exact Value.vinl (ih h')
+  | inr _ ih => cases hv with | vinr h' => exact Value.vinr (ih h')
 
 -- The coercions are deterministic as relations (no typing needed: the shape of the
 -- source type picks the rule).
@@ -246,6 +284,8 @@ theorem sealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : SealV n R S v w�
   | and _ _ ih₁ ih₂ => intro _ h₂; cases h₂ with | and a b => rw [ih₁ a, ih₂ b]
   | rcd _ ih => intro _ h₂; cases h₂ with | rcd a => rw [ih a]
   | arr => intro _ h₂; cases h₂; rfl
+  | inl _ ih => intro _ h₂; cases h₂ with | inl a => rw [ih a]
+  | inr _ ih => intro _ h₂; cases h₂ with | inr a => rw [ih a]
 
 theorem unsealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : UnsealV n R S v w₁)
     : ∀ {w₂ : Exp}, UnsealV n R S v w₂ → w₁ = w₂ := by
@@ -257,6 +297,8 @@ theorem unsealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : UnsealV n R S v
   | and _ _ ih₁ ih₂ => intro _ h₂; cases h₂ with | and a b => rw [ih₁ a, ih₂ b]
   | rcd _ ih => intro _ h₂; cases h₂ with | rcd a => rw [ih a]
   | arr => intro _ h₂; cases h₂; rfl
+  | inl _ ih => intro _ h₂; cases h₂ with | inl a => rw [ih a]
+  | inr _ ih => intro _ h₂; cases h₂ with | inr a => rw [ih a]
 
 theorem mstep_value_eq {v e e' : Exp} (hv : Value e) (h : MStep v e e') : e = e' := by
   cases h with

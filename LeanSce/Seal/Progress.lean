@@ -22,6 +22,7 @@ theorem sealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v : E
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
   | .top, _, _, _, _ => ⟨_, SealV.top⟩
@@ -44,6 +45,7 @@ theorem sealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v : E
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
   | .and A B, _, _, hv, ht => by
@@ -65,6 +67,29 @@ theorem sealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v : E
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ => nomatch hv
+  | .or A B, _, _, hv, ht => by
+    simp only [substBrand] at ht
+    cases ht with
+    | tinl h =>
+      cases hv with
+      | vinl hv' =>
+        obtain ⟨w, hw⟩ := sealv_progress A hv' h
+        exact ⟨_, SealV.inl hw⟩
+    | tinr h =>
+      cases hv with
+      | vinr hv' =>
+        obtain ⟨w, hw⟩ := sealv_progress B hv' h
+        exact ⟨_, SealV.inr hw⟩
+    | tquery => nomatch hv
+    | tapp _ _ => nomatch hv
+    | tbox _ _ => nomatch hv
+    | tproj _ _ => nomatch hv
+    | trproj _ _ => nomatch hv
+    | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
 
@@ -79,6 +104,7 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
   | .top, _, _, _, _ => ⟨_, UnsealV.top⟩
@@ -93,6 +119,7 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
       | tproj _ _ => nomatch hv
       | trproj _ _ => nomatch hv
       | tanno _ _ => nomatch hv
+      | tcase _ _ _ _ _ => nomatch hv
       | tseal _ _ _ _ => nomatch hv
       | tunseal _ _ _ _ _ => nomatch hv
     · exact ⟨_, UnsealV.brand_ne h⟩
@@ -110,6 +137,7 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
   | .and A B, _, _, hv, ht => by
@@ -130,6 +158,28 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ => nomatch hv
+  | .or A B, _, _, hv, ht => by
+    cases ht with
+    | tinl h =>
+      cases hv with
+      | vinl hv' =>
+        obtain ⟨w, hw⟩ := unsealv_progress A hv' h
+        exact ⟨_, UnsealV.inl hw⟩
+    | tinr h =>
+      cases hv with
+      | vinr hv' =>
+        obtain ⟨w, hw⟩ := unsealv_progress B hv' h
+        exact ⟨_, UnsealV.inr hw⟩
+    | tquery => nomatch hv
+    | tapp _ _ => nomatch hv
+    | tbox _ _ => nomatch hv
+    | tproj _ _ => nomatch hv
+    | trproj _ _ => nomatch hv
+    | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
 
@@ -168,6 +218,7 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
         | trproj _ _ => nomatch hv₁
         | tanno _ _ => nomatch hv₁
         | tlam _ _ => nomatch hv₁
+        | tcase _ _ _ _ _ => nomatch hv₁
         | tseal _ _ _ _ => nomatch hv₁
         | tunseal _ _ _ _ _ => nomatch hv₁
   | tbox h₁ _ ih₁ ih₂ =>
@@ -219,6 +270,40 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
   | tclos hu _ _ _ _ _ _ _ => exact Or.inl (Value.vclos hu)
   | tflam _ _ _ _ => exact Or.inr ⟨_, Step.sflam hv⟩
   | tfclos hu _ _ _ _ _ _ _ _ _ => exact Or.inl (Value.vfclos hu)
+  | tinl _ ih =>
+    cases ih hv henv with
+    | inr hs =>
+      obtain ⟨e', hs'⟩ := hs
+      exact Or.inr ⟨_, Step.sinl hv hs'⟩
+    | inl hve => exact Or.inl (Value.vinl hve)
+  | tinr _ ih =>
+    cases ih hv henv with
+    | inr hs =>
+      obtain ⟨e', hs'⟩ := hs
+      exact Or.inr ⟨_, Step.sinr hv hs'⟩
+    | inl hve => exact Or.inl (Value.vinr hve)
+  | tcase h _ _ _ _ ih _ _ =>
+    cases ih hv henv with
+    | inr hs =>
+      obtain ⟨e', hs'⟩ := hs
+      exact Or.inr ⟨_, Step.scase hv hs'⟩
+    | inl hve =>
+      cases h with
+      | tinl _ =>
+        cases hve with
+        | vinl hv' => exact Or.inr ⟨_, Step.scasel hv hv'⟩
+      | tinr _ =>
+        cases hve with
+        | vinr hv' => exact Or.inr ⟨_, Step.scaser hv hv'⟩
+      | tquery => nomatch hve
+      | tapp _ _ => nomatch hve
+      | tbox _ _ => nomatch hve
+      | tproj _ _ => nomatch hve
+      | trproj _ _ => nomatch hve
+      | tanno _ _ => nomatch hve
+      | tcase _ _ _ _ _ => nomatch hve
+      | tseal _ _ _ _ => nomatch hve
+      | tunseal _ _ _ _ _ => nomatch hve
   | tanno h hsub ih =>
     cases ih hv henv with
     | inr hs =>

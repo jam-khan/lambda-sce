@@ -78,6 +78,9 @@ def LRg (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (o : Bran
         ∀ ρ₁ ρ₂, Value ρ₁ → Value ρ₂ →
           ∃ w₁ w₂, MStep ρ₁ (.app v₁ u₁) w₁ ∧ MStep ρ₂ (.app v₂ u₂) w₂ ∧
             LRg Δ₁ Δ₂ η o B w₁ w₂
+  | .or A B, v₁, v₂ =>
+      (∃ w₁ w₂, v₁ = .inl (viewL o B) w₁ ∧ v₂ = .inl (viewR o B) w₂ ∧ LRg Δ₁ Δ₂ η o A w₁ w₂) ∨
+      (∃ w₁ w₂, v₁ = .inr (viewL o A) w₁ ∧ v₂ = .inr (viewR o A) w₂ ∧ LRg Δ₁ Δ₂ η o B w₁ w₂)
 
 -- The client-facing relation: every brand abstract.
 abbrev LR (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) : Typ → Exp → Exp → Prop :=
@@ -112,6 +115,10 @@ theorem viewL_rcd {o : BrandOpen} {l : String} {A : Typ} : viewL o (.rcd l A) = 
   cases o with | none => rfl | some p => rfl
 theorem viewR_rcd {o : BrandOpen} {l : String} {A : Typ} : viewR o (.rcd l A) = .rcd l (viewR o A) := by
   cases o with | none => rfl | some p => rfl
+theorem viewL_or {o : BrandOpen} {A B : Typ} : viewL o (.or A B) = .or (viewL o A) (viewL o B) := by
+  cases o with | none => rfl | some p => rfl
+theorem viewR_or {o : BrandOpen} {A B : Typ} : viewR o (.or A B) = .or (viewR o A) (viewR o B) := by
+  cases o with | none => rfl | some p => rfl
 
 -- Substitution preserves subtyping (brands are subtypes only of themselves and ε).
 theorem sub_subst {n : Nat} {R : Typ} {A B : Typ} (h : Sub A B)
@@ -125,6 +132,7 @@ theorem sub_subst {n : Nat} {R : Typ} {A B : Typ} (h : Sub A B)
   | sand _ _ ih₁ ih₂ => exact Sub.sand ih₁ ih₂
   | srcd _ ih => exact Sub.srcd ih
   | sbrand => exact sub_refl _
+  | sor _ _ ih₁ ih₂ => exact Sub.sor ih₁ ih₂
 
 theorem sub_viewL {o : BrandOpen} {A B : Typ} (h : Sub A B) : Sub (viewL o A) (viewL o B) := by
   cases o with
@@ -213,6 +221,16 @@ theorem lr_value {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
     subst h₁; subst h₂
     exact ⟨Value.vrcd (lr_value hA).1, Value.vrcd (lr_value hA).2⟩
   | .arr A B, _, _, ⟨hv₁, hv₂, _, _, _⟩ => ⟨hv₁, hv₂⟩
+  | .or A B, _, _, h => by
+    cases h with
+    | inl h' =>
+      obtain ⟨w₁, w₂, h₁, h₂, hA⟩ := h'
+      subst h₁; subst h₂
+      exact ⟨Value.vinl (lr_value hA).1, Value.vinl (lr_value hA).2⟩
+    | inr h' =>
+      obtain ⟨w₁, w₂, h₁, h₂, hB⟩ := h'
+      subst h₁; subst h₂
+      exact ⟨Value.vinr (lr_value hB).1, Value.vinr (lr_value hB).2⟩
 
 theorem lr_typed {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁ Δ₂ η o T v₁ v₂
     → HasType Δ₁ .top v₁ (viewL o T) ∧ HasType Δ₂ .top v₂ (viewR o T)
@@ -238,6 +256,17 @@ theorem lr_typed {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
     rw [viewL_rcd, viewR_rcd]
     exact ⟨HasType.trcd (lr_typed hA).1, HasType.trcd (lr_typed hA).2⟩
   | .arr _ _, _, _, ⟨_, _, ht₁, ht₂, _⟩ => ⟨ht₁, ht₂⟩
+  | .or A B, _, _, h => by
+    rw [viewL_or, viewR_or]
+    cases h with
+    | inl h' =>
+      obtain ⟨w₁, w₂, h₁, h₂, hA⟩ := h'
+      subst h₁; subst h₂
+      exact ⟨HasType.tinl (lr_typed hA).1, HasType.tinl (lr_typed hA).2⟩
+    | inr h' =>
+      obtain ⟨w₁, w₂, h₁, h₂, hB⟩ := h'
+      subst h₁; subst h₂
+      exact ⟨HasType.tinr (lr_typed hB).1, HasType.tinr (lr_typed hB).2⟩
 
 -- ── MStep congruence toolkit ─────────────────────────────────────────────────────────
 
@@ -300,6 +329,24 @@ theorem mstep_anno {v e e' : Exp} {A : Typ} (hv : Value v) (h : MStep v e e')
   induction h with
   | refl => exact MStep.refl
   | step hs _ ih => exact MStep.step (Step.sanno hv hs) ih
+
+theorem mstep_inl {v e e' : Exp} {B : Typ} (hv : Value v) (h : MStep v e e')
+    : MStep v (.inl B e) (.inl B e') := by
+  induction h with
+  | refl => exact MStep.refl
+  | step hs _ ih => exact MStep.step (Step.sinl hv hs) ih
+
+theorem mstep_inr {v e e' : Exp} {A : Typ} (hv : Value v) (h : MStep v e e')
+    : MStep v (.inr A e) (.inr A e') := by
+  induction h with
+  | refl => exact MStep.refl
+  | step hs _ ih => exact MStep.step (Step.sinr hv hs) ih
+
+theorem mstep_case {v e e' e₁ e₂ : Exp} (hv : Value v) (h : MStep v e e')
+    : MStep v (.case e e₁ e₂) (.case e' e₁ e₂) := by
+  induction h with
+  | refl => exact MStep.refl
+  | step hs _ ih => exact MStep.step (Step.scase hv hs) ih
 
 -- ── Run inversions (for the surgery inside cast_lr's arrow case) ─────────────────────
 
@@ -477,6 +524,9 @@ theorem cast_merge_eq_l {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' :
   | brand _ =>
     intro w w' hv ht hc hc'
     exact cast_merge_eq_l_ord Ordinary.obrand hv ht hc hc'
+  | or _ _ _ _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_l_ord Ordinary.oor hv ht hc hc'
 
 theorem cast_merge_eq_r_ord {a b : Exp} {Γ B₁ B₂ T : Typ} {w w' : Exp}
     (hord : Ordinary T) (hv : Value (.mrg a b)) (ht : HasType Δ Γ (.mrg a b) (.and B₁ B₂))
@@ -532,6 +582,9 @@ theorem cast_merge_eq_r {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' :
   | brand _ =>
     intro w w' hv ht hc hc'
     exact cast_merge_eq_r_ord Ordinary.obrand hv ht hc hc'
+  | or _ _ _ _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_r_ord Ordinary.oor hv ht hc hc'
 
 -- ── The generator is self-related at top-like types ──────────────────────────────────
 
@@ -682,6 +735,23 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
       · simp only [LRg, hm, if_false] at hlr ⊢
         simp only [viewL, viewR, substBrand, hm, if_false] at c₁ c₂
         exact wrap_case hlr c₁ c₂
+  | sor hsA hsB ihA ihB =>
+    rw [viewL_or] at c₁; rw [viewR_or] at c₂
+    cases hlr with
+    | inl h' =>
+      obtain ⟨w₁', w₂', e₁, e₂, hA⟩ := h'
+      subst e₁; subst e₂
+      cases c₁ with
+      | cinl d₁ =>
+        cases c₂ with
+        | cinl d₂ => exact Or.inl ⟨_, _, rfl, rfl, ihA hA d₁ d₂⟩
+    | inr h' =>
+      obtain ⟨w₁', w₂', e₁, e₂, hB⟩ := h'
+      subst e₁; subst e₂
+      cases c₁ with
+      | cinr d₁ =>
+        cases c₂ with
+        | cinr d₂ => exact Or.inr ⟨_, _, rfl, rfl, ihB hB d₁ d₂⟩
   | @sarr C' D' C D hsC hsD ihC ihD =>
     obtain ⟨hv₁, hv₂, ht₁, ht₂, CL⟩ := hlr
     rw [viewL_arr] at ht₁; rw [viewR_arr] at ht₂
@@ -897,6 +967,9 @@ inductive Finitary : Exp → Prop where
   | wrap {n : Nat} {e : Exp} : Finitary e → Finitary (.wrap n e)
   | seal {n : Nat} {R S : Typ} {e : Exp} : Finitary e → Finitary (.seal n R S e)
   | unseal {n : Nat} {R S : Typ} {e : Exp} : Finitary e → Finitary (.unseal n R S e)
+  | inl {B : Typ} {e : Exp} : Finitary e → Finitary (.inl B e)
+  | inr {A : Typ} {e : Exp} : Finitary e → Finitary (.inr A e)
+  | case {e e₁ e₂ : Exp} : Finitary e → Finitary e₁ → Finitary e₂ → Finitary (.case e e₁ e₂)
 
 theorem Finitary.proj_inv {e : Exp} {n : Nat} (h : Finitary (.proj e n)) : Finitary e := by
   cases h with | proj h' => exact h'
@@ -916,6 +989,13 @@ theorem Finitary.rproj_inv {e : Exp} {l : String} (h : Finitary (.rproj e l)) : 
   cases h with | rproj h' => exact h'
 theorem Finitary.anno_inv {e : Exp} {A : Typ} (h : Finitary (.anno e A)) : Finitary e := by
   cases h with | anno h' => exact h'
+theorem Finitary.inl_inv {B : Typ} {e : Exp} (h : Finitary (.inl B e)) : Finitary e := by
+  cases h with | inl h' => exact h'
+theorem Finitary.inr_inv {A : Typ} {e : Exp} (h : Finitary (.inr A e)) : Finitary e := by
+  cases h with | inr h' => exact h'
+theorem Finitary.case_inv {e e₁ e₂ : Exp} (h : Finitary (.case e e₁ e₂))
+    : Finitary e ∧ Finitary e₁ ∧ Finitary e₂ := by
+  cases h with | case h' h₁ h₂ => exact ⟨h', h₁, h₂⟩
 
 -- The fundamental lemma: every well-typed term of the normalizing fragment is
 -- semantically self-related.  Strong normalization of that fragment is an immediate
@@ -1112,6 +1192,67 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     refine ⟨s₁, s₂, ?_, ?_, cast_lr openadm_none hsub hr cs₁ cs₂⟩
     · exact mstep_trans (mstep_anno hvρ.1 rr₁) (mstep_one (Step.sannov hvρ.1 hvr.1 cs₁))
     · exact mstep_trans (mstep_anno hvρ.2 rr₂) (mstep_one (Step.sannov hvρ.2 hvr.2 cs₂))
+  | tinl _ ih =>
+    intro ρ₁ ρ₂ hρ
+    have hvρ := lr_value hρ
+    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.inl_inv hfin) hρ
+    exact ⟨_, _, mstep_inl hvρ.1 rw₁, mstep_inl hvρ.2 rw₂, Or.inl ⟨w₁, w₂, rfl, rfl, hw⟩⟩
+  | tinr _ ih =>
+    intro ρ₁ ρ₂ hρ
+    have hvρ := lr_value hρ
+    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.inr_inv hfin) hρ
+    exact ⟨_, _, mstep_inr hvρ.1 rw₁, mstep_inr hvρ.2 rw₂, Or.inr ⟨w₁, w₂, rfl, rfl, hw⟩⟩
+  | tcase _ hd₁ hd₂ _ _ ih ih₁ ih₂ =>
+    intro ρ₁ ρ₂ hρ
+    obtain ⟨hfe, hfe₁, hfe₂⟩ := Finitary.case_inv hfin
+    have hvρ := lr_value hρ
+    have htρ := lr_typed hρ
+    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih hfe hρ
+    cases hr with
+    | inl h' =>
+      obtain ⟨w₁, w₂, e₁eq, e₂eq, hA⟩ := h'
+      subst e₁eq; subst e₂eq
+      have hvw := lr_value hA
+      have htw := lr_typed hA
+      have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ w₁) (.mrg ρ₂ w₂) :=
+        ⟨HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1
+            (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₁),
+          HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2
+            (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₁),
+          _, _, _, _, rfl, rfl, hρ, hA⟩
+      obtain ⟨s₁, s₂, rs₁, rs₂, hs⟩ := ih₁ hfe₁ hρ'
+      have hvs := lr_value hs
+      refine ⟨s₁, s₂, ?_, ?_, hs⟩
+      · refine mstep_trans (mstep_case hvρ.1 rr₁) ?_
+        refine MStep.step (Step.scasel hvρ.1 hvw.1) ?_
+        refine mstep_trans (mstep_boxr hvρ.1 (Value.vmrg hvρ.1 hvw.1) rs₁) ?_
+        exact mstep_one (Step.sboxv hvρ.1 (Value.vmrg hvρ.1 hvw.1) hvs.1)
+      · refine mstep_trans (mstep_case hvρ.2 rr₂) ?_
+        refine MStep.step (Step.scasel hvρ.2 hvw.2) ?_
+        refine mstep_trans (mstep_boxr hvρ.2 (Value.vmrg hvρ.2 hvw.2) rs₂) ?_
+        exact mstep_one (Step.sboxv hvρ.2 (Value.vmrg hvρ.2 hvw.2) hvs.2)
+    | inr h' =>
+      obtain ⟨w₁, w₂, e₁eq, e₂eq, hB⟩ := h'
+      subst e₁eq; subst e₂eq
+      have hvw := lr_value hB
+      have htw := lr_typed hB
+      have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ w₁) (.mrg ρ₂ w₂) :=
+        ⟨HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1
+            (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₂),
+          HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2
+            (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₂),
+          _, _, _, _, rfl, rfl, hρ, hB⟩
+      obtain ⟨s₁, s₂, rs₁, rs₂, hs⟩ := ih₂ hfe₂ hρ'
+      have hvs := lr_value hs
+      refine ⟨s₁, s₂, ?_, ?_, hs⟩
+      · refine mstep_trans (mstep_case hvρ.1 rr₁) ?_
+        refine MStep.step (Step.scaser hvρ.1 hvw.1) ?_
+        refine mstep_trans (mstep_boxr hvρ.1 (Value.vmrg hvρ.1 hvw.1) rs₁) ?_
+        exact mstep_one (Step.sboxv hvρ.1 (Value.vmrg hvρ.1 hvw.1) hvs.1)
+      · refine mstep_trans (mstep_case hvρ.2 rr₂) ?_
+        refine MStep.step (Step.scaser hvρ.2 hvw.2) ?_
+        refine mstep_trans (mstep_boxr hvρ.2 (Value.vmrg hvρ.2 hvw.2) rs₂) ?_
+        exact mstep_one (Step.sboxv hvρ.2 (Value.vmrg hvρ.2 hvw.2) hvs.2)
   -- Clients cannot brand, seal or unseal: these rules need a known representation.
   | twrap hΔ _ _ _ => nomatch hΔ
   | tseal hΔ _ _ _ _ => nomatch hΔ

@@ -18,6 +18,11 @@ inductive Cost : Typ → Typ → Prop where
   -- (as a leaf) in B.  Distinct brands are disjoint; a brand is disjoint from Int, from
   -- every arrow, from every record — regardless of its (hidden) representation.
   | cbrand {n} : Cost (.brand n) (.brand n)
+  -- Any two union types share a common ordinary supertype UNCONDITIONALLY: an inl value
+  -- of the one and an inr value of the other always cast (differently) at some common
+  -- union target, so no two union-typed things may ever be merged.  (Wrap unions in
+  -- records to merge them.)
+  | coror {A B A' B'} : Cost (.or A B) (.or A' B')
 
 def Disj (A B : Typ) : Prop := ¬ Cost A B
 
@@ -30,6 +35,7 @@ theorem cost_symm : {A B : Typ} → Cost A B → Cost B A
   | _, _, .carr h => .carr (cost_symm h)
   | _, _, .crcd h => .crcd (cost_symm h)
   | _, _, .cbrand => .cbrand
+  | _, _, .coror => .coror
 
 theorem disj_symm {A B : Typ} (h : Disj A B) : Disj B A :=
   fun hc => h (cost_symm hc)
@@ -60,6 +66,9 @@ theorem cost_compose : {A B C : Typ} → Sub A B → Cost B C → Cost A C
   | _, _, _, .sand p₁ p₂, .crandl h => .crandl (cost_compose (.sand p₁ p₂) h)
   | _, _, _, .sand p₁ p₂, .crandr h => .crandr (cost_compose (.sand p₁ p₂) h)
   | _, _, _, .sbrand, h => h
+  | _, _, _, .sor _ _, .coror => .coror
+  | _, _, _, .sor p q, .crandl h => .crandl (cost_compose (.sor p q) h)
+  | _, _, _, .sor p q, .crandr h => .crandr (cost_compose (.sor p q) h)
 
 -- Eᵢ Lemma 2.6: disjointness is preserved by widening.
 theorem sub_disj {A B C : Typ} (hs : Sub A B) (hd : Disj A C) : Disj B C :=
@@ -91,6 +100,8 @@ inductive BrandIn (n : Nat) : Typ → Prop where
   | andl {A B}    : BrandIn n A → BrandIn n (.and A B)
   | andr {A B}    : BrandIn n B → BrandIn n (.and A B)
   | rcd {l A}     : BrandIn n A → BrandIn n (.rcd l A)
+  | orl {A B}     : BrandIn n A → BrandIn n (.or A B)
+  | orr {A B}     : BrandIn n B → BrandIn n (.or A B)
 
 -- A brand is disjoint from every type it does not occur in — the abstraction principle
 -- for disjointness: clients need no knowledge of α_n's representation to discharge
@@ -116,6 +127,7 @@ theorem sub_cost {B D : Typ} (h : Sub B D) (hntl : ¬ TopLike D) : Cost B D := b
     | inr hntl₁ => exact Cost.crandl (ih₁ hntl₁)
   | srcd _ ih => exact Cost.crcd (ih (fun htl => hntl (TopLike.tlrcd htl)))
   | sbrand => exact Cost.cbrand
+  | sor _ _ _ _ => exact Cost.coror
 
 -- Two types COST-related to Int are COST-related to each other.
 theorem cost_int_compose : {B₁ B₂ : Typ} → Cost B₁ .int → Cost B₂ .int → Cost B₁ B₂
@@ -166,6 +178,14 @@ theorem sub_sub_cost : {D B₁ B₂ : Typ} → ¬ TopLike D → Sub B₁ D → S
       (fun t => Cost.candl t) (fun t => Cost.candr t)
     exact sub_rcd_peel (P := fun Y => Cost (.rcd l A') Y) h₂
       (fun s₂ => Cost.crcd (ihD' hntl' s₁ s₂))
+      (fun t => Cost.crandl t) (fun t => Cost.crandr t)
+  | or D₁ D₂ _ _ =>
+    intro B₁ B₂ _ h₁ h₂
+    refine sub_or_peel (P := fun X => Cost X B₂) h₁
+      (fun {A₁ A₂} _ _ => ?_)
+      (fun t => Cost.candl t) (fun t => Cost.candr t)
+    exact sub_or_peel (P := fun Y => Cost (.or A₁ A₂) Y) h₂
+      (fun _ _ => Cost.coror)
       (fun t => Cost.crandl t) (fun t => Cost.crandr t)
 
 end Seal

@@ -18,6 +18,7 @@ theorem wfsig_nores {n : Nat} {R S : Typ} (h : WfSig n R S) : NoRes S := by
   | arr _ _ ih₁ ih₂ => exact NoRes.arr ih₁ ih₂
   | rcd hne _ ih => exact NoRes.rcd hne ih
   | and _ _ _ _ ih₁ ih₂ => exact NoRes.and ih₁ ih₂
+  | or _ _ ih₁ ih₂ => exact NoRes.or ih₁ ih₂
 
 theorem nores_subst {n : Nat} {R S : Typ} (hR : NoRes R) (hS : NoRes S)
     : NoRes (substBrand n R S) := by
@@ -32,6 +33,7 @@ theorem nores_subst {n : Nat} {R S : Typ} (hR : NoRes R) (hS : NoRes S)
   | arr _ _ ih₁ ih₂ => exact NoRes.arr ih₁ ih₂
   | rcd hne _ ih => exact NoRes.rcd hne ih
   | and _ _ ih₁ ih₂ => exact NoRes.and ih₁ ih₂
+  | or _ _ ih₁ ih₂ => exact NoRes.or ih₁ ih₂
 
 -- A record under the reserved label is disjoint from every type that avoids the label.
 theorem cost_reserved {T X : Typ} (hX : NoRes X) (hc : Cost (.rcd reservedLabel T) X) : False := by
@@ -41,6 +43,7 @@ theorem cost_reserved {T X : Typ} (hX : NoRes X) (hc : Cost (.rcd reservedLabel 
   | brand => nomatch hc
   | arr _ _ _ _ => nomatch hc
   | rcd hne _ _ => cases hc with | crcd _ => exact hne rfl
+  | or _ _ _ _ => nomatch hc
   | and _ _ ih₁ ih₂ =>
     cases hc with
     | crandl h => exact ih₁ h
@@ -60,6 +63,10 @@ theorem cost_proxyEnv {T X : Typ} (hX : NoRes X) (hc : Cost (.and .top (.rcd res
     cases hc with
     | candl h' => exact cost_top_l h'
     | candr h' => exact cost_reserved (NoRes.rcd hne h) h'
+  | or h₁ h₂ _ _ =>
+    cases hc with
+    | candl h => exact cost_top_l h
+    | candr h => exact cost_reserved (NoRes.or h₁ h₂) h
   | and h₁ h₂ ih₁ ih₂ =>
     cases hc with
     | candl h => exact cost_top_l h
@@ -126,6 +133,24 @@ theorem sealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoRes
         simp only [substBrand] at ht
         cases ht with
         | trcd ht' => exact HasType.trcd (ih hwfA hv' ht')
+  | inl h ih =>
+    intro Γ hwf hv ht
+    cases hwf with
+    | or hwfA hwfB =>
+      cases hv with
+      | vinl hv' =>
+        simp only [substBrand] at ht
+        cases ht with
+        | tinl ht' => exact HasType.tinl (ih hwfA hv' ht')
+  | inr h ih =>
+    intro Γ hwf hv ht
+    cases hwf with
+    | or hwfA hwfB =>
+      cases hv with
+      | vinr hv' =>
+        simp only [substBrand] at ht
+        cases ht with
+        | tinr ht' => exact HasType.tinr (ih hwfB hv' ht')
   | arr =>
     intro Γ hwf hv ht
     cases hwf with
@@ -187,6 +212,24 @@ theorem unsealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoR
         simp only [substBrand]
         cases ht with
         | trcd ht' => exact HasType.trcd (ih hwfA hv' ht')
+  | inl h ih =>
+    intro Γ hwf hv ht
+    cases hwf with
+    | or hwfA hwfB =>
+      cases hv with
+      | vinl hv' =>
+        simp only [substBrand]
+        cases ht with
+        | tinl ht' => exact HasType.tinl (ih hwfA hv' ht')
+  | inr h ih =>
+    intro Γ hwf hv ht
+    cases hwf with
+    | or hwfA hwfB =>
+      cases hv with
+      | vinr hv' =>
+        simp only [substBrand]
+        cases ht with
+        | tinr ht' => exact HasType.tinr (ih hwfB hv' ht')
   | arr =>
     intro Γ hwf hv ht
     cases hwf with
@@ -228,6 +271,33 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
     cases ht with
     | tlam hd hb =>
       exact HasType.tclos hv (value_weaken henv hv) hd hb (sub_refl _) (sub_refl _)
+  | sinl _ _ ih =>
+    cases ht with
+    | tinl h => exact HasType.tinl (ih h henv)
+  | sinr _ _ ih =>
+    cases ht with
+    | tinr h => exact HasType.tinr (ih h henv)
+  | scase _ _ ih =>
+    cases ht with
+    | tcase h hd₁ hd₂ h₁ h₂ => exact HasType.tcase (ih h henv) hd₁ hd₂ h₁ h₂
+  -- Case beta: the branch environment (venv # payload) re-types via tmergev, with
+  -- consistency from tcase's per-branch disjointness premise.
+  | scasel hv hv₁ =>
+    cases ht with
+    | tcase h hd₁ hd₂ h₁ h₂ =>
+      cases h with
+      | tinl hp =>
+        have hp' : HasType Δ .top _ _ := value_weaken hp hv₁
+        exact HasType.tbox
+          (HasType.tmergev hv hv₁ henv hp' (disjoint_consistent hv hv₁ henv hp' hd₁)) h₁
+  | scaser hv hv₁ =>
+    cases ht with
+    | tcase h hd₁ hd₂ h₁ h₂ =>
+      cases h with
+      | tinr hp =>
+        have hp' : HasType Δ .top _ _ := value_weaken hp hv₁
+        exact HasType.tbox
+          (HasType.tmergev hv hv₁ henv hp' (disjoint_consistent hv hv₁ henv hp' hd₂)) h₂
   | sflam hv =>
     cases ht with
     | tflam hd₁ hd₂ hb =>

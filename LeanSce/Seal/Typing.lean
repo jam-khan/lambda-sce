@@ -27,6 +27,7 @@ inductive NoRes : Typ → Prop where
   | arr {A B}    : NoRes A → NoRes B → NoRes (.arr A B)
   | rcd {l A}    : l ≠ reservedLabel → NoRes A → NoRes (.rcd l A)
   | and {A B}    : NoRes A → NoRes B → NoRes (.and A B)
+  | or {A B}     : NoRes A → NoRes B → NoRes (.or A B)
 
 -- Signature well-formedness for sealing at S abstracting α_n over R: every intersection
 -- inside S is disjoint in *both* views (abstract, so sealed merges re-type via tmergev;
@@ -42,6 +43,7 @@ inductive WfSig (n : Nat) (R : Typ) : Typ → Prop where
   | and {A B}    : WfSig n R A → WfSig n R B
                    → Disj A B → Disj (substBrand n R A) (substBrand n R B)
                    → WfSig n R (.and A B)
+  | or {A B}     : WfSig n R A → WfSig n R B → WfSig n R (.or A B)
 
 inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
   | tquery {Δ : BrandStore} {Γ : Typ}
@@ -124,6 +126,22 @@ inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
     → HasType Δ Γ e S
     → T = substBrand n R S
     → HasType Δ Γ (.unseal n R S e) T
+  -- Unions.  Injections are explicit; case extends the context with the payload in each
+  -- branch, so it carries a disjointness premise per branch — the same obligation every
+  -- context-extending rule discharges.
+  | tinl {Δ : BrandStore} {Γ A B : Typ} {e : Exp}
+    : HasType Δ Γ e A
+    → HasType Δ Γ (.inl B e) (.or A B)
+  | tinr {Δ : BrandStore} {Γ A B : Typ} {e : Exp}
+    : HasType Δ Γ e B
+    → HasType Δ Γ (.inr A e) (.or A B)
+  | tcase {Δ : BrandStore} {Γ A B C : Typ} {e e₁ e₂ : Exp}
+    : HasType Δ Γ e (.or A B)
+    → Disj Γ A
+    → Disj Γ B
+    → HasType Δ (.and Γ A) e₁ C
+    → HasType Δ (.and Γ B) e₂ C
+    → HasType Δ Γ (.case e e₁ e₂) C
   -- Fixpoints.  The body extends the context twice (self, then argument), so tflam carries
   -- the disjointness premise for each extension — the same obligation every
   -- context-extending rule discharges.  Like tlam, the body types exactly at the
@@ -175,6 +193,9 @@ theorem hastype_weaken_store {Δ Δ' : BrandStore} (hle : StoreLe Δ Δ') {Γ : 
   | twrap hΔ hv _ ih => exact HasType.twrap (hle _ _ hΔ) hv ih
   | tseal hΔ hnr hwf _ ih => exact HasType.tseal (hle _ _ hΔ) hnr hwf ih
   | tunseal hΔ hnr hwf _ heq ih => exact HasType.tunseal (hle _ _ hΔ) hnr hwf ih heq
+  | tinl _ ih => exact HasType.tinl ih
+  | tinr _ ih => exact HasType.tinr ih
+  | tcase _ hd₁ hd₂ _ _ ih ih₁ ih₂ => exact HasType.tcase ih hd₁ hd₂ ih₁ ih₂
   | tflam hd₁ hd₂ _ ih => exact HasType.tflam hd₁ hd₂ ih
   | tfclos hv _ hd₁ hd₂ _ hs₁ hs₂ hs₃ ih₁ ih₂ => exact HasType.tfclos hv ih₁ hd₁ hd₂ ih₂ hs₁ hs₂ hs₃
 

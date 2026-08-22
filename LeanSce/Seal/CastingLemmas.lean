@@ -30,6 +30,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | and _ _ => nomatch hg
     | rcd _ _ => nomatch hg
     | brand _ => nomatch hg
+    | or _ _ => nomatch hg
   | cwrap =>
     intro A hg _
     cases A with
@@ -39,6 +40,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | and _ _ => nomatch hg
     | rcd _ _ => nomatch hg
     | brand _ => nomatch hg
+    | or _ _ => nomatch hg
   | ctop =>
     intro A _ _
     exact ⟨rfl, TopLike.tltop⟩
@@ -50,6 +52,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | and _ _ => nomatch hg
     | rcd _ _ => nomatch hg
     | brand _ => nomatch hg
+    | or _ _ => nomatch hg
     | arr C₀ D₀ =>
       injection hg with _ _ hB _
       cases htl with
@@ -66,6 +69,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | and _ _ => nomatch hg
     | rcd _ _ => nomatch hg
     | brand _ => nomatch hg
+    | or _ _ => nomatch hg
   | cfarrowtl _ _ _ =>
     intro A hg _
     cases A with
@@ -75,6 +79,27 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | and _ _ => nomatch hg
     | rcd _ _ => nomatch hg
     | brand _ => nomatch hg
+    | or _ _ => nomatch hg
+  | cinl _ _ =>
+    intro A hg _
+    cases A with
+    | int => nomatch hg
+    | top => nomatch hg
+    | arr _ _ => nomatch hg
+    | and _ _ => nomatch hg
+    | rcd _ _ => nomatch hg
+    | brand _ => nomatch hg
+    | or _ _ => nomatch hg
+  | cinr _ _ =>
+    intro A hg _
+    cases A with
+    | int => nomatch hg
+    | top => nomatch hg
+    | arr _ _ => nomatch hg
+    | and _ _ => nomatch hg
+    | rcd _ _ => nomatch hg
+    | brand _ => nomatch hg
+    | or _ _ => nomatch hg
   | cmrgl _ _ ih =>
     intro A hg htl
     cases A with
@@ -83,6 +108,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | arr _ _ => nomatch hg
     | rcd _ _ => nomatch hg
     | brand _ => nomatch hg
+    | or _ _ => nomatch hg
     | and A₁ A₂ =>
       injection hg with h₁ _
       cases htl with
@@ -95,6 +121,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | arr _ _ => nomatch hg
     | rcd _ _ => nomatch hg
     | brand _ => nomatch hg
+    | or _ _ => nomatch hg
     | and A₁ A₂ =>
       injection hg with _ h₂
       cases htl with
@@ -112,6 +139,7 @@ theorem toplike_gen_cast_aux {g : Exp} {T : Typ} {w : Exp} (hc : Cast g T w)
     | arr _ _ => nomatch hg
     | and _ _ => nomatch hg
     | brand _ => nomatch hg
+    | or _ _ => nomatch hg
     | rcd l' A' =>
       injection hg with _ hA'
       cases htl with
@@ -223,6 +251,31 @@ theorem cast_brand_cost : {v w : Exp} → {n : Nat} → Cast v (.brand n) w
     | tmrg _ hq' _ _ => exact Cost.candr (cast_brand_cost hc hq hq')
     | tmergev _ _ _ hq' _ => exact Cost.candr (cast_brand_cost hc hq hq')
 
+-- A value castable at a union target has a union leaf in its type; since any two union
+-- types share a COST unconditionally (coror), the leaf is COST-related to EVERY union.
+theorem cast_or_cost : {v w : Exp} → {A' B' : Typ} → Cast v (.or A' B') w
+    → ∀ {Γ B X₁ X₂ : Typ}, Value v → HasType Δ Γ v B → Cost B (.or X₁ X₂)
+  | _, _, _, _, .cinl _ => by
+    intro _ ht
+    cases ht with
+    | tinl _ => exact Cost.coror
+  | _, _, _, _, .cinr _ => by
+    intro _ ht
+    cases ht with
+    | tinr _ => exact Cost.coror
+  | _, _, _, _, .cmrgl _ hc => by
+    intro hv ht
+    cases hv with | vmrg hp _ =>
+    cases ht with
+    | tmrg hp' _ _ _ => exact Cost.candl (cast_or_cost hc hp hp')
+    | tmergev _ _ hp' _ _ => exact Cost.candl (cast_or_cost hc hp hp')
+  | _, _, _, _, .cmrgr _ hc => by
+    intro hv ht
+    cases hv with | vmrg _ hq =>
+    cases ht with
+    | tmrg _ hq' _ _ => exact Cost.candr (cast_or_cost hc hq hq')
+    | tmergev _ _ _ hq' _ => exact Cost.candr (cast_or_cost hc hq hq')
+
 -- Peel the second cast at a record target down to its record leaf, handing the leaf to a
 -- continuation (which will be the outer induction hypothesis of casts_not_disjoint).
 theorem cast_rcd_cost_aux : {v w : Exp} → {l : String} → {T' : Typ} → Cast v (.rcd l T') w
@@ -278,6 +331,14 @@ theorem casts_not_disjoint
   | cfarrowtl htlD _ _ =>
     intro _ _ _ _ _ _ _ _ _ _ _ hntl
     exact absurd (TopLike.tlarr htlD) hntl
+  | cinl _ =>
+    intro Γ₁ A _ ht₁ v₂ Γ₂ B w₂ hv₂ ht₂ hc₂ _
+    cases ht₁ with
+    | tinl _ => exact cost_symm (cast_or_cost hc₂ hv₂ ht₂)
+  | cinr _ =>
+    intro Γ₁ A _ ht₁ v₂ Γ₂ B w₂ hv₂ ht₂ hc₂ _
+    cases ht₁ with
+    | tinr _ => exact cost_symm (cast_or_cost hc₂ hv₂ ht₂)
   | cwrap =>
     intro Γ₁ A _ ht₁ v₂ Γ₂ B w₂ hv₂ ht₂ hc₂ _
     cases ht₁
@@ -344,6 +405,10 @@ theorem disjoint_consistent {v₁ v₂ : Exp} {Γ₁ Γ₂ A B : Typ}
     cases toplike_dec (.brand n) with
     | inl htl => nomatch htl
     | inr hntl => exact absurd (casts_not_disjoint c₁ hv₁ ht₁ hv₂ ht₂ c₂ hntl) hd
+  | or T₁ T₂ _ _ =>
+    cases toplike_dec (.or T₁ T₂) with
+    | inl htl => nomatch htl
+    | inr hntl => exact absurd (casts_not_disjoint c₁ hv₁ ht₁ hv₂ ht₂ c₂ hntl) hd
   | arr T₁ T₂ _ _ =>
     cases toplike_dec (.arr T₁ T₂) with
     | inl htl => rw [cast_toplike_gen htl c₁, cast_toplike_gen htl c₂]
@@ -380,6 +445,9 @@ theorem value_weaken {v : Exp} {Γ A : Typ} (ht : HasType Δ Γ v A)
   | tclos hv' henv hd hb hs₁ hs₂ _ _ =>
     intro Γ' _
     exact HasType.tclos hv' henv hd hb hs₁ hs₂
+  | tinl _ ih => intro _ hv; cases hv with | vinl hv' => exact HasType.tinl (ih hv')
+  | tinr _ ih => intro _ hv; cases hv with | vinr hv' => exact HasType.tinr (ih hv')
+  | tcase _ _ _ _ _ _ _ _ => intro _ hv; nomatch hv
   | tflam _ _ _ _ => intro _ hv; nomatch hv
   | tfclos hv' henv hd₁ hd₂ hb hs₁ hs₂ hs₃ _ _ =>
     intro Γ' _
@@ -415,6 +483,20 @@ theorem cast_determinism {v : Exp} {A : Typ} {w₁ : Exp} (c₁ : Cast v A w₁)
     cases c₂ with
     | carrow hntl _ _ => exact absurd htl hntl
     | carrowtl _ _ _ => rfl
+  | cinl hc ih =>
+    intro Γ C hv ht w₂ c₂
+    cases hv with | vinl hv' =>
+    cases c₂ with
+    | cinl hc₂ =>
+      cases ht with
+      | tinl hp => rw [ih hv' hp hc₂]
+  | cinr hc ih =>
+    intro Γ C hv ht w₂ c₂
+    cases hv with | vinr hv' =>
+    cases c₂ with
+    | cinr hc₂ =>
+      cases ht with
+      | tinr hp => rw [ih hv' hp hc₂]
   | cfarrow hntl _ _ =>
     intro _ _ _ _ _ c₂
     cases c₂ with
@@ -539,6 +621,22 @@ theorem cast_trans_farrowtl : {v : Exp} → {A : Typ} → {u : Exp} → {A₀ B�
   | _, _, _, _, _, _, _, .cmrgr _ h, _, _, htl', hsC', hsB' =>
     .cmrgr .oarr (cast_trans_farrowtl h htl' hsC' hsB')
 
+theorem cast_trans_inl : {v : Exp} → {A Bt : Typ} → {u : Exp} → {A' B' : Typ} → {u' : Exp}
+    → Cast v A (.inl Bt u)
+    → (∀ {v' : Exp} {A'' : Typ}, Cast v' A'' u → Cast v' A' u')
+    → Cast v (.or A' B') (.inl B' u')
+  | _, _, _, _, _, _, _, .cinl h, k => .cinl (k h)
+  | _, _, _, _, _, _, _, .cmrgl _ h, k => .cmrgl .oor (cast_trans_inl h k)
+  | _, _, _, _, _, _, _, .cmrgr _ h, k => .cmrgr .oor (cast_trans_inl h k)
+
+theorem cast_trans_inr : {v : Exp} → {A At : Typ} → {u : Exp} → {A' B' : Typ} → {u' : Exp}
+    → Cast v A (.inr At u)
+    → (∀ {v' : Exp} {A'' : Typ}, Cast v' A'' u → Cast v' B' u')
+    → Cast v (.or A' B') (.inr A' u')
+  | _, _, _, _, _, _, _, .cinr h, k => .cinr (k h)
+  | _, _, _, _, _, _, _, .cmrgl _ h, k => .cmrgl .oor (cast_trans_inr h k)
+  | _, _, _, _, _, _, _, .cmrgr _ h, k => .cmrgr .oor (cast_trans_inr h k)
+
 theorem cast_trans_wrap : {v : Exp} → {A : Typ} → {n : Nat} → {u : Exp}
     → Cast v A (.wrap n u) → Cast v (.brand n) (.wrap n u)
   | _, _, _, _, .cwrap => .cwrap
@@ -576,6 +674,8 @@ theorem cast_trans : {v : Exp} → {A : Typ} → {v₁ : Exp} → {B : Typ} → 
   | _, _, _, _, _, f, .cwrap => cast_trans_wrap f
   | _, _, _, _, _, f, .cfarrow hntl hsC hsB => cast_trans_farrow f hntl hsC hsB
   | _, _, _, _, _, f, .cfarrowtl htl hsC hsB => cast_trans_farrowtl f htl hsC hsB
+  | _, _, _, _, _, f, .cinl s => cast_trans_inl f (fun f' => cast_trans f' s)
+  | _, _, _, _, _, f, .cinr s => cast_trans_inr f (fun f' => cast_trans f' s)
 
 -- Eᵢ Lemma 11: the results of casting one well-typed value are consistent.
 theorem consistent_after_cast {v : Exp} {Γ C A B : Typ} {v₁ v₂ : Exp}
@@ -633,6 +733,16 @@ theorem cast_preservation : {v : Exp} → {A : Typ} → {w : Exp} → Cast v A w
     intro _ ht
     cases ht with
     | twrap hΔ hv' hp => exact HasType.twrap hΔ hv' hp
+  | _, _, _, .cinl hc => by
+    intro hv ht
+    cases hv with | vinl hv' =>
+    cases ht with
+    | tinl hp => exact HasType.tinl (cast_preservation hc hv' hp)
+  | _, _, _, .cinr hc => by
+    intro hv ht
+    cases hv with | vinr hv' =>
+    cases ht with
+    | tinr hp => exact HasType.tinr (cast_preservation hc hv' hp)
   | _, _, _, .cfarrow _ hsC hsB => by
     intro _ ht
     cases ht with
@@ -693,6 +803,9 @@ theorem cast_progress {A : Typ}
     | twrap _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
+    | tinl _ _ => intro _ hs; nomatch hs
+    | tinr _ _ => intro _ hs; nomatch hs
+    | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
   | brand n =>
@@ -736,6 +849,9 @@ theorem cast_progress {A : Typ}
       | sbrand => exact ⟨_, Cast.cwrap⟩
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
+    | tinl _ _ => intro _ hs; nomatch hs
+    | tinr _ _ => intro _ hs; nomatch hs
+    | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
   | arr C D _ _ =>
@@ -782,6 +898,9 @@ theorem cast_progress {A : Typ}
     | twrap _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
+    | tinl _ _ => intro _ hs; nomatch hs
+    | tinr _ _ => intro _ hs; nomatch hs
+    | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ hs₃ _ _ =>
       intro _ hs
@@ -834,7 +953,65 @@ theorem cast_progress {A : Typ}
     | twrap _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
+    | tinl _ _ => intro _ hs; nomatch hs
+    | tinr _ _ => intro _ hs; nomatch hs
+    | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
+  | or A₁ B₁ ihA₁ ihB₁ =>
+    intro v Γ B hv ht hs
+    revert hv hs
+    induction ht with
+    | tquery => intro hv _; nomatch hv
+    | tint => intro _ hs; nomatch hs
+    | tunit => intro _ hs; nomatch hs
+    | tapp _ _ _ _ => intro hv _; nomatch hv
+    | tbox _ _ _ _ => intro hv _; nomatch hv
+    | tproj _ _ _ => intro hv _; nomatch hv
+    | trcd _ _ => intro _ hs; nomatch hs
+    | trproj _ _ _ => intro hv _; nomatch hv
+    | tmrg _ _ _ _ ihm₁ ihm₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ihm₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.oor hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ihm₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.oor hc⟩
+    | tmergev _ _ _ _ _ ihm₁ ihm₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ihm₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.oor hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ihm₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.oor hc⟩
+    | tlam _ _ _ => intro hv _; nomatch hv
+    | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tanno _ _ _ => intro hv _; nomatch hv
+    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | tseal _ _ _ _ _ => intro hv _; nomatch hv
+    | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
+    | tflam _ _ _ _ => intro hv _; nomatch hv
+    | tfclos _ _ _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tinl hp _ =>
+      intro hv hs
+      cases hv with | vinl hv' =>
+      cases hs with
+      | sor hs₁ _ =>
+        obtain ⟨w, hc⟩ := ihA₁ hv' hp hs₁
+        exact ⟨.inl B₁ w, Cast.cinl hc⟩
+    | tinr hp _ =>
+      intro hv hs
+      cases hv with | vinr hv' =>
+      cases hs with
+      | sor _ hs₂ =>
+        obtain ⟨w, hc⟩ := ihB₁ hv' hp hs₂
+        exact ⟨.inr A₁ w, Cast.cinr hc⟩
+    | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
 
 end Seal

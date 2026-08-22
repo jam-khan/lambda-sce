@@ -131,6 +131,48 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
         → SealV n R₁ S v₁ w₁ → SealV n R₂ S v₂ w₂ → LR Δ₁ Δ₂ η S w₁ w₂) ∧
       (∀ {v₁ v₂ w₁ w₂ : Exp}, LR Δ₁ Δ₂ η S v₁ v₂
         → UnsealV n R₁ S v₁ w₁ → UnsealV n R₂ S v₂ w₂ → LRg Δ₁ Δ₂ η (some (n, R₁, R₂)) S w₁ w₂)
+  | .or A B, hwf₁, hwf₂ => by
+    cases hwf₁ with
+    | or hwfA₁ hwfB₁ =>
+      cases hwf₂ with
+      | or hwfA₂ hwfB₂ =>
+        constructor
+        · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+          cases hlr with
+          | inl h' =>
+            obtain ⟨p₁, p₂, e₁, e₂, hp⟩ := h'
+            subst e₁; subst e₂
+            cases h₁ with
+            | inl hs₁ =>
+              cases h₂ with
+              | inl hs₂ =>
+                exact Or.inl ⟨_, _, rfl, rfl, (coe_lr hb A hwfA₁ hwfA₂).1 hp hs₁ hs₂⟩
+          | inr h' =>
+            obtain ⟨p₁, p₂, e₁, e₂, hp⟩ := h'
+            subst e₁; subst e₂
+            cases h₁ with
+            | inr hs₁ =>
+              cases h₂ with
+              | inr hs₂ =>
+                exact Or.inr ⟨_, _, rfl, rfl, (coe_lr hb B hwfB₁ hwfB₂).1 hp hs₁ hs₂⟩
+        · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+          cases hlr with
+          | inl h' =>
+            obtain ⟨p₁, p₂, e₁, e₂, hp⟩ := h'
+            subst e₁; subst e₂
+            cases h₁ with
+            | inl hu₁ =>
+              cases h₂ with
+              | inl hu₂ =>
+                exact Or.inl ⟨_, _, rfl, rfl, (coe_lr hb A hwfA₁ hwfA₂).2 hp hu₁ hu₂⟩
+          | inr h' =>
+            obtain ⟨p₁, p₂, e₁, e₂, hp⟩ := h'
+            subst e₁; subst e₂
+            cases h₁ with
+            | inr hu₁ =>
+              cases h₂ with
+              | inr hu₂ =>
+                exact Or.inr ⟨_, _, rfl, rfl, (coe_lr hb B hwfB₁ hwfB₂).2 hp hu₁ hu₂⟩
   | .int, _, _ => by
     constructor
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂

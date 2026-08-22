@@ -39,6 +39,31 @@ theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
     | sbeta _ _ _ hc₂ =>
       cases ht with
       | tapp _ hb => rw [cast_determinism hc hv₂ hb hc₂]
+  | sinl _ hs ih =>
+    cases h₂ with
+    | sinl _ hs₂ =>
+      cases ht with
+      | tinl ha => rw [ih ha henv hs₂]
+  | sinr _ hs ih =>
+    cases h₂ with
+    | sinr _ hs₂ =>
+      cases ht with
+      | tinr ha => rw [ih ha henv hs₂]
+  | scase _ hs ih =>
+    cases h₂ with
+    | scase _ hs₂ =>
+      cases ht with
+      | tcase ha _ _ _ _ => rw [ih ha henv hs₂]
+    | scasel _ hv₁ => exact (value_not_step (Value.vinl hv₁) hs).elim
+    | scaser _ hv₁ => exact (value_not_step (Value.vinr hv₁) hs).elim
+  | scasel _ hv₁ =>
+    cases h₂ with
+    | scase _ hs₂ => exact (value_not_step (Value.vinl hv₁) hs₂).elim
+    | scasel _ _ => rfl
+  | scaser _ hv₁ =>
+    cases h₂ with
+    | scase _ hs₂ => exact (value_not_step (Value.vinr hv₁) hs₂).elim
+    | scaser _ _ => rfl
   | sflam _ =>
     cases h₂ with
     | sflam _ => rfl

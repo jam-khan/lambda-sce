@@ -44,6 +44,14 @@ inductive Cast : Exp → Typ → Exp → Prop where
   -- preservation.  Branding is therefore installed by `seal`, never by a cast.
   | cwrap {n v}
     : Cast (.wrap n v) (.brand n) (.wrap n v)
+  -- Unions: casting follows the tag; the payload is cast at the corresponding component
+  -- and the OTHER component's annotation is rewritten to the target's.
+  | cinl {v A' v' B B'}
+    : Cast v A' v'
+    → Cast (.inl B v) (.or A' B') (.inl B' v')
+  | cinr {v B' v' A A'}
+    : Cast v B' v'
+    → Cast (.inr A v) (.or A' B') (.inr A' v')
   -- Casting a fixpoint closure rewrites only the EXTERNAL codomain Bx; the internal B is
   -- pinned because the body's context mentions (A → B) and beta reinstalls the
   -- self-reference at it.  The Sub premise is on Bx (the value's visible codomain) so the
@@ -74,6 +82,8 @@ theorem cast_value {v : Exp} {A : Typ} {w : Exp} (hv : Value v) (h : Cast v A w)
   | cand _ _ ih₁ ih₂ => exact Value.vmrg (ih₁ hv) (ih₂ hv)
   | crcd _ ih => cases hv with | vrcd hv' => exact Value.vrcd (ih hv')
   | cwrap => exact hv
+  | cinl _ ih => cases hv with | vinl hv' => exact Value.vinl (ih hv')
+  | cinr _ ih => cases hv with | vinr hv' => exact Value.vinr (ih hv')
   | cfarrow _ _ _ => cases hv with | vfclos hv' => exact Value.vfclos hv'
   | cfarrowtl _ _ _ => exact Value.vclos Value.vunit
 
@@ -95,6 +105,8 @@ theorem cast_toplike_gen {v : Exp} {A : Typ} {w : Exp} (htl : TopLike A) (h : Ca
     cases htl with
     | tlrcd h' => rw [ih h']; rfl
   | cwrap => nomatch htl
+  | cinl _ _ => nomatch htl
+  | cinr _ _ => nomatch htl
   | cfarrow hntl _ _ => cases htl with | tlarr hD => exact absurd hD hntl
   | cfarrowtl _ _ _ => rfl
 

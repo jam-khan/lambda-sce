@@ -39,6 +39,7 @@ theorem lookup_prog {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
   | succ _ ih =>
@@ -57,6 +58,7 @@ theorem lookup_prog {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
 
@@ -114,6 +116,7 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
   | landl _ _ ih =>
@@ -132,6 +135,7 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
   | landr _ _ ih =>
@@ -150,6 +154,7 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     | tproj _ _ => nomatch hv
     | trproj _ _ => nomatch hv
     | tanno _ _ => nomatch hv
+    | tcase _ _ _ _ _ => nomatch hv
     | tseal _ _ _ _ => nomatch hv
     | tunseal _ _ _ _ _ => nomatch hv
 
