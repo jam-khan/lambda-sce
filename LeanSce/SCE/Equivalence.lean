@@ -379,7 +379,7 @@ theorem sbig_sound {env e v : Exp}
     have hv2 := sbig_produces_value hv hb2
     cases hv2 with
     | vmclos hvc =>
-      have hvl := source_sel_value hv1 hsel
+      have hvl := S_Sem.sel_value hsel hv1
       have hv3 := sbig_produces_value (Value.vmrg hvc (Value.vlrec hvl)) hb3
       exact smstep_trans (smstep_mlink_left ih1 _)
         (smstep_trans (smstep_mlink_right hv1 ih2)
@@ -602,7 +602,7 @@ theorem sstep_sbig {env e1 e2 v : Exp}
     cases hb with
     | proj _ hb1 hlook => exact BStep.proj hv (ih hb1) hlook
   | ssprojv hv hv1 hlook =>
-    have heq := sbig_value_eq hb (source_lookupv_value hv1 hlook)
+    have heq := sbig_value_eq hb (S_Sem.lookupv_value hlook hv1)
     subst heq
     exact BStep.proj hv (sbig_value_refl hv1 hv) hlook
   | sslrec hv _ ih =>
@@ -612,7 +612,7 @@ theorem sstep_sbig {env e1 e2 v : Exp}
     cases hb with
     | rproj _ hb1 hsel => exact BStep.rproj hv (ih hb1) hsel
   | ssrprojv hv hv1 hsel =>
-    have heq := sbig_value_eq hb (source_sel_value hv1 hsel)
+    have heq := sbig_value_eq hb (S_Sem.sel_value hsel hv1)
     subst heq
     exact BStep.rproj hv (sbig_value_refl hv1 hv) hsel
   | ssmstruct_sandboxed hv _ ih =>
@@ -680,7 +680,7 @@ theorem sstep_sbig {env e1 e2 v : Exp}
       have heq := sbig_value_eq hb1 hv1; subst heq
       cases hb2 with
       | box _ hb_env hb_body =>
-        have heq := sbig_value_eq hb_env (Value.vmrg hv2 (Value.vlrec (source_sel_value hv1 hsel)))
+        have heq := sbig_value_eq hb_env (Value.vmrg hv2 (Value.vlrec (S_Sem.sel_value hsel hv1)))
         subst heq
         exact BStep.mlink hv (sbig_value_refl hv1 hv) (BStep.mclos_val hv hv2) hsel hb_body
   | ssmlinknl hv _ ih =>

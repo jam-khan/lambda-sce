@@ -37,29 +37,6 @@ theorem record_lookup_uniqueness
     cases h₂ with
     | sig _ _ _ h₂' => exact ih h₂'
 
-theorem source_lookupv_value
-    {v v' : SCE.Exp} {n : Nat}
-    (hval : SCE.Value v)
-    (hlook : S_Sem.LookupV v n v')
-    : SCE.Value v' := by
-  induction hlook with
-  | dmrg_zero => cases hval with | vmrg h1 h2 => exact h2
-  | dmrg_succ _ ih => cases hval with | vmrg h1 h2 => exact ih h1
-  | nmrg_zero => cases hval
-  | nmrg_succ => cases hval
-
-theorem source_sel_value
-    {v v' : SCE.Exp} {l : String}
-    (hval : SCE.Value v)
-    (hsel : S_Sem.Sel v l v')
-    : SCE.Value v' := by
-  induction hsel with
-  | rcd => cases hval with | vlrec h => exact h
-  | dmrg_left _ ih => cases hval with | vmrg h1 h2 => exact ih h1
-  | dmrg_right _ ih => cases hval with | vmrg h1 h2 => exact ih h2
-  | nmrg_left _ ih => cases hval
-  | nmrg_right _ ih => cases hval
-
 theorem eval_produces_value
     {ρ e v : SCE.Exp}
     (hval : SCE.Value ρ)
@@ -72,7 +49,7 @@ theorem eval_produces_value
   | clos_val _ hv => exact SCE.Value.vclos hv
   | mclos_val _ hv => exact SCE.Value.vmclos hv
   | proj _ _ hlook ih1 =>
-    exact source_lookupv_value (ih1 hval) hlook
+    exact S_Sem.lookupv_value hlook (ih1 hval)
   | lam _ => exact SCE.Value.vclos hval
   | box _ _ _ ih1 ih2 => exact ih2 (ih1 hval)
   | app_clos _ _ _ _ ih1 ih2 ih3 =>
@@ -87,7 +64,7 @@ theorem eval_produces_value
     exact SCE.Value.vmrg (ih1 hval) (ih2 hval)
   | lrec _ _ ih => exact SCE.Value.vlrec (ih hval)
   | rproj _ _ hsel ih =>
-    exact source_sel_value (ih hval) hsel
+    exact S_Sem.sel_value hsel (ih hval)
   | letb _ _ _ ih1 ih2 =>
     exact ih2 (SCE.Value.vmrg hval (ih1 hval))
   | openm _ _ _ ih1 ih2 =>
@@ -102,7 +79,7 @@ theorem eval_produces_value
     have hv2 := ih2 hv
     cases hv2 with
     | vmclos hvv2 =>
-      have hvl := source_sel_value hv1 hsel
+      have hvl := S_Sem.sel_value hsel hv1
       exact SCE.Value.vmrg hv1 (ih3 (SCE.Value.vmrg hvv2 (SCE.Value.vlrec hvl)))
   | mlinkn hv hstep1 hstep2 hsp hstep3 ih1 ih2 ih3 =>
     have hv1 := ih1 hv

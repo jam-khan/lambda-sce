@@ -606,7 +606,7 @@ theorem source_bigstep_elab_pres {ρ e v : SCE.Exp} (heval : S_Sem.BStep ρ e v)
       obtain ⟨wm, hwm⟩ := ih2 he2 hρ henv
       cases hwm with
       | emclos hval2 henv2 hbody hd_mclos =>
-        have hvl := sce_sel_value hsel hv1
+        have hvl := S_Sem.sel_value hsel hv1
         obtain ⟨wl, hwl⟩ := elabSeal_sel_pres hslook hw1 hv1 hsel
         obtain ⟨w3, hw3⟩ := ih3 hbody
           (SCE.Value.vmrg hval2 (SCE.Value.vlrec hvl))
@@ -926,7 +926,7 @@ theorem source_bigstep_deterministic_gen {ρ e v₁ : SCE.Exp} (heval₁ : S_Sem
           rw [← heq_a] at hsel₂
           have heq_sel := source_sel_det hsel₁ hv1 hw1 hslook hsel₂
           subst heq_sel
-          have hvl := sce_sel_value hsel₁ hv1
+          have hvl := S_Sem.sel_value hsel₁ hv1
           obtain ⟨wl, hwl⟩ := elabSeal_sel_pres hslook hw1 hv1 hsel₁
           have heq_c := ih3 hbody
             (elabSeal.evmrg hval2 (SCE.Value.vlrec hvl) henv2 (elabSeal.elrec hwl) hd_mclos)

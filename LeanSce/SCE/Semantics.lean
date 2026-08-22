@@ -43,6 +43,14 @@ inductive SelPkg : Exp → Typ → Exp → Prop where
     → Sel v l vl
     → SelPkg v (.and D (.rcd l A)) (.mrg pkg (.lrec l vl))
 
+theorem lookupv_value {v v' : Exp} {n : Nat}
+    (hlook : LookupV v n v') (hv : Value v) : Value v' := by
+  induction hlook with
+  | dmrg_zero => cases hv with | vmrg h1 h2 => exact h2
+  | dmrg_succ _ ih => cases hv with | vmrg h1 h2 => exact ih h1
+  | nmrg_zero => cases hv
+  | nmrg_succ _ ih => cases hv
+
 theorem sel_value {v v' : Exp} {l : String}
     (hsel : Sel v l v') (hv : Value v) : Value v' := by
   induction hsel with

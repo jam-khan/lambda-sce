@@ -332,7 +332,7 @@ theorem eval_lookup {A B : SCE.Typ} {n : Nat} (hl : SCE.SLookup A n B)
       obtain ⟨w', hw'⟩ := elabSeal_lookup_pres (SCE.SLookup.zero A₀ B₀) hw hv hlv
       exact ⟨_, genVal_lookupv (slookup_seal (SCE.SLookup.zero A₀ B₀)),
         EVal.gen (lookup_toplike (slookup_seal (SCE.SLookup.zero A₀ B₀)) htl)
-          (sce_lookupv_value hlv hv) hw'⟩
+          (S_Sem.lookupv_value hlv hv) hw'⟩
   | succ A₀ B₀ n₀ C₀ hpre ih =>
     intro vs v' vc hEV hlv
     cases hEV with
@@ -346,7 +346,7 @@ theorem eval_lookup {A B : SCE.Typ} {n : Nat} (hl : SCE.SLookup A n B)
         elabSeal_lookup_pres (SCE.SLookup.succ A₀ B₀ n₀ C₀ hpre) hw hv hlv
       exact ⟨_, genVal_lookupv (slookup_seal (SCE.SLookup.succ A₀ B₀ n₀ C₀ hpre)),
         EVal.gen (lookup_toplike (slookup_seal (SCE.SLookup.succ A₀ B₀ n₀ C₀ hpre)) htl)
-          (sce_lookupv_value hlv hv) hw'⟩
+          (S_Sem.lookupv_value hlv hv) hw'⟩
 
 theorem eval_sel {B : SCE.Typ} {l : String} {A : SCE.Typ} (hl : SCE.SRLookup B l A)
     : ∀ {vs v' : SCE.Exp} {vc : Seal.Exp}, EVal Δ B vs vc → S_Sem.Sel vs l v'

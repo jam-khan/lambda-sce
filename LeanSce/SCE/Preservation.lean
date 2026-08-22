@@ -39,27 +39,6 @@ theorem svalue_not_step {e : SCE.Exp} (hv : SCE.Value e) : ∀ {v e' : SCE.Exp},
     cases hs with
     | sswrap _ hs' => exact ih hs'
 
--- SCE LookupV preserves values
-theorem sce_lookupv_value {v v' : SCE.Exp} {n : Nat}
-    (hlook : S_Sem.LookupV v n v')
-    (hv : SCE.Value v) : SCE.Value v' := by
-  induction hlook with
-  | dmrg_zero => cases hv; assumption
-  | dmrg_succ _ ih => cases hv; exact ih (by assumption)
-  | nmrg_zero => cases hv
-  | nmrg_succ _ ih => cases hv
-
--- SCE Sel preserves values
-theorem sce_sel_value {v v' : SCE.Exp} {l : String}
-    (hsel : S_Sem.Sel v l v')
-    (hv : SCE.Value v) : SCE.Value v' := by
-  induction hsel with
-  | rcd => cases hv; assumption
-  | dmrg_left _ ih => cases hv; exact ih (by assumption)
-  | dmrg_right _ ih => cases hv; exact ih (by assumption)
-  | nmrg_left _ ih => cases hv
-  | nmrg_right _ ih => cases hv
-
 -- ── Elaboration-witnessed preservation (elabSeal, SCE → λE^≤) ────────────────────────
 
 namespace Seal
@@ -165,7 +144,7 @@ theorem elabSeal_selpkg_pres {Γc : Seal.Typ} {Γ₁ D : SCE.Typ} (hok : WireOk 
     | more hsp' hsel =>
       obtain ⟨cpkg, hpkg⟩ := ih hsp' hv helab
       obtain ⟨w, h⟩ := elabSeal_sel_pres hrl helab hv hsel
-      have hvl := sce_sel_value hsel hv
+      have hvl := S_Sem.sel_value hsel hv
       have hvpkg := S_Sem.selpkg_value hsp' hv
       exact ⟨_, elabSeal.evmrg hvpkg (SCE.Value.vlrec hvl) hpkg (elabSeal.elrec h) hd₂⟩
 
@@ -495,7 +474,7 @@ theorem source_sgpreservation {e e' v : SCE.Exp} (hstep : SStep v e e')
     cases helab with
     | eproj h₁ hlook =>
       obtain ⟨w, hw⟩ := elabSeal_lookup_pres hlook h₁ hv1 hlookv
-      exact ⟨_, elabSeal_weaken hw (sce_lookupv_value hlookv hv1) Γ⟩
+      exact ⟨_, elabSeal_weaken hw (S_Sem.lookupv_value hlookv hv1) Γ⟩
   | sslrec hv hstep ih =>
     intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
     cases helab with
@@ -513,7 +492,7 @@ theorem source_sgpreservation {e e' v : SCE.Exp} (hstep : SStep v e e')
     cases helab with
     | erproj h₁ hlook =>
       obtain ⟨w, hw⟩ := elabSeal_sel_pres hlook h₁ hv1 hsel
-      exact ⟨_, elabSeal_weaken hw (sce_sel_value hsel hv1) Γ⟩
+      exact ⟨_, elabSeal_weaken hw (S_Sem.sel_value hsel hv1) Γ⟩
   | ssmstruct_sandboxed hv hstep ih =>
     intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
     cases helab with
@@ -617,7 +596,7 @@ theorem source_sgpreservation {e e' v : SCE.Exp} (hstep : SStep v e e')
       cases h₂ with
       | emclos hval_v2 henv_v2 hbody hd_mclos =>
         obtain ⟨wl, helab_vl⟩ := elabSeal_sel_pres hlook h₁ hv1 hsel
-        have hvl := sce_sel_value hsel hv1
+        have hvl := S_Sem.sel_value hsel hv1
         exact ⟨_, elabSeal.edmrg h₁
           (elabSeal.ebox
             (elabSeal.evmrg hval_v2 (SCE.Value.vlrec hvl) henv_v2
