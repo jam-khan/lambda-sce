@@ -47,6 +47,12 @@ inductive SealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
   | inr {A B v w}
     : SealV n R B v w
     → SealV n R (.or A B) (.inr (substBrand n R A) v) (.inr A w)
+  -- μ (and stray variables) are opaque to sealing: the coercion is the identity.  WfSig
+  -- only admits brand-free μ, which is what makes this type-correct.
+  | var {m v}
+    : SealV n R (.var m) v v
+  | mu {T v}
+    : SealV n R (.mu T) v v
 
 -- UnsealV n R S v w: the converse coercion S ⇒ S[n:=R].
 inductive UnsealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
@@ -76,6 +82,10 @@ inductive UnsealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
   | inr {A B v w}
     : UnsealV n R B v w
     → UnsealV n R (.or A B) (.inr A v) (.inr (substBrand n R A) w)
+  | var {m v}
+    : UnsealV n R (.var m) v v
+  | mu {T v}
+    : UnsealV n R (.mu T) v v
 
 inductive Step : Exp → Exp → Exp → Prop where
   | squery {v}
@@ -119,6 +129,18 @@ inductive Step : Exp → Exp → Exp → Prop where
     : Value v
     → Value v₁
     → Step v (.case (.inr A v₁) e₁ e₂) (.box (.mrg v v₁) e₂)
+  | sfold {v e e' T}
+    : Value v
+    → Step v e e'
+    → Step v (.fold T e) (.fold T e')
+  | sunfold {v e e'}
+    : Value v
+    → Step v e e'
+    → Step v (.unfold e) (.unfold e')
+  | sunfoldv {v v₁ T}
+    : Value v
+    → Value v₁
+    → Step v (.unfold (.fold T v₁)) v₁
   | sflam {v A B e}
     : Value v
     → Step v (.flam A B e) (.fclos v A B B e)
@@ -243,6 +265,7 @@ theorem value_not_step {e : Exp} (hv : Value e) : ∀ {v e' : Exp}, Step v e e' 
   | vwrap _ ih => intro _ _ h; cases h with | swrap _ hs => exact ih hs
   | vinl _ ih => intro _ _ h; cases h with | sinl _ hs => exact ih hs
   | vinr _ ih => intro _ _ h; cases h with | sinr _ hs => exact ih hs
+  | vfold _ ih => intro _ _ h; cases h with | sfold _ hs => exact ih hs
   | vfclos _ => intro _ _ h; nomatch h
 
 -- The coercions produce values from values.
@@ -258,6 +281,8 @@ theorem sealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SealV 
   | arr => exact Value.vclos (Value.vmrg Value.vunit (Value.vrcd hv))
   | inl _ ih => cases hv with | vinl h' => exact Value.vinl (ih h')
   | inr _ ih => cases hv with | vinr h' => exact Value.vinr (ih h')
+  | var => exact hv
+  | mu => exact hv
 
 theorem unsealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : UnsealV n R S v w)
     : Value w := by
@@ -271,6 +296,8 @@ theorem unsealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : Unse
   | arr => exact Value.vclos (Value.vmrg Value.vunit (Value.vrcd hv))
   | inl _ ih => cases hv with | vinl h' => exact Value.vinl (ih h')
   | inr _ ih => cases hv with | vinr h' => exact Value.vinr (ih h')
+  | var => exact hv
+  | mu => exact hv
 
 -- The coercions are deterministic as relations (no typing needed: the shape of the
 -- source type picks the rule).
@@ -286,6 +313,8 @@ theorem sealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : SealV n R S v w�
   | arr => intro _ h₂; cases h₂; rfl
   | inl _ ih => intro _ h₂; cases h₂ with | inl a => rw [ih a]
   | inr _ ih => intro _ h₂; cases h₂ with | inr a => rw [ih a]
+  | var => intro _ h₂; cases h₂; rfl
+  | mu => intro _ h₂; cases h₂; rfl
 
 theorem unsealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : UnsealV n R S v w₁)
     : ∀ {w₂ : Exp}, UnsealV n R S v w₂ → w₁ = w₂ := by
@@ -299,6 +328,8 @@ theorem unsealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : UnsealV n R S v
   | arr => intro _ h₂; cases h₂; rfl
   | inl _ ih => intro _ h₂; cases h₂ with | inl a => rw [ih a]
   | inr _ ih => intro _ h₂; cases h₂ with | inr a => rw [ih a]
+  | var => intro _ h₂; cases h₂; rfl
+  | mu => intro _ h₂; cases h₂; rfl
 
 theorem mstep_value_eq {v e e' : Exp} (hv : Value e) (h : MStep v e e') : e = e' := by
   cases h with

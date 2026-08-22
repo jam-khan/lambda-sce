@@ -173,6 +173,36 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
               cases h₂ with
               | inr hu₂ =>
                 exact Or.inr ⟨_, _, rfl, rfl, (coe_lr hb B hwfB₁ hwfB₂).2 hp hu₁ hu₂⟩
+  | .var _, hwf₁, _ => nomatch hwf₁
+  | .mu T, hwf₁, hwf₂ => by
+    cases hwf₁ with
+    | mu hnin₁ _ =>
+      cases hwf₂ with
+      | mu hnin₂ _ =>
+        constructor
+        · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+          obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
+          subst heq
+          cases h₁ with
+          | mu =>
+            cases h₂ with
+            | mu =>
+              exact ⟨hv₁, hv₂, substBrand_notin hnin₁ ▸ ht₁, substBrand_notin hnin₂ ▸ ht₂,
+                rfl⟩
+        · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+          obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
+          subst heq
+          cases h₁ with
+          | mu =>
+            cases h₂ with
+            | mu =>
+              refine ⟨hv₁, hv₂, ?_, ?_, rfl⟩
+              · show HasType Δ₁ .top v₁ (substBrand n R₁ (.mu T))
+                rw [substBrand_notin hnin₁]
+                exact ht₁
+              · show HasType Δ₂ .top v₁ (substBrand n R₂ (.mu T))
+                rw [substBrand_notin hnin₂]
+                exact ht₂
   | .int, _, _ => by
     constructor
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂

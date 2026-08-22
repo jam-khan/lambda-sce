@@ -81,6 +81,15 @@ def LRg (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (o : Bran
   | .or A B, v₁, v₂ =>
       (∃ w₁ w₂, v₁ = .inl (viewL o B) w₁ ∧ v₂ = .inl (viewR o B) w₂ ∧ LRg Δ₁ Δ₂ η o A w₁ w₂) ∨
       (∃ w₁ w₂, v₁ = .inr (viewL o A) w₁ ∧ v₂ = .inr (viewR o A) w₂ ∧ LRg Δ₁ Δ₂ η o B w₁ w₂)
+  -- μ is OPAQUE to the relation (the brand pattern, but with plain equality: the fold
+  -- annotation itself pins the body).  Recursing through the unfolding would break the
+  -- structural recursion this definition lives by; a step-indexed relation is the
+  -- future-work route to a finer clause.  Type variables relate nothing (they never
+  -- close-type a value).
+  | .var _, _, _ => False
+  | .mu T, v₁, v₂ =>
+      Value v₁ ∧ Value v₂ ∧
+      HasType Δ₁ .top v₁ (viewL o (.mu T)) ∧ HasType Δ₂ .top v₂ (viewR o (.mu T)) ∧ v₁ = v₂
 
 -- The client-facing relation: every brand abstract.
 abbrev LR (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) : Typ → Exp → Exp → Prop :=
@@ -119,6 +128,10 @@ theorem viewL_or {o : BrandOpen} {A B : Typ} : viewL o (.or A B) = .or (viewL o 
   cases o with | none => rfl | some p => rfl
 theorem viewR_or {o : BrandOpen} {A B : Typ} : viewR o (.or A B) = .or (viewR o A) (viewR o B) := by
   cases o with | none => rfl | some p => rfl
+theorem viewL_mu {o : BrandOpen} {T : Typ} : viewL o (.mu T) = .mu (viewL o T) := by
+  cases o with | none => rfl | some p => rfl
+theorem viewR_mu {o : BrandOpen} {T : Typ} : viewR o (.mu T) = .mu (viewR o T) := by
+  cases o with | none => rfl | some p => rfl
 
 -- Substitution preserves subtyping (brands are subtypes only of themselves and ε).
 theorem sub_subst {n : Nat} {R : Typ} {A B : Typ} (h : Sub A B)
@@ -133,6 +146,8 @@ theorem sub_subst {n : Nat} {R : Typ} {A B : Typ} (h : Sub A B)
   | srcd _ ih => exact Sub.srcd ih
   | sbrand => exact sub_refl _
   | sor _ _ ih₁ ih₂ => exact Sub.sor ih₁ ih₂
+  | svar => exact sub_refl _
+  | smu => exact sub_refl _
 
 theorem sub_viewL {o : BrandOpen} {A B : Typ} (h : Sub A B) : Sub (viewL o A) (viewL o B) := by
   cases o with
@@ -231,6 +246,8 @@ theorem lr_value {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
       obtain ⟨w₁, w₂, h₁, h₂, hB⟩ := h'
       subst h₁; subst h₂
       exact ⟨Value.vinr (lr_value hB).1, Value.vinr (lr_value hB).2⟩
+  | .var _, _, _, h => h.elim
+  | .mu T, _, _, h => ⟨h.1, h.2.1⟩
 
 theorem lr_typed {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁ Δ₂ η o T v₁ v₂
     → HasType Δ₁ .top v₁ (viewL o T) ∧ HasType Δ₂ .top v₂ (viewR o T)
@@ -267,6 +284,8 @@ theorem lr_typed {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
       obtain ⟨w₁, w₂, h₁, h₂, hB⟩ := h'
       subst h₁; subst h₂
       exact ⟨HasType.tinr (lr_typed hB).1, HasType.tinr (lr_typed hB).2⟩
+  | .var _, _, _, h => h.elim
+  | .mu T, _, _, h => ⟨h.2.2.1, h.2.2.2.1⟩
 
 -- ── MStep congruence toolkit ─────────────────────────────────────────────────────────
 
@@ -527,6 +546,12 @@ theorem cast_merge_eq_l {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' :
   | or _ _ _ _ =>
     intro w w' hv ht hc hc'
     exact cast_merge_eq_l_ord Ordinary.oor hv ht hc hc'
+  | var _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_l_ord Ordinary.ovar hv ht hc hc'
+  | mu _ _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_l_ord Ordinary.omu hv ht hc hc'
 
 theorem cast_merge_eq_r_ord {a b : Exp} {Γ B₁ B₂ T : Typ} {w w' : Exp}
     (hord : Ordinary T) (hv : Value (.mrg a b)) (ht : HasType Δ Γ (.mrg a b) (.and B₁ B₂))
@@ -585,6 +610,12 @@ theorem cast_merge_eq_r {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' :
   | or _ _ _ _ =>
     intro w w' hv ht hc hc'
     exact cast_merge_eq_r_ord Ordinary.oor hv ht hc hc'
+  | var _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_r_ord Ordinary.ovar hv ht hc hc'
+  | mu _ _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_r_ord Ordinary.omu hv ht hc hc'
 
 -- ── The generator is self-related at top-like types ──────────────────────────────────
 
@@ -642,6 +673,13 @@ theorem toplike_lr_gen {o : BrandOpen} (hadm : OpenAdm η o) {D : Typ} (htl : To
 -- the arrow case rebuilds the applications' runs, using cast transitivity to identify
 -- the argument casts and to compose the reseal at the wider codomain.  Stated for any
 -- open brand: the casts happen at the *viewed* types (that is what the semantics does).
+-- Casting at a μ-type is the identity on μ-typed values (typing rules out merge peels).
+theorem cast_mu_id {Δ' : BrandStore} : {v w : Exp} → {T : Typ} → {Γ : Typ} → Cast v (.mu T) w
+    → Value v → HasType Δ' Γ v (.mu T) → w = v
+  | _, _, _, _, .cfold, _, _ => rfl
+  | _, _, _, _, .cmrgl _ _, _, ht => absurd ht (by intro h; nomatch h)
+  | _, _, _, _, .cmrgr _ _, _, ht => absurd ht (by intro h; nomatch h)
+
 theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
     {v₁ v₂ w₁ w₂ : Exp} (hlr : LRg Δ₁ Δ₂ η o B v₁ v₂)
     (c₁ : Cast v₁ (viewL o A) w₁) (c₂ : Cast v₂ (viewR o A) w₂) : LRg Δ₁ Δ₂ η o A w₁ w₂ := by
@@ -735,6 +773,13 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
       · simp only [LRg, hm, if_false] at hlr ⊢
         simp only [viewL, viewR, substBrand, hm, if_false] at c₁ c₂
         exact wrap_case hlr c₁ c₂
+  | svar => exact hlr.elim
+  | smu =>
+    obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
+    subst heq
+    rw [viewL_mu] at c₁ ht₁; rw [viewR_mu] at c₂ ht₂
+    rw [cast_mu_id c₁ hv₁ ht₁, cast_mu_id c₂ hv₂ ht₂]
+    exact ⟨hv₁, hv₂, by rw [viewL_mu]; exact ht₁, by rw [viewR_mu]; exact ht₂, rfl⟩
   | sor hsA hsB ihA ihB =>
     rw [viewL_or] at c₁; rw [viewR_or] at c₂
     cases hlr with
@@ -1257,9 +1302,11 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
   | twrap hΔ _ _ _ => nomatch hΔ
   | tseal hΔ _ _ _ _ => nomatch hΔ
   | tunseal hΔ _ _ _ _ _ => nomatch hΔ
-  -- Fixpoints are outside the normalizing fragment.
+  -- Fixpoints and iso-recursive folds are outside the normalizing fragment.
   | tflam _ _ _ _ => nomatch hfin
   | tfclos _ _ _ _ _ _ _ _ _ _ => nomatch hfin
+  | tfold _ _ => nomatch hfin
+  | tunfold _ _ _ => nomatch hfin
 
 -- ── Corollaries ──────────────────────────────────────────────────────────────────────
 

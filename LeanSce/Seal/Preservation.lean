@@ -19,6 +19,7 @@ theorem wfsig_nores {n : Nat} {R S : Typ} (h : WfSig n R S) : NoRes S := by
   | rcd hne _ ih => exact NoRes.rcd hne ih
   | and _ _ _ _ ih₁ ih₂ => exact NoRes.and ih₁ ih₂
   | or _ _ ih₁ ih₂ => exact NoRes.or ih₁ ih₂
+  | mu _ hnr => exact hnr
 
 theorem nores_subst {n : Nat} {R S : Typ} (hR : NoRes R) (hS : NoRes S)
     : NoRes (substBrand n R S) := by
@@ -34,6 +35,8 @@ theorem nores_subst {n : Nat} {R S : Typ} (hR : NoRes R) (hS : NoRes S)
   | rcd hne _ ih => exact NoRes.rcd hne ih
   | and _ _ ih₁ ih₂ => exact NoRes.and ih₁ ih₂
   | or _ _ ih₁ ih₂ => exact NoRes.or ih₁ ih₂
+  | var => exact NoRes.var
+  | mu _ ih => exact NoRes.mu ih
 
 -- A record under the reserved label is disjoint from every type that avoids the label.
 theorem cost_reserved {T X : Typ} (hX : NoRes X) (hc : Cost (.rcd reservedLabel T) X) : False := by
@@ -44,6 +47,8 @@ theorem cost_reserved {T X : Typ} (hX : NoRes X) (hc : Cost (.rcd reservedLabel 
   | arr _ _ _ _ => nomatch hc
   | rcd hne _ _ => cases hc with | crcd _ => exact hne rfl
   | or _ _ _ _ => nomatch hc
+  | var => nomatch hc
+  | mu _ _ => nomatch hc
   | and _ _ ih₁ ih₂ =>
     cases hc with
     | crandl h => exact ih₁ h
@@ -67,6 +72,14 @@ theorem cost_proxyEnv {T X : Typ} (hX : NoRes X) (hc : Cost (.and .top (.rcd res
     cases hc with
     | candl h => exact cost_top_l h
     | candr h => exact cost_reserved (NoRes.or h₁ h₂) h
+  | var =>
+    cases hc with
+    | candl h => exact cost_top_l h
+    | candr h => exact cost_reserved NoRes.var h
+  | mu h _ =>
+    cases hc with
+    | candl h' => exact cost_top_l h'
+    | candr h' => exact cost_reserved (NoRes.mu h) h'
   | and h₁ h₂ ih₁ ih₂ =>
     cases hc with
     | candl h => exact cost_top_l h
@@ -151,6 +164,13 @@ theorem sealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoRes
         simp only [substBrand] at ht
         cases ht with
         | tinr ht' => exact HasType.tinr (ih hwfB hv' ht')
+  | var =>
+    intro Γ hwf _ _
+    nomatch hwf
+  | mu =>
+    intro Γ hwf hv ht
+    cases hwf with
+    | mu hnin _ => rwa [substBrand_notin hnin] at ht
   | arr =>
     intro Γ hwf hv ht
     cases hwf with
@@ -230,6 +250,13 @@ theorem unsealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoR
         simp only [substBrand]
         cases ht with
         | tinr ht' => exact HasType.tinr (ih hwfB hv' ht')
+  | var =>
+    intro Γ hwf _ _
+    nomatch hwf
+  | mu =>
+    intro Γ hwf hv ht
+    cases hwf with
+    | mu hnin _ => rw [substBrand_notin hnin]; exact ht
   | arr =>
     intro Γ hwf hv ht
     cases hwf with
@@ -298,6 +325,18 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
         have hp' : HasType Δ .top _ _ := value_weaken hp hv₁
         exact HasType.tbox
           (HasType.tmergev hv hv₁ henv hp' (disjoint_consistent hv hv₁ henv hp' hd₂)) h₂
+  | sfold _ _ ih =>
+    cases ht with
+    | tfold h => exact HasType.tfold (ih h henv)
+  | sunfold _ _ ih =>
+    cases ht with
+    | tunfold h heq => exact HasType.tunfold (ih h henv) heq
+  | sunfoldv _ _ =>
+    cases ht with
+    | tunfold h heq =>
+      subst heq
+      cases h with
+      | tfold hp => exact hp
   | sflam hv =>
     cases ht with
     | tflam hd₁ hd₂ hb =>

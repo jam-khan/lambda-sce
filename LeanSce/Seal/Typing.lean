@@ -28,6 +28,8 @@ inductive NoRes : Typ → Prop where
   | rcd {l A}    : l ≠ reservedLabel → NoRes A → NoRes (.rcd l A)
   | and {A B}    : NoRes A → NoRes B → NoRes (.and A B)
   | or {A B}     : NoRes A → NoRes B → NoRes (.or A B)
+  | var {n}      : NoRes (.var n)
+  | mu {T}       : NoRes T → NoRes (.mu T)
 
 -- Signature well-formedness for sealing at S abstracting α_n over R: every intersection
 -- inside S is disjoint in *both* views (abstract, so sealed merges re-type via tmergev;
@@ -44,6 +46,9 @@ inductive WfSig (n : Nat) (R : Typ) : Typ → Prop where
                    → Disj A B → Disj (substBrand n R A) (substBrand n R B)
                    → WfSig n R (.and A B)
   | or {A B}     : WfSig n R A → WfSig n R B → WfSig n R (.or A B)
+  -- μ in a signature must be brand-free: sealing does not reach under μ (the coercion is
+  -- the identity there), so an abstract type cannot hide inside a recursive type.
+  | mu {T}       : ¬ BrandIn n (.mu T) → NoRes (.mu T) → WfSig n R (.mu T)
 
 inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
   | tquery {Δ : BrandStore} {Γ : Typ}
@@ -142,6 +147,15 @@ inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
     → HasType Δ (.and Γ A) e₁ C
     → HasType Δ (.and Γ B) e₂ C
     → HasType Δ Γ (.case e e₁ e₂) C
+  -- Iso-recursive types.  tunfold's result type is a variable guarded by an equation so
+  -- that dependent elimination does not get stuck on substTyp (the tunseal trick).
+  | tfold {Δ : BrandStore} {Γ T : Typ} {e : Exp}
+    : HasType Δ Γ e (substTyp 0 (.mu T) T)
+    → HasType Δ Γ (.fold T e) (.mu T)
+  | tunfold {Δ : BrandStore} {Γ T A : Typ} {e : Exp}
+    : HasType Δ Γ e (.mu T)
+    → A = substTyp 0 (.mu T) T
+    → HasType Δ Γ (.unfold e) A
   -- Fixpoints.  The body extends the context twice (self, then argument), so tflam carries
   -- the disjointness premise for each extension — the same obligation every
   -- context-extending rule discharges.  Like tlam, the body types exactly at the
@@ -196,6 +210,8 @@ theorem hastype_weaken_store {Δ Δ' : BrandStore} (hle : StoreLe Δ Δ') {Γ : 
   | tinl _ ih => exact HasType.tinl ih
   | tinr _ ih => exact HasType.tinr ih
   | tcase _ hd₁ hd₂ _ _ ih ih₁ ih₂ => exact HasType.tcase ih hd₁ hd₂ ih₁ ih₂
+  | tfold _ ih => exact HasType.tfold ih
+  | tunfold _ heq ih => exact HasType.tunfold ih heq
   | tflam hd₁ hd₂ _ ih => exact HasType.tflam hd₁ hd₂ ih
   | tfclos hv _ hd₁ hd₂ _ hs₁ hs₂ hs₃ ih₁ ih₂ => exact HasType.tfclos hv ih₁ hd₁ hd₂ ih₂ hs₁ hs₂ hs₃
 

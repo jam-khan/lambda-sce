@@ -52,6 +52,10 @@ inductive Cast : Exp → Typ → Exp → Prop where
   | cinr {v B' v' A A'}
     : Cast v B' v'
     → Cast (.inr A v) (.or A' B') (.inr A' v')
+  -- Casting at a μ-type is the identity on folds of the SAME body (the brand pattern):
+  -- μ is opaque, subtyping at μ is reflexive only, and the payload is untouched.
+  | cfold {T v}
+    : Cast (.fold T v) (.mu T) (.fold T v)
   -- Casting a fixpoint closure rewrites only the EXTERNAL codomain Bx; the internal B is
   -- pinned because the body's context mentions (A → B) and beta reinstalls the
   -- self-reference at it.  The Sub premise is on Bx (the value's visible codomain) so the
@@ -84,6 +88,7 @@ theorem cast_value {v : Exp} {A : Typ} {w : Exp} (hv : Value v) (h : Cast v A w)
   | cwrap => exact hv
   | cinl _ ih => cases hv with | vinl hv' => exact Value.vinl (ih hv')
   | cinr _ ih => cases hv with | vinr hv' => exact Value.vinr (ih hv')
+  | cfold => exact hv
   | cfarrow _ _ _ => cases hv with | vfclos hv' => exact Value.vfclos hv'
   | cfarrowtl _ _ _ => exact Value.vclos Value.vunit
 
@@ -107,6 +112,7 @@ theorem cast_toplike_gen {v : Exp} {A : Typ} {w : Exp} (htl : TopLike A) (h : Ca
   | cwrap => nomatch htl
   | cinl _ _ => nomatch htl
   | cinr _ _ => nomatch htl
+  | cfold => nomatch htl
   | cfarrow hntl _ _ => cases htl with | tlarr hD => exact absurd hD hntl
   | cfarrowtl _ _ _ => rfl
 

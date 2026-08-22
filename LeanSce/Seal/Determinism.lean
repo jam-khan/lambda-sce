@@ -64,6 +64,21 @@ theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
     cases h₂ with
     | scase _ hs₂ => exact (value_not_step (Value.vinr hv₁) hs₂).elim
     | scaser _ _ => rfl
+  | sfold _ hs ih =>
+    cases h₂ with
+    | sfold _ hs₂ =>
+      cases ht with
+      | tfold ha => rw [ih ha henv hs₂]
+  | sunfold _ hs ih =>
+    cases h₂ with
+    | sunfold _ hs₂ =>
+      cases ht with
+      | tunfold ha _ => rw [ih ha henv hs₂]
+    | sunfoldv _ hv₁ => exact (value_not_step (Value.vfold hv₁) hs).elim
+  | sunfoldv _ hv₁ =>
+    cases h₂ with
+    | sunfold _ hs₂ => exact (value_not_step (Value.vfold hv₁) hs₂).elim
+    | sunfoldv _ _ => rfl
   | sflam _ =>
     cases h₂ with
     | sflam _ => rfl

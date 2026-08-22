@@ -20,6 +20,12 @@ inductive Typ where
   -- values are always explicitly tagged, so casting can follow the tag deterministically
   -- and COST extends without touching the arrow/record story.
   | or    : Typ → Typ → Typ
+  -- Iso-recursive types.  De Bruijn: var 0 is bound by the nearest mu.  Under sealing a
+  -- μ-type is OPAQUE, exactly like a brand: subtyping at μ is reflexive only, casting is
+  -- the identity on same-body folds, and signatures may mention μ only brand-free.
+  -- (Amber-style width/depth subtyping under μ is future work.)
+  | var   : Nat → Typ
+  | mu    : Typ → Typ
   deriving Repr
 
 -- The private brand store: `Δ n = some R` means the sealing unit knows α_n ≈ R.  Clients
@@ -39,6 +45,22 @@ def substBrand (n : Nat) (R : Typ) : Typ → Typ
   | .rcd l A   => .rcd l (substBrand n R A)
   | .brand m   => if m = n then R else .brand m
   | .or A B    => .or (substBrand n R A) (substBrand n R B)
+  -- Brands and μ's de Bruijn variables live in separate namespaces: no capture.
+  | .var m     => .var m
+  | .mu T      => .mu (substBrand n R T)
+
+-- `substTyp d S T` replaces var d by S in T (S is closed, so no shifting) — the
+-- μ-unfolding substitution.
+def substTyp (d : Nat) (S : Typ) : Typ → Typ
+  | .int       => .int
+  | .top       => .top
+  | .arr A B   => .arr (substTyp d S A) (substTyp d S B)
+  | .and A B   => .and (substTyp d S A) (substTyp d S B)
+  | .rcd l A   => .rcd l (substTyp d S A)
+  | .brand m   => .brand m
+  | .or A B    => .or (substTyp d S A) (substTyp d S B)
+  | .var m     => if m = d then S else .var m
+  | .mu T      => .mu (substTyp (d + 1) S T)
 
 -- Expressions.  Deviation from λE (forced, see DESIGN.md (f)): lambdas and closures carry
 -- the codomain annotation, because Casting-arrow must check and rewrite it and beta must
@@ -72,6 +94,9 @@ inductive Exp where
   | inl    : Typ → Exp → Exp
   | inr    : Typ → Exp → Exp
   | case   : Exp → Exp → Exp → Exp
+  -- Iso-recursive types: fold T e stores the mu-body T, folds into mu T.
+  | fold   : Typ → Exp → Exp
+  | unfold : Exp → Exp
   -- Fixpoints (Eᵢ App. B, adapted to environment semantics): `flam A B e` is a recursive
   -- function of type A → B whose body sees ?.0 = argument, ?.1 = the function itself.
   -- `fclos v A B Bx e` is its closure.  It carries TWO codomains: the *internal* B is what
@@ -93,6 +118,7 @@ inductive Value : Exp → Prop where
   | vwrap {n v}     : Value v → Value (.wrap n v)
   | vinl  {v B}     : Value v → Value (.inl B v)
   | vinr  {v A}     : Value v → Value (.inr A v)
+  | vfold {v T}     : Value v → Value (.fold T v)
   | vfclos {v A B Bx e} : Value v → Value (.fclos v A B Bx e)
 
 theorem value_clos_env {v : Exp} {A B : Typ} {e : Exp} (h : Value (.clos v A B e))
@@ -106,6 +132,9 @@ theorem value_inl_payload {v : Exp} {B : Typ} (h : Value (.inl B v)) : Value v :
 
 theorem value_inr_payload {v : Exp} {A : Typ} (h : Value (.inr A v)) : Value v := by
   cases h with | vinr h' => exact h'
+
+theorem value_fold_payload {v : Exp} {T : Typ} (h : Value (.fold T v)) : Value v := by
+  cases h with | vfold h' => exact h'
 
 -- Positional lookup on types (λE, unchanged): index 0 is the rightmost component.
 inductive Lookup : Typ → Nat → Typ → Prop where
@@ -174,6 +203,8 @@ inductive Ordinary : Typ → Prop where
   | orcd {l A}   : Ordinary (.rcd l A)
   | obrand {n}   : Ordinary (.brand n)
   | oor {A B}    : Ordinary (.or A B)
+  | ovar {n}     : Ordinary (.var n)
+  | omu {T}      : Ordinary (.mu T)
 
 -- Top-like types ⌉A⌈ (Eᵢ, with ε playing Top).
 inductive TopLike : Typ → Prop where
@@ -192,6 +223,8 @@ def genVal : Typ → Exp
   | .rcd l A => .lrec l (genVal A)
   | .brand _ => .unit
   | .or _ _  => .unit
+  | .var _   => .unit
+  | .mu _    => .unit
 
 theorem genVal_value : (A : Typ) → Value (genVal A)
   | .int     => Value.vunit
@@ -201,12 +234,16 @@ theorem genVal_value : (A : Typ) → Value (genVal A)
   | .rcd _ A => Value.vrcd (genVal_value A)
   | .brand _ => Value.vunit
   | .or _ _  => Value.vunit
+  | .var _   => Value.vunit
+  | .mu _    => Value.vunit
 
 -- Top-likeness is decidable (constructively, by inversion at each shape).
 theorem toplike_dec : (A : Typ) → TopLike A ∨ ¬ TopLike A
   | .int => Or.inr (fun h => nomatch h)
   | .brand _ => Or.inr (fun h => nomatch h)
   | .or _ _ => Or.inr (fun h => nomatch h)
+  | .var _ => Or.inr (fun h => nomatch h)
+  | .mu _ => Or.inr (fun h => nomatch h)
   | .top => Or.inl TopLike.tltop
   | .arr _ B =>
     match toplike_dec B with

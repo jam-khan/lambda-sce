@@ -23,6 +23,10 @@ inductive Cost : Typ → Typ → Prop where
   -- union target, so no two union-typed things may ever be merged.  (Wrap unions in
   -- records to merge them.)
   | coror {A B A' B'} : Cost (.or A B) (.or A' B')
+  -- μ-types (and their bound variables) behave like brands: sole ordinary supertype is
+  -- the type itself.
+  | cvar {n} : Cost (.var n) (.var n)
+  | cmu {T} : Cost (.mu T) (.mu T)
 
 def Disj (A B : Typ) : Prop := ¬ Cost A B
 
@@ -36,6 +40,8 @@ theorem cost_symm : {A B : Typ} → Cost A B → Cost B A
   | _, _, .crcd h => .crcd (cost_symm h)
   | _, _, .cbrand => .cbrand
   | _, _, .coror => .coror
+  | _, _, .cvar => .cvar
+  | _, _, .cmu => .cmu
 
 theorem disj_symm {A B : Typ} (h : Disj A B) : Disj B A :=
   fun hc => h (cost_symm hc)
@@ -69,6 +75,8 @@ theorem cost_compose : {A B C : Typ} → Sub A B → Cost B C → Cost A C
   | _, _, _, .sor _ _, .coror => .coror
   | _, _, _, .sor p q, .crandl h => .crandl (cost_compose (.sor p q) h)
   | _, _, _, .sor p q, .crandr h => .crandr (cost_compose (.sor p q) h)
+  | _, _, _, .svar, h => h
+  | _, _, _, .smu, h => h
 
 -- Eᵢ Lemma 2.6: disjointness is preserved by widening.
 theorem sub_disj {A B C : Typ} (hs : Sub A B) (hd : Disj A C) : Disj B C :=
@@ -102,6 +110,7 @@ inductive BrandIn (n : Nat) : Typ → Prop where
   | rcd {l A}     : BrandIn n A → BrandIn n (.rcd l A)
   | orl {A B}     : BrandIn n A → BrandIn n (.or A B)
   | orr {A B}     : BrandIn n B → BrandIn n (.or A B)
+  | mu {T}        : BrandIn n T → BrandIn n (.mu T)
 
 -- A brand is disjoint from every type it does not occur in — the abstraction principle
 -- for disjointness: clients need no knowledge of α_n's representation to discharge
@@ -110,6 +119,30 @@ theorem disj_brand_notin {n : Nat} : {B : Typ} → ¬ BrandIn n B → Disj (.bra
   | _, hnin, .cbrand => hnin BrandIn.self
   | _, hnin, .crandl h => disj_brand_notin (fun h' => hnin (BrandIn.andl h')) h
   | _, hnin, .crandr h => disj_brand_notin (fun h' => hnin (BrandIn.andr h')) h
+
+-- Substitution is the identity on brand-free types (what makes the identity coercion at
+-- brand-free μ signatures type-correct).
+theorem substBrand_notin {n : Nat} {R : Typ} : {S : Typ} → ¬ BrandIn n S → substBrand n R S = S
+  | .int, _ => rfl
+  | .top, _ => rfl
+  | .arr A B, h => by
+    simp only [substBrand, substBrand_notin (fun h' => h (BrandIn.arrl h')),
+      substBrand_notin (fun h' => h (BrandIn.arrr h'))]
+  | .and A B, h => by
+    simp only [substBrand, substBrand_notin (fun h' => h (BrandIn.andl h')),
+      substBrand_notin (fun h' => h (BrandIn.andr h'))]
+  | .rcd l A, h => by
+    simp only [substBrand, substBrand_notin (fun h' => h (BrandIn.rcd h'))]
+  | .or A B, h => by
+    simp only [substBrand, substBrand_notin (fun h' => h (BrandIn.orl h')),
+      substBrand_notin (fun h' => h (BrandIn.orr h'))]
+  | .brand m, h => by
+    by_cases hm : m = n
+    · subst hm; exact absurd BrandIn.self h
+    · simp only [substBrand, hm, if_false]
+  | .var _, _ => rfl
+  | .mu T, h => by
+    simp only [substBrand, substBrand_notin (fun h' => h (BrandIn.mu h'))]
 
 -- A subtype of a non-top-like type is COST-related to it.
 theorem sub_cost {B D : Typ} (h : Sub B D) (hntl : ¬ TopLike D) : Cost B D := by
@@ -128,6 +161,8 @@ theorem sub_cost {B D : Typ} (h : Sub B D) (hntl : ¬ TopLike D) : Cost B D := b
   | srcd _ ih => exact Cost.crcd (ih (fun htl => hntl (TopLike.tlrcd htl)))
   | sbrand => exact Cost.cbrand
   | sor _ _ _ _ => exact Cost.coror
+  | svar => exact Cost.cvar
+  | smu => exact Cost.cmu
 
 -- Two types COST-related to Int are COST-related to each other.
 theorem cost_int_compose : {B₁ B₂ : Typ} → Cost B₁ .int → Cost B₂ .int → Cost B₁ B₂
@@ -142,6 +177,18 @@ theorem cost_brand_compose : {n : Nat} → {B₁ B₂ : Typ}
   | _, _, _, .candl h, c₂ => .candl (cost_brand_compose h c₂)
   | _, _, _, .candr h, c₂ => .candr (cost_brand_compose h c₂)
 
+theorem cost_var_compose : {n : Nat} → {B₁ B₂ : Typ}
+    → Cost B₁ (.var n) → Cost B₂ (.var n) → Cost B₁ B₂
+  | _, _, _, .cvar, c₂ => cost_symm c₂
+  | _, _, _, .candl h, c₂ => .candl (cost_var_compose h c₂)
+  | _, _, _, .candr h, c₂ => .candr (cost_var_compose h c₂)
+
+theorem cost_mu_compose : {T : Typ} → {B₁ B₂ : Typ}
+    → Cost B₁ (.mu T) → Cost B₂ (.mu T) → Cost B₁ B₂
+  | _, _, _, .cmu, c₂ => cost_symm c₂
+  | _, _, _, .candl h, c₂ => .candl (cost_mu_compose h c₂)
+  | _, _, _, .candr h, c₂ => .candr (cost_mu_compose h c₂)
+
 -- Two subtypes of a common non-top-like type share a common ordinary supertype
 -- (the compositional bridge behind "both casts succeeding refutes disjointness").
 theorem sub_sub_cost : {D B₁ B₂ : Typ} → ¬ TopLike D → Sub B₁ D → Sub B₂ D → Cost B₁ B₂ := by
@@ -154,6 +201,12 @@ theorem sub_sub_cost : {D B₁ B₂ : Typ} → ¬ TopLike D → Sub B₁ D → S
   | brand n =>
     intro B₁ B₂ hntl h₁ h₂
     exact cost_brand_compose (sub_cost h₁ hntl) (sub_cost h₂ hntl)
+  | var n =>
+    intro B₁ B₂ hntl h₁ h₂
+    exact cost_var_compose (sub_cost h₁ hntl) (sub_cost h₂ hntl)
+  | mu T _ =>
+    intro B₁ B₂ hntl h₁ h₂
+    exact cost_mu_compose (sub_cost h₁ hntl) (sub_cost h₂ hntl)
   | and D₁ D₂ ihD₁ ihD₂ =>
     intro B₁ B₂ hntl h₁ h₂
     cases toplike_dec D₁ with
