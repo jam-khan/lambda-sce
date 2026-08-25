@@ -1,20 +1,25 @@
-# HANDOFF: extensions + cleanup of LeanSce (updated 2026-08-22, session 2)
+# HANDOFF: LeanSce — the sealing calculus (branch `lambdae-seal`)
 
-**Read this first in the next session.**  It is the complete working state of the
-"1 source + 1 target, sealing-based, with fix/unions/μ + brand polymorphism" effort.
-The 4-phase plan lives at `~/.claude/plans/read-through-the-mech-majestic-ritchie.md`
-(full rationale, costing of F_E-style polymorphism, sepcomp obligations for brand
-polymorphism, motivating example).  This file is the execution log + precise next steps.
+**This branch is the self-contained sealing development: one source, one target,
+subtyping + merges + sealing/type abstraction, with fix/unions/μ.  There is NO brand
+polymorphism here, by design.**  It is Phases 0–2 of the original plan, complete and
+sealed off at commit `3b799d9`.
 
-**ALL WORK LIVES ON `lambdae-sub` — `main` mirrors `origin/main` and must stay
-clean/untouched until the user says otherwise.**
+**Brand polymorphism (∀β), its relational layer, and the generic-client
+representation-independence results live on `lambdae-sub`** — that branch continues
+from this same history and is where all ∀β work belongs.  Nothing on this branch
+should acquire brand-variable syntax; if you need it, work on `lambdae-sub`.
 
-Everything below is committed on `lambdae-sub` and green: `lake build` succeeds (60 jobs),
-**zero `sorry`, only standard axioms** (the flagship
-`Seal.source_representation_independence` still uses `propext` only; the ported
-determinism/preservation results use at most `propext, Quot.sound`; nothing uses
-`Classical.choice`).  Check via `lake env lean` on a scratch file importing `LeanSce`
-with `#print axioms …`.
+**`main` mirrors `origin/main` and must stay clean/untouched until the user says
+otherwise.**  Neither branch has been pushed to `origin`; push only when the user says.
+
+Everything here is green: `lake build` succeeds (60 jobs), **zero `sorry`, only
+standard axioms** — every flagship result (`source_representation_independence`,
+`representation_independence`, `fundamental`, `normalization`,
+`seal_semantic_preservation`, `seal_separate_compilation_sealed`) closes over
+`propext` ALONE; only `source_bigstep_deterministic` also uses `Quot.sound`, and
+nothing uses `Classical.choice`.  Check via `lake env lean` on a scratch file
+importing `LeanSce` with `#print axioms …`.
 
 Architecture now: **one source, one target.**  `LeanSce/SCE` (source λSCE) elaborates
 via `elabSeal` (`Seal/Elaboration.lean`) into `LeanSce/Seal` (λE^≤, the sealing
@@ -95,16 +100,21 @@ remains true.
   mstruct/mfunctor rules (both elabSeal and source relations).
 - `letb`/`openm` STAY primitive (letb is annotation-free since `816abed`).
 
-### Phase 3 — brand polymorphism (the next big goal)
-See the plan file §3(C) for the motivating example, milestones, and the sepcomp
-obligations (renaming metatheory; Disj is NOT stable under brand substitution —
-freshness side conditions; `seal_separate_compilation_generic`; RI upgrade).
-Nothing started.
+### Brand polymorphism — DELIBERATELY OUT OF SCOPE HERE
+∀β types, the conservative disjointness layer they force, and the generic-client
+relational results live on **`lambdae-sub`**, which branches from this same history.
+Do not port them here: the point of this branch is a sealing calculus whose
+disjointness story is entirely label- and brand-driven, with no brand variables
+anywhere.  (On `lambdae-sub` see its HANDOFF §3 and `Seal/DESIGN.md` §(h).)
 
 ### Other open items
 - μ/fix examples in `Seal/Examples.lean` (a sealed-interface factorial via flam;
   a tagged-union run; a μ-stream).
-- `doc/system.tex` is stale w.r.t. all of Phase 1 and 2 (update or flag).
+- **`doc/system.tex` is stale w.r.t. Phases 1–2**: it documents the sealing +
+  subtyping core only, and is missing the unions, iso-recursive μ, and fixpoints
+  that this branch DOES contain.  (A de-staled `system.tex` exists on
+  `lambdae-sub`, but it also documents the ∀β layer; porting it here means
+  stripping that back out.)
 - Step-indexed LR to lift the Finitary/SFinitary fence (future work).
 - `origin` has NOT been pushed by either session (guardrail hook blocks
   checkout/restore, not push; push when the user says so).
