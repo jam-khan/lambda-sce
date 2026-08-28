@@ -23,7 +23,7 @@ open SCE S_Sem
 /-- The functor type for a recursive module: imports `l : A₁ → A₂`,
     exports `B`. -/
 def FunctorTy (l : String) (A₁ A₂ B : Typ) : Typ :=
-  .sig (.TyArrM (.rcd l (.arr A₁ A₂)) (.TyIntf B))
+  .marr (.rcd l (.arr A₁ A₂)) B
 
 /-- The recursive-import wrapper: a fixpoint function whose body re-applies
     the functor (`?.2`) to a package containing the wrapper itself (`?.1`),

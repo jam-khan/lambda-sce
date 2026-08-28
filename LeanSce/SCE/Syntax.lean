@@ -1,46 +1,32 @@
 
 namespace SCE
 
-mutual
-
 inductive Typ where
   | int  : Typ
   | top  : Typ
   | arr  : Typ → Typ → Typ
+  -- functor type: a distinct former from `arr`, so a functor cannot be applied
+  -- with ordinary application.  `elabTyp` erases it to `arr`.
+  | marr : Typ → Typ → Typ
   | and  : Typ → Typ → Typ
   | or   : Typ → Typ → Typ
   | rcd  : String → Typ → Typ
-  | sig  : ModTyp → Typ
   -- iso-recursive types: de Bruijn var 0 is bound by the nearest mu
   | var  : Nat → Typ
   | mu   : Typ → Typ
+  deriving Repr
 
-inductive ModTyp where
-  | TyIntf : Typ → ModTyp
-  | TyArrM : Typ → ModTyp → ModTyp
-
-end
-
-deriving instance Repr for Typ
-deriving instance Repr for ModTyp
-
-mutual
 -- substTyp d S T replaces var d by S in T (S is closed, so no shifting)
 def substTyp (d : Nat) (S : Typ) : Typ → Typ
   | .int => .int
   | .top => .top
   | .arr A B => .arr (substTyp d S A) (substTyp d S B)
+  | .marr A B => .marr (substTyp d S A) (substTyp d S B)
   | .and A B => .and (substTyp d S A) (substTyp d S B)
   | .or A B => .or (substTyp d S A) (substTyp d S B)
   | .rcd l A => .rcd l (substTyp d S A)
-  | .sig mt => .sig (substModTyp d S mt)
   | .var n => if n = d then S else .var n
   | .mu T => .mu (substTyp (d + 1) S T)
-
-def substModTyp (d : Nat) (S : Typ) : ModTyp → ModTyp
-  | .TyIntf T => .TyIntf (substTyp d S T)
-  | .TyArrM T mt => .TyArrM (substTyp d S T) (substModTyp d S mt)
-end
 
 inductive Sandbox where
   | sandboxed : Sandbox
@@ -108,8 +94,6 @@ inductive LabelIn : String → Typ → Prop where
     : LabelIn label A → LabelIn label (Typ.and A B)
   | andr (A B : Typ) (label : String)
     : LabelIn label B → LabelIn label (Typ.and A B)
-  | sig (label : String) (T : Typ)
-    : LabelIn label T → LabelIn label (Typ.sig (ModTyp.TyIntf T))
 
 inductive SRLookup : Typ → String → Typ → Prop
 | zero (label : String) (T : Typ) :
@@ -122,13 +106,6 @@ inductive SRLookup : Typ → String → Typ → Prop
     SRLookup B label T →
     ¬ LabelIn label A →
     SRLookup (Typ.and A B) label T
--- `elabTyp` erases `sig` over an interface, so at the target a label sitting
--- under one is reachable by Core.RLookup.  Selection has to see through it too,
--- or the source would refuse lookups the target performs; this is the case that
--- makes `type_safe_record_lookup` total.  It mirrors `LabelIn.sig`.
-| sig (label : String) (T A : Typ) :
-    SRLookup T label A →
-    SRLookup (Typ.sig (ModTyp.TyIntf T)) label A
 
 -- A successful lookup witnesses containment.  This is why the `and` rules above
 -- carry only the negative half of their disjointness condition: the positive
@@ -139,7 +116,6 @@ theorem srlookup_labelin {A : Typ} {l : String} {T : Typ} : SRLookup A l T → L
   | zero => exact LabelIn.rcd _ _
   | andl _ _ _ _ _ _ ih => exact LabelIn.andl _ _ _ ih
   | andr _ _ _ _ _ _ ih => exact LabelIn.andr _ _ _ ih
-  | sig _ _ _ _ ih => exact LabelIn.sig _ _ ih
 
 -- LinkOk Γ₁ D: the module type Γ₁ satisfies every labeled import of the
 -- interface D ::= rcd l A | D & rcd l A (left-nested intersections of records)

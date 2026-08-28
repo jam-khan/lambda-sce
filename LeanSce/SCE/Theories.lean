@@ -45,9 +45,6 @@ theorem record_lookup_uniqueness
     | andr _ _ _ _ h₂' _ => exact ih h₂'
     | andl _ _ _ _ h₂' h_cond₂ =>
       exact absurd (SCE.srlookup_labelin hsr) h_cond₂
-  | sig l T A _ ih =>
-    cases h₂ with
-    | sig _ _ _ h₂' => exact ih h₂'
 
 theorem type_safe_index_lookup
     {ST₁ ST₂ : SCE.Typ} {n : Nat}
@@ -72,9 +69,6 @@ theorem type_safe_label_existence
     | andr A B l _ ih =>
       simp [elabTyp]
       exact Core.Lin.andr ih
-    | sig l T _ ih =>
-      simp [elabTyp, elabModTyp]
-      exact ih
   · intro h
     cases ST with
     | rcd lA T =>
@@ -91,16 +85,10 @@ theorem type_safe_label_existence
     | int => simp [elabTyp] at h; cases h
     | top => simp [elabTyp] at h; cases h
     | arr _ _ => simp [elabTyp] at h; cases h
+    | marr _ _ => simp [elabTyp] at h; cases h
     | or _ _ => simp [elabTyp] at h; cases h
     | var _ => simp [elabTyp] at h; cases h
     | mu _ => simp [elabTyp] at h; cases h
-    | sig mt =>
-      cases mt with
-      | TyIntf T =>
-        simp [elabTyp, elabModTyp] at h
-        exact SCE.LabelIn.sig l T (type_safe_label_existence.mpr h)
-      | TyArrM T mt' =>
-        simp [elabTyp, elabModTyp] at h; cases h
 
 
 theorem type_safe_label_nonexistence
@@ -126,8 +114,6 @@ theorem type_safe_record_lookup
     simp [elabTyp]
     exact Core.RLookup.landr ih
       (type_safe_label_nonexistence.mp h_cond)
-  | sig l T A _ ih =>
-    simpa [elabTyp, elabModTyp] using ih
 
 theorem inference_uniqueness
     {Γ T₁ T₂ : SCE.Typ} {e : SCE.Exp} {ce₁ ce₂ : Core.Exp}
@@ -681,7 +667,7 @@ theorem type_preservation
         rw [this] at ih
         exact HasType.tbox HasType.tquery ih
     | mfunctor ctx ctxInner A B sb se ce hs1 hs2 _ ih =>
-      simp [elabTyp, elabModTyp]
+      simp [elabTyp]
       cases sb with
       | sandboxed =>
         have := hs1 rfl
@@ -694,7 +680,7 @@ theorem type_preservation
         simp [elabTyp] at ih
         exact HasType.tlam ih
     | mclos ctx ctx' A B se1 se2 ce1 ce2 hval h1 h2 ih1 ih2 =>
-      simp [elabTyp, elabModTyp]
+      simp [elabTyp]
       exact HasType.tclos (elab_value h1 hval) ih1 ih2
     | mapp ctx A B se1 se2 ce1 ce2 _ _ ih1 ih2 =>
       exact HasType.tapp ih1 ih2
@@ -1418,7 +1404,7 @@ theorem separate_compilation
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ ec : Core.Exp}
     {ρs vs : SCE.Exp} {ρc : Core.Exp}
     (helab₁ : elabExp Γ es₁ Γ₁ ec₁)
-    (helab₂ : elabExp Γ es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ec₂)
+    (helab₂ : elabExp Γ es₂ (.marr (.rcd l A) B) ec₂)
     (hlookup : SRLookup Γ₁ l A)
     (hlink : CoreLink l (elabTyp Γ₁) (elabTyp A) (elabTyp B) ec₁ ec₂ ec)
     (heval : S_Sem.BStep ρs (.mlink es₁ es₂) vs)
@@ -1438,7 +1424,7 @@ theorem separate_compilation_closed
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp}
     {vs : SCE.Exp}
     (helab₁ : elabExp SCE.Typ.top es₁ Γ₁ ec₁)
-    (helab₂ : elabExp SCE.Typ.top es₂ (.sig (.TyArrM (.rcd l A) (.TyIntf B))) ec₂)
+    (helab₂ : elabExp SCE.Typ.top es₂ (.marr (.rcd l A) B) ec₂)
     (hlookup : SRLookup Γ₁ l A)
     (heval : S_Sem.BStep .unit (.mlink es₁ es₂) vs)
     : ∃ vc, EBig .unit (linkedCore (elabTyp Γ₁) (elabTyp (SCE.Typ.rcd l A)) (elabTyp B) ec₁ ec₂) vc
@@ -1474,7 +1460,7 @@ theorem separate_compilation_n
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ ec : Core.Exp}
     {ρs vs : SCE.Exp} {ρc : Core.Exp}
     (helab₁ : elabExp Γ es₁ Γ₁ ec₁)
-    (helab₂ : elabExp Γ es₂ (.sig (.TyArrM D (.TyIntf B))) ec₂)
+    (helab₂ : elabExp Γ es₂ (.marr D B) ec₂)
     (hok : LinkOk Γ₁ D)
     (hlink : CoreLinkN D (elabTyp Γ₁) (elabTyp B) ec₁ ec₂ ec)
     (heval : S_Sem.BStep ρs (.mlinkn es₁ es₂) vs)
@@ -1492,7 +1478,7 @@ theorem separate_compilation_n_closed
     {es₁ es₂ : SCE.Exp} {ec₁ ec₂ : Core.Exp}
     {vs : SCE.Exp}
     (helab₁ : elabExp SCE.Typ.top es₁ Γ₁ ec₁)
-    (helab₂ : elabExp SCE.Typ.top es₂ (.sig (.TyArrM D (.TyIntf B))) ec₂)
+    (helab₂ : elabExp SCE.Typ.top es₂ (.marr D B) ec₂)
     (hok : LinkOk Γ₁ D)
     (heval : S_Sem.BStep .unit (.mlinkn es₁ es₂) vs)
     : ∃ vc, EBig .unit (linkedCore (elabTyp Γ₁) (elabTyp D) (elabTyp B) ec₁ ec₂) vc
