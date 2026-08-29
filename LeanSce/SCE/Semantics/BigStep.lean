@@ -133,11 +133,11 @@ inductive BStep : Exp → Exp → Exp → Prop where
   | mstruct_sandboxed {ρ body v : Exp}
     : Value ρ
     → BStep .unit body v
-    → BStep ρ (.mstruct .sandboxed body) v
+    → BStep ρ (.mstruct .sandboxed body) (.mstruct .sandboxed v)
   | mstruct_open {ρ body v : Exp}
     : Value ρ
     → BStep ρ body v
-    → BStep ρ (.mstruct .open_ body) v
+    → BStep ρ (.mstruct .open_ body) (.mstruct .open_ v)
   | mfunctor_sandboxed {ρ : Exp} {A : Typ} {body : Exp}
     : Value ρ
     → BStep ρ (.mfunctor .sandboxed A body) (.mclos .unit A body)

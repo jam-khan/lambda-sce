@@ -1,5 +1,5 @@
-import LeanSce.SCE.Elaboration
-import LeanSce.SCE.SmallStep
+import LeanSce.SCE.Elaboration.Elaboration
+import LeanSce.SCE.Semantics.SmallStep
 import LeanSce.SCE.Syntax
 
 open SCE S_Sem
@@ -21,7 +21,12 @@ theorem elab_value_weaken
   | erproj _ => cases hv
   | letb _ => cases hv
   | openm _ => cases hv
-  | mstruct _ => cases hv
+  | mstruct _ _ _ _ _ _ _ hnv _ _ _ _ =>
+    cases hv with
+    | vmstruct hv' => exact absurd hv' hnv
+  | mstructv _ _ _ _ _ hval h ih =>
+    cases hv with
+    | vmstruct hv' => exact elabExp.mstructv _ _ _ _ _ hval (ih hv' _)
   | mfunctor _ => cases hv
   | mapp _ => cases hv
   | mlink _ => cases hv
@@ -373,30 +378,28 @@ theorem sgpreservation
       have ⟨ce', hce'⟩ := elab_rlookup_pres hlook hsel hv1 (elab_value_weaken h1 hv1 _)
       have hv' := sce_sel_value hsel hv1
       exact ⟨_, elab_value_weaken hce' hv' _⟩
-  | ssmstruct_sandboxed hv hstep ih =>
+  | @ssmstruct_sandboxed v e e' hv hstep ih =>
     intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
-    cases helab
-    rename_i _ _ hsb_sand hsb_open h
-    have heq := hsb_sand rfl; subst heq
-    have ⟨ce', h'⟩ := ih ⟨_, h⟩ Value.vunit ⟨_, elabExp.eunit _⟩
-    exact ⟨_, elabExp.mstruct _ _ _ _ _ _ Core.Exp.unit (fun _ => rfl) hsb_open h'⟩
-  | ssmstruct_open hv hstep ih =>
+    cases helab with
+    | mstruct _ _ _ _ _ _ _ hnv hsb_sand hsb_open h =>
+      have heq := hsb_sand rfl; subst heq
+      have ⟨ce', h'⟩ := ih ⟨_, h⟩ Value.vunit ⟨_, elabExp.eunit _⟩
+      by_cases hval' : SCE.Value e'
+      · exact ⟨_, elabExp.mstructv _ _ _ _ _ hval' (elab_value_weaken h' hval' _)⟩
+      · exact ⟨_, elabExp.mstruct _ _ _ _ _ _ Core.Exp.unit hval' (fun _ => rfl) hsb_open h'⟩
+    | mstructv _ _ _ _ _ hvse h =>
+      exact absurd hstep (value_no_step hvse)
+  | @ssmstruct_open v e e' hv hstep ih =>
     intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
-    cases helab
-    rename_i _ _ hsb_sand hsb_open h
-    have heq := hsb_open rfl; subst heq
-    have ⟨ce', h'⟩ := ih ⟨_, h⟩ hval ⟨ρc, henv⟩
-    exact ⟨_, elabExp.mstruct _ _ _ _ _ _ Core.Exp.unit hsb_sand (fun _ => rfl) h'⟩
-  | ssmstructv_sandboxed hv hv' =>
-    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
-    cases helab
-    rename_i _ _ _ _ h
-    exact ⟨_, elab_value_weaken h hv' _⟩
-  | ssmstructv_open hv hv' =>
-    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
-    cases helab
-    rename_i _ _ _ _ h
-    exact ⟨_, elab_value_weaken h hv' _⟩
+    cases helab with
+    | mstruct _ _ _ _ _ _ _ hnv hsb_sand hsb_open h =>
+      have heq := hsb_open rfl; subst heq
+      have ⟨ce', h'⟩ := ih ⟨_, h⟩ hval ⟨ρc, henv⟩
+      by_cases hval' : SCE.Value e'
+      · exact ⟨_, elabExp.mstructv _ _ _ _ _ hval' h'⟩
+      · exact ⟨_, elabExp.mstruct _ _ _ _ _ _ Core.Exp.unit hval' hsb_sand (fun _ => rfl) h'⟩
+    | mstructv _ _ _ _ _ hvse h =>
+      exact absurd hstep (value_no_step hvse)
   | ssmfunctor_sandboxed hv =>
     intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
     cases helab

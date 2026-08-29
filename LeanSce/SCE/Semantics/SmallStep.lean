@@ -1,5 +1,5 @@
 import LeanSce.SCE.Syntax
-import LeanSce.SCE.Semantics
+import LeanSce.SCE.Semantics.BigStep
 
 open SCE S_Sem
 
@@ -77,14 +77,6 @@ inductive SStep : Exp → Exp → Exp → Prop where
     : Value v
     → SStep v e e'
     → SStep v (.mstruct .open_ e) (.mstruct .open_ e')
-  | ssmstructv_sandboxed {v v'}
-    : Value v
-    → Value v'
-    → SStep v (.mstruct .sandboxed v') v'
-  | ssmstructv_open {v v'}
-    : Value v
-    → Value v'
-    → SStep v (.mstruct .open_ v') v'
   | ssmfunctor_sandboxed {v : Exp} {A : Typ} {e : Exp}
     : Value v
     → SStep v (.mfunctor .sandboxed A e) (.mclos .unit A e)
@@ -208,3 +200,38 @@ inductive SStep : Exp → Exp → Exp → Prop where
     → SelPkg v1 D pkg
     → SStep v (.mlinkn v1 (.mclos v2 D body))
               (.mrg v1 (.box (.mrg v2 pkg) body))
+
+-- Values are normal forms: no value takes a step under any environment
+theorem value_no_step {v : Exp} (hv : Value v) : ∀ {ρ e : Exp}, ¬ SStep ρ v e := by
+  induction hv with
+  | vint => intro _ _ hs; nomatch hs
+  | vunit => intro _ _ hs; nomatch hs
+  | vclos _ => intro _ _ hs; nomatch hs
+  | vmclos _ => intro _ _ hs; nomatch hs
+  | vmstruct _ ih =>
+    intro _ _ hs
+    cases hs with
+    | ssmstruct_sandboxed _ h => exact ih h
+    | ssmstruct_open _ h => exact ih h
+  | vmrg _ _ ih1 ih2 =>
+    intro _ _ hs
+    cases hs with
+    | ssmrgl _ h => exact ih1 h
+    | ssmrgr _ _ h => exact ih2 h
+  | vlrec _ ih =>
+    intro _ _ hs
+    cases hs with
+    | sslrec _ h => exact ih h
+  | vinl _ ih =>
+    intro _ _ hs
+    cases hs with
+    | ssinl _ h => exact ih h
+  | vinr _ ih =>
+    intro _ _ hs
+    cases hs with
+    | ssinr _ h => exact ih h
+  | vfclos _ => intro _ _ hs; nomatch hs
+  | vfold _ ih =>
+    intro _ _ hs
+    cases hs with
+    | ssfold _ h => exact ih h

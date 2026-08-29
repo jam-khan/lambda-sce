@@ -5,10 +5,12 @@ import LeanSce.Core.Typing
 import LeanSce.Core.BigStep
 import LeanSce.Core.SmallStep
 
-import LeanSce.SCE.Semantics
-import LeanSce.SCE.Elaboration
+import LeanSce.SCE.Semantics.BigStep
+import LeanSce.SCE.Elaboration.Elaboration
+import LeanSce.SCE.Elaboration.Uniqueness
+import LeanSce.SCE.Elaboration.Preservation
 import LeanSce.SCE.Theories
-import LeanSce.SCE.SmallStep
+import LeanSce.SCE.Semantics.SmallStep
 import LeanSce.SCE.Preservation
 import LeanSce.SCE.Progress
 import LeanSce.SCE.Equivalence

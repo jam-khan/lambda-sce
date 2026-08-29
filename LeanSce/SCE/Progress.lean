@@ -1,5 +1,5 @@
-import LeanSce.SCE.Elaboration
-import LeanSce.SCE.SmallStep
+import LeanSce.SCE.Elaboration.Elaboration
+import LeanSce.SCE.Semantics.SmallStep
 import LeanSce.SCE.Syntax
 import LeanSce.SCE.Preservation
 
@@ -133,21 +133,24 @@ theorem sgprogress
       | .vinl _ => nomatch h1
       | .vinr _ => nomatch h1
       | .vfclos _ => nomatch h1
-  | @mstruct _ ctxInner _ sb se _ _ hsb_sand hsb_open h ih =>
+  | @mstruct _ ctxInner _ sb se _ _ hnv hsb_sand hsb_open h ih =>
     intro v hv henv
     cases sb with
     | sandboxed =>
       have heq := hsb_sand rfl; subst heq
       have prog := ih Value.vunit ⟨_, elabExp.eunit _⟩
       match prog with
-      | .inl hve => right; exact ⟨_, SStep.ssmstructv_sandboxed hv hve⟩
+      | .inl hve => exact absurd hve hnv
       | .inr ⟨e', hstep⟩ => right; exact ⟨.mstruct .sandboxed e', SStep.ssmstruct_sandboxed hv hstep⟩
     | open_ =>
       have heq := hsb_open rfl; subst heq
       have prog := ih hv henv
       match prog with
-      | .inl hve => right; exact ⟨_, SStep.ssmstructv_open hv hve⟩
+      | .inl hve => exact absurd hve hnv
       | .inr ⟨e', hstep⟩ => right; exact ⟨.mstruct .open_ e', SStep.ssmstruct_open hv hstep⟩
+  | @mstructv _ _ sb se _ hval h ih =>
+    intro v hv henv
+    left; exact Value.vmstruct hval
   | @mfunctor _ ctxInner _ _ sb se _ hsb_sand hsb_open h ih =>
     intro v hv henv
     cases sb with

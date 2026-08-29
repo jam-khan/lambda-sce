@@ -8,6 +8,10 @@ inductive Typ where
   -- functor type: a distinct former from `arr`, so a functor cannot be applied
   -- with ordinary application.  `elabTyp` erases it to `arr`.
   | marr : Typ → Typ → Typ
+  -- signature type `Sig A`: the interface of a module struct.  A distinct
+  -- former from `A` itself, so a struct cannot be consumed as a plain value.
+  -- `elabTyp` erases it to its content type.
+  | sig  : Typ → Typ
   | and  : Typ → Typ → Typ
   | or   : Typ → Typ → Typ
   | rcd  : String → Typ → Typ
@@ -22,6 +26,7 @@ def substTyp (d : Nat) (S : Typ) : Typ → Typ
   | .top => .top
   | .arr A B => .arr (substTyp d S A) (substTyp d S B)
   | .marr A B => .marr (substTyp d S A) (substTyp d S B)
+  | .sig A => .sig (substTyp d S A)
   | .and A B => .and (substTyp d S A) (substTyp d S B)
   | .or A B => .or (substTyp d S A) (substTyp d S B)
   | .rcd l A => .rcd l (substTyp d S A)
@@ -75,6 +80,8 @@ inductive Value : Exp → Prop where
   | vunit           : Value .unit
   | vclos  {v A e}  : Value v → Value (.clos v A e)
   | vmclos {v A e}  : Value v → Value (.mclos v A e)
+  -- a fully evaluated struct stays wrapped: it is the value of type `Sig A`
+  | vmstruct {sb v} : Value v → Value (.mstruct sb v)
   | vmrg   {v₁ v₂}  : Value v₁ → Value v₂ → Value (.mrg v₁ v₂)
   | vlrec  {v l}    : Value v → Value (.lrec l v)
   | vinl   {v B}    : Value v → Value (.inl B v)
@@ -94,6 +101,10 @@ inductive LabelIn : String → Typ → Prop where
     : LabelIn label A → LabelIn label (Typ.and A B)
   | andr (A B : Typ) (label : String)
     : LabelIn label B → LabelIn label (Typ.and A B)
+  -- a sig-typed component erases to its content, so its labels still count
+  -- for disjointness: conflicts must be detected through the signature
+  | sig (A : Typ) (label : String)
+    : LabelIn label A → LabelIn label (Typ.sig A)
 
 inductive SRLookup : Typ → String → Typ → Prop
 | zero (label : String) (T : Typ) :

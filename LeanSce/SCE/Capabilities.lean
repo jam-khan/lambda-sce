@@ -1,6 +1,6 @@
 import LeanSce.SCE.Syntax
-import LeanSce.SCE.Semantics
-import LeanSce.SCE.Elaboration
+import LeanSce.SCE.Semantics.BigStep
+import LeanSce.SCE.Elaboration.Elaboration
 import LeanSce.SCE.Equivalence
 import LeanSce.SCE.Theories
 

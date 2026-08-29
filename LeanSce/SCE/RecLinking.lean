@@ -1,4 +1,4 @@
-import LeanSce.SCE.Elaboration
+import LeanSce.SCE.Elaboration.Elaboration
 import LeanSce.SCE.Preservation
 import LeanSce.SCE.Progress
 import LeanSce.SCE.Theories

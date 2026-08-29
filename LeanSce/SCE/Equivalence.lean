@@ -1,5 +1,5 @@
-import LeanSce.SCE.SmallStep
-import LeanSce.SCE.Semantics
+import LeanSce.SCE.Semantics.SmallStep
+import LeanSce.SCE.Semantics.BigStep
 import LeanSce.SCE.Syntax
 import LeanSce.SCE.Theories
 
@@ -342,13 +342,9 @@ theorem sbig_sound {env e v : Exp}
           (SMStep.step (SStep.ssopenm hv hv') (SMStep.refl hv))
           (sbox_mstep_drop_env ih2 hv2 hv))
   | mstruct_sandboxed hv hb ih =>
-    have hv' := sbig_produces_value Value.vunit hb
-    exact smstep_trans (smstep_mstruct_sandboxed hv ih)
-      (SMStep.step (SStep.ssmstructv_sandboxed hv hv') (SMStep.refl hv))
+    exact smstep_mstruct_sandboxed hv ih
   | mstruct_open hv hb ih =>
-    have hv' := sbig_produces_value hv hb
-    exact smstep_trans (smstep_mstruct_open ih)
-      (SMStep.step (SStep.ssmstructv_open hv hv') (SMStep.refl hv))
+    exact smstep_mstruct_open ih
   | mfunctor_sandboxed hv =>
     exact SMStep.step (SStep.ssmfunctor_sandboxed hv) (SMStep.refl hv)
   | mfunctor_open hv =>
@@ -430,6 +426,10 @@ theorem sbig_value_refl {e v : Exp}
   | vinr hv' ih => exact BStep.inr hvv (ih hvv)
   | vfclos hv' ih => exact BStep.fclos_val hvv hv'
   | vfold hv' ih => exact BStep.fold hvv (ih hvv)
+  | @vmstruct sb _ hv' ih =>
+    cases sb with
+    | sandboxed => exact BStep.mstruct_sandboxed hvv (ih Value.vunit)
+    | open_ => exact BStep.mstruct_open hvv (ih hvv)
   | vmrg hv1 hv2 ih1 ih2 =>
     have h1 := ih1 hvv
     exact BStep.dmrg hvv h1 (ih2 (Value.vmrg hvv (sbig_produces_value hvv h1)))
@@ -456,8 +456,20 @@ theorem sbig_val_det {env e v1 : Exp}
   | rproj _ _ _ _ => cases hv
   | letb _ _ _ _ _ => cases hv
   | openm _ _ _ _ _ => cases hv
-  | mstruct_sandboxed _ _ _ => cases hv
-  | mstruct_open _ _ _ => cases hv
+  | mstruct_sandboxed _ _ ih1 =>
+    cases hv with
+    | vmstruct hv' =>
+      cases h2 with
+      | mstruct_sandboxed _ hb2 =>
+        congr 1
+        exact ih1 hv' hb2
+  | mstruct_open _ _ ih1 =>
+    cases hv with
+    | vmstruct hv' =>
+      cases h2 with
+      | mstruct_open _ hb2 =>
+        congr 1
+        exact ih1 hv' hb2
   | mfunctor_sandboxed _ => cases hv
   | mfunctor_open _ => cases hv
   | mlink _ _ _ _ _ _ _ _ => cases hv
@@ -583,14 +595,6 @@ theorem sstep_sbig {env e1 e2 v : Exp}
   | ssmstruct_open hv _ ih =>
     cases hb with
     | mstruct_open _ hb_body => exact BStep.mstruct_open hv (ih hb_body)
-  | ssmstructv_sandboxed hv hv' =>
-    have heq := sbig_value_eq hb hv'
-    subst heq
-    exact BStep.mstruct_sandboxed hv (sbig_value_refl hv' Value.vunit)
-  | ssmstructv_open hv hv' =>
-    have heq := sbig_value_eq hb hv'
-    subst heq
-    exact BStep.mstruct_open hv (sbig_value_refl hv' hv)
   | ssmfunctor_sandboxed hv =>
     cases hb with
     | mclos_val _ hv' => exact BStep.mfunctor_sandboxed hv
