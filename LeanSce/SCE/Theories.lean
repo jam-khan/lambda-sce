@@ -1,5 +1,6 @@
 import LeanSce.Core.Syntax
-import LeanSce.Core.BigStep
+import LeanSce.Core.Semantics.BigStep
+import LeanSce.Core.Semantics.Equivalence
 import LeanSce.Core.Typing
 import LeanSce.SCE.Syntax
 import LeanSce.SCE.Semantics.BigStep

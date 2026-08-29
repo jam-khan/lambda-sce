@@ -2,8 +2,12 @@
 -- Import modules here that should be built as part of the library.
 import LeanSce.Core.Syntax
 import LeanSce.Core.Typing
-import LeanSce.Core.BigStep
-import LeanSce.Core.SmallStep
+import LeanSce.Core.Properties
+import LeanSce.Core.Semantics.SmallStep
+import LeanSce.Core.Semantics.BigStep
+import LeanSce.Core.Semantics.Equivalence
+import LeanSce.Core.Preservation
+import LeanSce.Core.Progress
 
 import LeanSce.SCE.Semantics.BigStep
 import LeanSce.SCE.Elaboration.Elaboration
