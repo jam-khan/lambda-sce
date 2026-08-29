@@ -1,5 +1,5 @@
 import LeanSce.Core.Syntax
-import LeanSce.Core.Typing
+import LeanSce.Core.Typing.Typing
 
 /-!
 Properties of typing and lookup shared by preservation and progress: value

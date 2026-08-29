@@ -1,5 +1,5 @@
 import LeanSce.Core.Syntax
-import LeanSce.Core.Typing
+import LeanSce.Core.Typing.Typing
 import LeanSce.Core.Semantics.SmallStep
 import LeanSce.Core.Properties
 

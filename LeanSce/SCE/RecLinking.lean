@@ -1,7 +1,8 @@
 import LeanSce.SCE.Elaboration.Elaboration
 import LeanSce.SCE.Preservation
 import LeanSce.SCE.Progress
-import LeanSce.SCE.Theories
+import LeanSce.SCE.SemanticsPreservation
+import LeanSce.SCE.Semantics.Determinism
 
 open SCE S_Sem
 

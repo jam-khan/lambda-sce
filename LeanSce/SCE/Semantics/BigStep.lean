@@ -198,3 +198,136 @@ inductive BStep : Exp → Exp → Exp → Prop where
     → BStep (.mrg v₂ pkg) body v₃
     → BStep ρ (.mlinkn e₁ e₂) (.mrg v₁ v₃)
 end S_Sem
+
+open S_Sem
+
+-- Evaluation produces values, and values evaluate only to themselves
+
+theorem source_lookupv_value
+    {v v' : SCE.Exp} {n : Nat}
+    (hval : SCE.Value v)
+    (hlook : S_Sem.LookupV v n v')
+    : SCE.Value v' := by
+  induction hlook with
+  | dmrg_zero => cases hval with | vmrg h1 h2 => exact h2
+  | dmrg_succ _ ih => cases hval with | vmrg h1 h2 => exact ih h1
+  | nmrg_zero => cases hval
+  | nmrg_succ => cases hval
+
+theorem source_sel_value
+    {v v' : SCE.Exp} {l : String}
+    (hval : SCE.Value v)
+    (hsel : S_Sem.Sel v l v')
+    : SCE.Value v' := by
+  induction hsel with
+  | rcd => cases hval with | vlrec h => exact h
+  | dmrg_left _ ih => cases hval with | vmrg h1 h2 => exact ih h1
+  | dmrg_right _ ih => cases hval with | vmrg h1 h2 => exact ih h2
+  | nmrg_left _ ih => cases hval
+  | nmrg_right _ ih => cases hval
+
+theorem eval_produces_value
+    {ρ e v : SCE.Exp}
+    (hval : SCE.Value ρ)
+    (heval : S_Sem.BStep ρ e v)
+    : SCE.Value v := by
+  induction heval with
+  | query _ => exact hval
+  | lit _ => exact SCE.Value.vint
+  | unit _ => exact SCE.Value.vunit
+  | clos_val _ hv => exact SCE.Value.vclos hv
+  | mclos_val _ hv => exact SCE.Value.vmclos hv
+  | proj _ _ hlook ih1 =>
+    exact source_lookupv_value (ih1 hval) hlook
+  | lam _ => exact SCE.Value.vclos hval
+  | box _ _ _ ih1 ih2 => exact ih2 (ih1 hval)
+  | app_clos _ _ _ _ ih1 ih2 ih3 =>
+    have hvclos := ih1 hval
+    cases hvclos with | vclos hv => exact ih3 (SCE.Value.vmrg hv (ih2 hval))
+  | app_mclos _ _ _ _ ih1 ih2 ih3 =>
+    have hvclos := ih1 hval
+    cases hvclos with | vmclos hv => exact ih3 (SCE.Value.vmrg hv (ih2 hval))
+  | dmrg _ _ _ ih1 ih2 =>
+    exact SCE.Value.vmrg (ih1 hval) (ih2 (SCE.Value.vmrg hval (ih1 hval)))
+  | nmrg _ _ _ ih1 ih2 =>
+    exact SCE.Value.vmrg (ih1 hval) (ih2 hval)
+  | lrec _ _ ih => exact SCE.Value.vlrec (ih hval)
+  | rproj _ _ hsel ih =>
+    exact source_sel_value (ih hval) hsel
+  | letb _ _ _ ih1 ih2 =>
+    exact ih2 (SCE.Value.vmrg hval (ih1 hval))
+  | openm _ _ _ ih1 ih2 =>
+    have := ih1 hval
+    cases this with | vlrec hv => exact ih2 (SCE.Value.vmrg hval hv)
+  | mstruct_sandboxed _ _ ih => exact SCE.Value.vmstruct (ih SCE.Value.vunit)
+  | mstruct_open _ _ ih => exact SCE.Value.vmstruct (ih hval)
+  | mfunctor_sandboxed _ => exact SCE.Value.vmclos SCE.Value.vunit
+  | mfunctor_open hv => exact SCE.Value.vmclos hv
+  | mlink hv hstep1 hstep2 hsel hstep3 ih1 ih2 ih3 =>
+    have hv1 := ih1 hv
+    have hv2 := ih2 hv
+    cases hv2 with
+    | vmclos hvv2 =>
+      have hvl := source_sel_value hv1 hsel
+      exact SCE.Value.vmrg hv1 (ih3 (SCE.Value.vmrg hvv2 (SCE.Value.vlrec hvl)))
+  | mlinkn hv hstep1 hstep2 hsp hstep3 ih1 ih2 ih3 =>
+    have hv1 := ih1 hv
+    have hv2 := ih2 hv
+    cases hv2 with
+    | vmclos hvv2 =>
+      exact SCE.Value.vmrg hv1 (ih3 (SCE.Value.vmrg hvv2 (S_Sem.selpkg_value hsp hv1)))
+  | inl _ _ ih => exact SCE.Value.vinl (ih hval)
+  | inr _ _ ih => exact SCE.Value.vinr (ih hval)
+  | case_inl _ _ _ ih1 ih2 =>
+    have hinl := ih1 hval
+    cases hinl with | vinl hv1 => exact ih2 (SCE.Value.vmrg hval hv1)
+  | case_inr _ _ _ ih1 ih2 =>
+    have hinr := ih1 hval
+    cases hinr with | vinr hv1 => exact ih2 (SCE.Value.vmrg hval hv1)
+  | fclos_val _ hv => exact SCE.Value.vfclos hv
+  | flam _ => exact SCE.Value.vfclos hval
+  | app_fclos _ _ _ _ ih1 ih2 ih3 =>
+    have hvclos := ih1 hval
+    cases hvclos with
+    | vfclos hv =>
+      exact ih3 (SCE.Value.vmrg (SCE.Value.vmrg hv (SCE.Value.vfclos hv)) (ih2 hval))
+  | fold _ _ ih => exact SCE.Value.vfold (ih hval)
+  | unfold _ _ ih =>
+    have hfold := ih hval
+    cases hfold with | vfold hv => exact hv
+
+-- A value big-steps only to itself
+theorem bstep_value_id {v : SCE.Exp}
+    (hv : SCE.Value v)
+    : ∀ {ρ v' : SCE.Exp}, S_Sem.BStep ρ v v' → v' = v := by
+  induction hv with
+  | vint => intro _ _ h; cases h; rfl
+  | vunit => intro _ _ h; cases h; rfl
+  | vclos _ => intro _ _ h; cases h; rfl
+  | vmclos _ => intro _ _ h; cases h; rfl
+  | vmstruct _ ih =>
+    intro _ _ h
+    cases h with
+    | mstruct_sandboxed _ hb => rw [ih hb]
+    | mstruct_open _ hb => rw [ih hb]
+  | vmrg _ _ ih1 ih2 =>
+    intro _ _ h
+    cases h with
+    | dmrg _ hb1 hb2 => rw [ih1 hb1, ih2 hb2]
+  | vlrec _ ih =>
+    intro _ _ h
+    cases h with
+    | lrec _ hb => rw [ih hb]
+  | vinl _ ih =>
+    intro _ _ h
+    cases h with
+    | inl _ hb => rw [ih hb]
+  | vinr _ ih =>
+    intro _ _ h
+    cases h with
+    | inr _ hb => rw [ih hb]
+  | vfclos _ => intro _ _ h; cases h; rfl
+  | vfold _ ih =>
+    intro _ _ h
+    cases h with
+    | fold _ hb => rw [ih hb]

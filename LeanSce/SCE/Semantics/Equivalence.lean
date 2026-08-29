@@ -1,7 +1,6 @@
 import LeanSce.SCE.Semantics.SmallStep
 import LeanSce.SCE.Semantics.BigStep
 import LeanSce.SCE.Syntax
-import LeanSce.SCE.Theories
 
 open SCE S_Sem
 
