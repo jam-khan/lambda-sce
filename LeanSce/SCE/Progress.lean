@@ -5,13 +5,13 @@ import LeanSce.SCE.Preservation
 
 open SCE S_Sem
 
--- Generalized progress: well-elaborated expressions are values or can step
+-- Generalized progress: well-typed source expressions are values or can step
 theorem sgprogress
     {Γ A : SCE.Typ} {e : SCE.Exp}
-    (htyp : ∃ ce, elabExp Γ e A ce) :
+    (htyp : SCE.HasType Γ e A) :
     ∀ {v : SCE.Exp},
     SCE.Value v
-    → (∃ ρc, elabExp SCE.Typ.top v Γ ρc)
+    → SCE.HasType .top v Γ
     → SCE.Value e ∨ ∃ e', SStep v e e' := by
   obtain ⟨ce, helab⟩ := htyp
   induction helab with
@@ -58,7 +58,7 @@ theorem sgprogress
     match prog1 with
     | .inr ⟨e', hstep⟩ => right; exact ⟨.box e' se2, SStep.ssboxl hv hstep⟩
     | .inl hve1 =>
-      have henv2 : ∃ ρc, elabExp Typ.top se1 _ ρc := ⟨_, elab_value_weaken h1 hve1 _⟩
+      have henv2 : SCE.HasType .top se1 _ := svalue_weaken ⟨_, h1⟩ hve1 _
       have prog2 := ih2 hve1 henv2
       match prog2 with
       | .inr ⟨e', hstep⟩ => right; exact ⟨.box se1 e', SStep.ssboxr hv hve1 hstep⟩
@@ -70,7 +70,7 @@ theorem sgprogress
     match prog1 with
     | .inr ⟨e', hstep⟩ => right; exact ⟨.mrg e' se2, SStep.ssmrgl hv hstep⟩
     | .inl hve1 =>
-      have henv' : ∃ ρc', elabExp Typ.top (.mrg v se1) (Typ.and _ _) ρc' :=
+      have henv' : SCE.HasType .top (.mrg v se1) (Typ.and _ _) :=
         ⟨_, elabExp.edmrg _ _ _ _ _ _ _ (elab_value_weaken henvE hv _) (elab_value_weaken h1 hve1 _)⟩
       have prog2 := ih2 (Value.vmrg hv hve1) henv'
       match prog2 with
@@ -83,7 +83,7 @@ theorem sgprogress
     | .inr ⟨e', hstep⟩ => right; exact ⟨.proj e' _, SStep.ssproj hv hstep⟩
     | .inl hve1 =>
       right
-      have ⟨v', hlv⟩ := elab_lookup_prog hlook (elab_value_weaken h1 hve1 _) hve1
+      have ⟨v', _, hlv⟩ := slookup_progress hlook (svalue_weaken ⟨_, h1⟩ hve1 _) hve1
       exact ⟨_, SStep.ssprojv hv hve1 hlv⟩
   | @elrec _ _ se _ l _ ih =>
     intro v hv henv
@@ -98,7 +98,7 @@ theorem sgprogress
     | .inr ⟨e', hstep⟩ => right; exact ⟨.rproj e' _, SStep.ssrproj hv hstep⟩
     | .inl hve1 =>
       right
-      have ⟨v', hsel⟩ := elab_rlookup_prog hlook (elab_value_weaken h1 hve1 _) hve1
+      have ⟨v', _, hsel⟩ := sselection_progress hlook (svalue_weaken ⟨_, h1⟩ hve1 _) hve1
       exact ⟨_, SStep.ssrprojv hv hve1 hsel⟩
   | @enmrg _ _ _ se1 se2 _ _ h1 h2 ih1 ih2 =>
     intro v hv henv
@@ -133,24 +133,11 @@ theorem sgprogress
       | .vinl _ => nomatch h1
       | .vinr _ => nomatch h1
       | .vfclos _ => nomatch h1
-  | @mstruct _ ctxInner _ sb se _ _ hnv hsb_sand hsb_open h ih =>
+  | mstruct _ _ _ _ h ih =>
     intro v hv henv
-    cases sb with
-    | sandboxed =>
-      have heq := hsb_sand rfl; subst heq
-      have prog := ih Value.vunit ⟨_, elabExp.eunit _⟩
-      match prog with
-      | .inl hve => exact absurd hve hnv
-      | .inr ⟨e', hstep⟩ => right; exact ⟨.mstruct .sandboxed e', SStep.ssmstruct_sandboxed hv hstep⟩
-    | open_ =>
-      have heq := hsb_open rfl; subst heq
-      have prog := ih hv henv
-      match prog with
-      | .inl hve => exact absurd hve hnv
-      | .inr ⟨e', hstep⟩ => right; exact ⟨.mstruct .open_ e', SStep.ssmstruct_open hv hstep⟩
-  | @mstructv _ _ sb se _ hval h ih =>
-    intro v hv henv
-    left; exact Value.vmstruct hval
+    match ih hv henv with
+    | .inl hve => exact .inl (Value.vmstruct hve)
+    | .inr ⟨e', hstep⟩ => exact .inr ⟨.mstruct e', SStep.ssmstruct hv hstep⟩
   | @mfunctor _ ctxInner _ _ sb se _ hsb_sand hsb_open h ih =>
     intro v hv henv
     cases sb with
@@ -193,7 +180,7 @@ theorem sgprogress
         | .vmclos hvc =>
           cases h2 with
           | mclos _ _ _ _ _ _ _ _ _ _ _ =>
-            have ⟨vl, hsel⟩ := elab_rlookup_prog hlook (elab_value_weaken h1 hve1 _) hve1
+            have ⟨vl, _, hsel⟩ := sselection_progress hlook (svalue_weaken ⟨_, h1⟩ hve1 _) hve1
             exact ⟨_, SStep.ssmlinkbeta hv hve1 hvc hsel⟩
         | .vint => nomatch h2
         | .vunit => nomatch h2
@@ -291,7 +278,7 @@ theorem sgprogress
 
 -- Whole-program progress
 theorem sprogress {e : SCE.Exp} {A : SCE.Typ}
-    : (∃ ce, elabExp SCE.Typ.top e A ce)
+    : SCE.HasType .top e A
     → SCE.Value e ∨ ∃ e', SStep SCE.Exp.unit e e' := by
   intro htyp
   exact sgprogress htyp Value.vunit ⟨_, elabExp.eunit _⟩

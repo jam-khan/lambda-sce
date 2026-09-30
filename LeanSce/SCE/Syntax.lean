@@ -33,6 +33,7 @@ def substTyp (d : Nat) (S : Typ) : Typ → Typ
   | .var n => if n = d then S else .var n
   | .mu T => .mu (substTyp (d + 1) S T)
 
+-- Functor modes determine which environment a functor captures.
 inductive Sandbox where
   | sandboxed : Sandbox
   | open_ : Sandbox
@@ -51,7 +52,7 @@ inductive Exp where
   | lrec   : String → Exp → Exp
   | rproj  : Exp → String → Exp
   -- to be elaborated
-  | mstruct : Sandbox → Exp → Exp
+  | mstruct : Exp → Exp
   | mfunctor : Sandbox → Typ → Exp → Exp
   | mclos : Exp → Typ → Exp → Exp
   | mlink : Exp → Exp → Exp
@@ -81,7 +82,7 @@ inductive Value : Exp → Prop where
   | vclos  {v A e}  : Value v → Value (.clos v A e)
   | vmclos {v A e}  : Value v → Value (.mclos v A e)
   -- a fully evaluated struct stays wrapped: it is the value of type `Sig A`
-  | vmstruct {sb v} : Value v → Value (.mstruct sb v)
+  | vmstruct {v} : Value v → Value (.mstruct v)
   | vmrg   {v₁ v₂}  : Value v₁ → Value v₂ → Value (.mrg v₁ v₂)
   | vlrec  {v l}    : Value v → Value (.lrec l v)
   | vinl   {v B}    : Value v → Value (.inl B v)
@@ -117,6 +118,11 @@ inductive SRLookup : Typ → String → Typ → Prop
     SRLookup B label T →
     ¬ LabelIn label A →
     SRLookup (Typ.and A B) label T
+-- a signature is transparent for lookup: it marks a module but hides nothing
+-- (its erasure is the erasure of its content)
+| sig (A : Typ) (label : String) (T : Typ) :
+    SRLookup A label T →
+    SRLookup (Typ.sig A) label T
 
 -- A successful lookup witnesses containment.  This is why the `and` rules above
 -- carry only the negative half of their disjointness condition: the positive
@@ -127,6 +133,7 @@ theorem srlookup_labelin {A : Typ} {l : String} {T : Typ} : SRLookup A l T → L
   | zero => exact LabelIn.rcd _ _
   | andl _ _ _ _ _ _ ih => exact LabelIn.andl _ _ _ ih
   | andr _ _ _ _ _ _ ih => exact LabelIn.andr _ _ _ ih
+  | sig _ _ _ _ ih => exact LabelIn.sig _ _ ih
 
 -- LinkOk Γ₁ D: the module type Γ₁ satisfies every labeled import of the
 -- interface D ::= rcd l A | D & rcd l A (left-nested intersections of records)

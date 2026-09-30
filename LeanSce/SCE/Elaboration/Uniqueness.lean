@@ -36,8 +36,11 @@ theorem record_lookup_uniqueness
     | andr _ _ _ _ h₂' _ => exact ih h₂'
     | andl _ _ _ _ h₂' h_cond₂ =>
       exact absurd (SCE.srlookup_labelin hsr) h_cond₂
+  | sig A l T hsr ih =>
+    cases h₂ with
+    | sig _ _ _ h₂' => exact ih h₂'
 
-theorem inference_uniqueness
+theorem elaboration_inference_uniqueness
     {Γ T₁ T₂ : SCE.Typ} {e : SCE.Exp} {ce₁ ce₂ : Core.Exp}
     (h₁ : elabExp Γ e T₁ ce₁)
     (h₂ : elabExp Γ e T₂ ce₂)
@@ -124,30 +127,11 @@ theorem inference_uniqueness
       have hA : SCE.Typ.rcd l A = SCE.Typ.rcd _ a' := ih1 h1'
       cases hA
       exact ih2 h2'
-  | mstruct ctx ctxInner B sb se ce envCore hnv _ _ _ ih =>
-    intros T₂ ce₂ h₂
-    rename_i hs1 hs2 el1
+  | mstruct ctx B se ce _ ih =>
+    intro ce₂ T₂ h₂
     cases h₂ with
-    | mstruct _ ci' b' _ _ ce' _ _ hs1' hs2' h' =>
-      have hCtx : ctxInner = ci' := by
-        cases sb with
-        | sandboxed =>
-          rw [hs1 rfl, hs1' rfl]
-        | open_ =>
-          rw [hs2 rfl, hs2' rfl]
-      rw [←hCtx] at h'
-      have hB := ih h'
-      rw [hB]
-    | mstructv _ _ _ _ _ hval' h' =>
-      exact absurd hval' hnv
-  | mstructv ctx B sb se ce hval h ih =>
-    intros T₂ ce₂ h₂
-    cases h₂ with
-    | mstruct _ _ _ _ _ _ _ hnv' _ _ _ =>
-      exact absurd hval hnv'
-    | mstructv _ b' _ _ ce' hval' h' =>
-      have hB := ih h'
-      rw [hB]
+    | mstruct _ b' _ ce' h' =>
+      rw [ih h']
   | mfunctor ctx ctxInner A B sb se ce _ _ _ ih =>
     intro ce₂ T₂ h₂
     rename_i hs1 hs2 el1
@@ -231,6 +215,16 @@ theorem inference_uniqueness
       cases hmu
       rw [heq, heq']
 
+/-- A source expression has at most one type in a given context. -/
+theorem inference_uniqueness
+    {Γ A₁ A₂ : SCE.Typ} {e : SCE.Exp}
+    (h₁ : SCE.HasType Γ e A₁)
+    (h₂ : SCE.HasType Γ e A₂)
+    : A₁ = A₂ := by
+  obtain ⟨ce₁, helab₁⟩ := h₁
+  obtain ⟨ce₂, helab₂⟩ := h₂
+  exact elaboration_inference_uniqueness helab₁ helab₂
+
 theorem elaboration_uniqueness
     {Γ T₁ T₂ : SCE.Typ} {e : SCE.Exp} {ce₁ ce₂ : Core.Exp}
     (h₁ : elabExp Γ e T₁ ce₁)
@@ -262,7 +256,7 @@ theorem elaboration_uniqueness
     cases h₂ with
     | ebox _ en _ _ _ ce1' ce2' h1' h2' =>
       have hce1 := ih1 h1'
-      have hctx := inference_uniqueness h1_orig h1'
+      have hctx := elaboration_inference_uniqueness h1_orig h1'
       rw [← hctx] at h2'
       have hce2 := ih2 h2'
       rw [hce1, hce2]
@@ -271,19 +265,15 @@ theorem elaboration_uniqueness
     cases h₂ with
     | edmrg _ a' b' _ _ ce1' ce2' h1' h2' =>
       have hce1 := ih1 h1'
-      have hA := inference_uniqueness h1_orig h1'
+      have hA := elaboration_inference_uniqueness h1_orig h1'
       rw [← hA] at h2'
       have hce2 := ih2 h2'
       rw [hce1, hce2]
-  | enmrg ctx A B se1 se2 ce1 ce2 h1_orig h2_orig ih1 ih2 =>
+  | enmrg ctx A B se1 se2 ce1 ce2 _ _ ih1 ih2 =>
     intro ce₂ T₂ h₂
     cases h₂ with
     | enmrg _ a' b' _ _ ce1' ce2' h1' h2' =>
-      have hce1 := ih1 h1'
-      have hce2 := ih2 h2'
-      have hA := inference_uniqueness h1_orig h1'
-      have hB := inference_uniqueness h2_orig h2'
-      rw [hce1, hce2, hA, hB]
+      rw [ih1 h1', ih2 h2']
   | elam ctx A B se ce _ ih =>
     intro ce₂ T₂ h₂
     cases h₂ with
@@ -301,7 +291,7 @@ theorem elaboration_uniqueness
     cases h₂ with
     | eclos _ et _ bT _ _ ce1' ce2' _ h1' h2' =>
       have hce1 := ih1 h1'
-      have hctx := inference_uniqueness h1_orig h1'
+      have hctx := elaboration_inference_uniqueness h1_orig h1'
       rw [← hctx] at h2'
       have hce2 := ih2 h2'
       rw [hce1, hce2]
@@ -315,7 +305,7 @@ theorem elaboration_uniqueness
     intro ce₂ T₂ h₂
     cases h₂ with
     | letb _ a' b' _ _ ce1' ce2' h1' h2' =>
-      have hA := inference_uniqueness h1_orig h1'
+      have hA := elaboration_inference_uniqueness h1_orig h1'
       cases hA
       have hce1 := ih1 h1'
       have hce2 := ih2 h2'
@@ -324,32 +314,15 @@ theorem elaboration_uniqueness
     intro ce₂ T₂ h₂
     cases h₂ with
     | openm _ a' b' _ _ ce1' ce2' _ h1' h2' =>
-      have htyp : SCE.Typ.rcd l A = SCE.Typ.rcd _ a' := inference_uniqueness h1_orig h1'
+      have htyp : SCE.Typ.rcd l A = SCE.Typ.rcd _ a' := elaboration_inference_uniqueness h1_orig h1'
       cases htyp
       have hce1 := ih1 h1'
       have hce2 := ih2 h2'
       rw [hce1, hce2]
-  | mstruct ctx ctxInner B sb se ce envCore hnv _ _ _ ih =>
-    intro ce₂ T₂ h₂
-    rename_i hs1 hs2 el1
-    cases h₂ with
-    | mstruct _ ci' b' _ _ ce' _ _ hs1' hs2' h' =>
-      have hCtx : ctxInner = ci' := by
-        cases sb with
-        | sandboxed => rw [hs1 rfl, hs1' rfl]
-        | open_ => rw [hs2 rfl, hs2' rfl]
-      rw [← hCtx] at h'
-      have hce := ih h'
-      rw [hce]
-    | mstructv _ _ _ _ _ hval' h' =>
-      exact absurd hval' hnv
-  | mstructv ctx B sb se ce hval h ih =>
+  | mstruct ctx B se ce _ ih =>
     intro ce₂ T₂ h₂
     cases h₂ with
-    | mstruct _ _ _ _ _ _ _ hnv' _ _ _ =>
-      exact absurd hval hnv'
-    | mstructv _ b' _ _ ce' hval' h' =>
-      exact ih h'
+    | mstruct _ b' _ ce' h' => exact ih h'
   | mfunctor ctx ctxInner A B sb se ce _ _ _ ih =>
     intro ce₂ T₂ h₂
     rename_i hs1 hs2 el1
@@ -367,7 +340,7 @@ theorem elaboration_uniqueness
     cases h₂ with
     | mclos _ et _ bT _ _ ce1' ce2' _ h1' h2' =>
       have hce1 := ih1 h1'
-      have hctx := inference_uniqueness h1_orig h1'
+      have hctx := elaboration_inference_uniqueness h1_orig h1'
       rw [← hctx] at h2'
       have hce2 := ih2 h2'
       rw [hce1, hce2]
@@ -384,9 +357,9 @@ theorem elaboration_uniqueness
     | mlink _ Γ₁' A' mt' l' _ _ ce1' ce2' h1' h2' _ =>
       have hce1 := ih1 h1'
       have hce2 := ih2 h2'
-      have htyp := inference_uniqueness h2_orig h2'
+      have htyp := elaboration_inference_uniqueness h2_orig h2'
       cases htyp
-      have hΓ := inference_uniqueness h1_orig h1'
+      have hΓ := elaboration_inference_uniqueness h1_orig h1'
       rw [hce1, hce2, hΓ]
   | mlinkn ctx Γ₁ D B se1 se2 ce1 ce2 h1_orig h2_orig _ ih1 ih2 =>
     intro ce₂ T₂ h₂
@@ -394,9 +367,9 @@ theorem elaboration_uniqueness
     | mlinkn _ Γ₁' D' B' _ _ ce1' ce2' h1' h2' _ =>
       have hce1 := ih1 h1'
       have hce2 := ih2 h2'
-      have htyp := inference_uniqueness h2_orig h2'
+      have htyp := elaboration_inference_uniqueness h2_orig h2'
       cases htyp
-      have hΓ := inference_uniqueness h1_orig h1'
+      have hΓ := elaboration_inference_uniqueness h1_orig h1'
       rw [hce1, hce2, hΓ]
   | einl ctx A B se ce _ ih =>
     intro ce₂ T₂ h₂
@@ -414,7 +387,7 @@ theorem elaboration_uniqueness
     intro ce₂ T₂ h₂
     cases h₂ with
     | ecase _ a' b' c' _ _ _ ce' ce1' ce2' h' h1' h2' =>
-      have hor := inference_uniqueness h_orig h'
+      have hor := elaboration_inference_uniqueness h_orig h'
       cases hor
       have hce := ih h'
       have hce1 := ih1 h1'
@@ -431,7 +404,7 @@ theorem elaboration_uniqueness
     cases h₂ with
     | efclos _ et _ _ _ _ ce1' ce2' _ h1' h2' =>
       have hce1 := ih1 h1'
-      have hctx := inference_uniqueness h1_orig h1'
+      have hctx := elaboration_inference_uniqueness h1_orig h1'
       rw [← hctx] at h2'
       have hce2 := ih2 h2'
       rw [hce1, hce2]
@@ -445,7 +418,7 @@ theorem elaboration_uniqueness
     intro ce₂ T₂ h₂
     cases h₂ with
     | eunfold _ T' _ _ ce' h' heq' =>
-      have hmu := inference_uniqueness h_orig h'
+      have hmu := elaboration_inference_uniqueness h_orig h'
       cases hmu
       have hce := ih h'
       rw [hce]

@@ -84,6 +84,8 @@ theorem type_safe_record_lookup
     simp [elabTyp]
     exact Core.RLookup.landr ih
       (type_safe_label_nonexistence.mp h_cond)
+  | sig A l T _ ih =>
+    simpa [elabTyp] using ih
 
 theorem elab_value
     {Γ A : SCE.Typ} {v : SCE.Exp} {cv : Core.Exp}
@@ -131,8 +133,7 @@ theorem elab_value
       exact Core.Value.vfold (ih h)
   | vmstruct hv ih =>
     cases helab with
-    | mstruct _ _ _ _ _ _ _ hnv _ _ _ => exact absurd hv hnv
-    | mstructv _ _ _ _ _ _ h => exact ih h
+    | mstruct _ _ _ _ h => exact ih h
 
 /-- The linearized wire is well-typed: under any context that reaches the
 provider type `⟦Γ₁⟧` at index `shift`, `wire_shift ⟦D⟧` has the interface type
@@ -184,17 +185,17 @@ theorem linkedCore_typed
       (HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero))
       (hw Core.Lookup.zero)
 
-/-- The linearized non-dependent merge is well-typed at `a & b`. -/
+/-- Restoring the ambient context types both operands independently. -/
 theorem nmrgCore_typed {Γc a b : Core.Typ} {ce₁ ce₂ : Core.Exp}
     (h₁ : HasType Γc ce₁ a) (h₂ : HasType Γc ce₂ b)
-    : HasType Γc (nmrgCore a b ce₁ ce₂) (.and a b) := by
-  simp only [nmrgCore, nmrgStep]
-  apply HasType.tapp (HasType.tapp ?_ h₁) h₂
-  apply HasType.tlam
-  apply HasType.tlam
-  apply HasType.tmrg
-  · exact HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero)
-  · exact HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero)
+    : HasType Γc (nmrgCore ce₁ ce₂) (.and a b) := by
+  exact HasType.tproj
+    (HasType.tmrg HasType.tquery
+      (HasType.tmrg
+        (HasType.tbox (HasType.tproj HasType.tquery Core.Lookup.zero) h₁)
+        (HasType.tbox
+          (HasType.tproj HasType.tquery (Core.Lookup.succ Core.Lookup.zero)) h₂)))
+    Core.Lookup.zero
 
 theorem type_preservation
     {Γ A : SCE.Typ} {es : SCE.Exp} {ec : Core.Exp}
@@ -232,21 +233,10 @@ theorem type_preservation
       simp [elabTyp]
       exact HasType.trcd ih
     | letb ctx A B se1 se2 ce1 ce2 _ _ ih1 ih2 =>
-      exact HasType.tapp (HasType.tlam ih2) ih1
+      exact HasType.tproj (HasType.tmrg ih1 ih2) Core.Lookup.zero
     | openm ctx A B se1 se2 ce1 ce2 l _ _ ih1 ih2 =>
       exact HasType.tapp (HasType.tlam ih2) (HasType.trproj ih1 Core.RLookup.zero)
-    | mstruct ctx ctxInner B sb se ce envCore hnv hs1 hs2 _ ih =>
-      cases sb with
-      | sandboxed =>
-        have := hs1 rfl
-        rw [this] at ih
-        simp [elabTyp] at ih
-        exact HasType.tbox HasType.tunit ih
-      | open_ =>
-        have := hs2 rfl
-        rw [this] at ih
-        exact HasType.tbox HasType.tquery ih
-    | mstructv ctx B sb se ce hval h ih =>
+    | mstruct ctx B se ce _ ih =>
       exact ih
     | mfunctor ctx ctxInner A B sb se ce hs1 hs2 _ ih =>
       simp [elabTyp]

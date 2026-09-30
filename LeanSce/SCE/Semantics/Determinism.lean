@@ -74,6 +74,12 @@ private theorem sel_deterministic
       exact absurd hlin hcond
   | nmrg_left   => cases hval
   | nmrg_right  => cases hval
+  | mstruct hsel_inner ih =>
+    cases hval with | vmstruct hv =>
+    cases helab with
+    | mstruct _ _ _ _ h =>
+      cases hlookup with | sig _ _ _ hrl =>
+      cases hsel₂ with | mstruct hsel₂' => exact ih hv h hrl hsel₂'
 
 private theorem selpkg_deterministic
     {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D)
@@ -253,28 +259,12 @@ theorem bigstep_deterministic_gen
             have helab_mrg := elabExp.edmrg .top _ _ _ _ _ _ henv
               (elab_value_weaken helab_inner hval_inner _)
             exact ih₁b h_elab2 helab_mrg hval_mrg hstep₂b
-  | mstruct_sandboxed hval₁ hstep₁ ih₁ =>
+  | mstruct hval₁ hstep₁ ih₁ =>
     cases helab with
-    | mstruct _ _ _ _ _ ce _ _ hs1 hs2 h_elab =>
-      have hctx := hs1 rfl; rw [hctx] at h_elab
+    | mstruct _ _ _ _ h_elab =>
       cases heval₂ with
-      | mstruct_sandboxed _ hstep₂ =>
-        rw [ih₁ h_elab (elabExp.eunit .top) SCE.Value.vunit hstep₂]
-    | mstructv _ _ _ _ _ hvse h =>
-      cases heval₂ with
-      | mstruct_sandboxed _ hstep₂ =>
-        rw [bstep_value_id hvse hstep₁, bstep_value_id hvse hstep₂]
-  | mstruct_open hval₁ hstep₁ ih₁ =>
-    cases helab with
-    | mstruct _ _ _ _ _ ce _ _ hs1 hs2 h_elab =>
-      have hctx := hs2 rfl; rw [hctx] at h_elab
-      cases heval₂ with
-      | mstruct_open _ hstep₂ =>
+      | mstruct _ hstep₂ =>
         rw [ih₁ h_elab henv henv_val hstep₂]
-    | mstructv _ _ _ _ _ hvse h =>
-      cases heval₂ with
-      | mstruct_open _ hstep₂ =>
-        rw [bstep_value_id hvse hstep₁, bstep_value_id hvse hstep₂]
   | mfunctor_sandboxed _ =>
     cases helab with | mfunctor => cases heval₂ with | mfunctor_sandboxed => rfl
   | mfunctor_open _ =>
@@ -297,7 +287,7 @@ theorem bigstep_deterministic_gen
         have ⟨_, _, helab_mclos⟩ := semantic_preservation h_elab2 hstep₁b henv henv_val
         cases helab_mclos with
         | mclos _ ctx_inner _ _ _ _ _ _ hval_v2 h_env2 h_body =>
-          have htype_eq := inference_uniqueness
+          have htype_eq := elaboration_inference_uniqueness
             (semantic_preservation h_elab2 hstep₁b henv henv_val).choose_spec.2
             (elabExp.mclos .top ctx_inner _ _ _ _ _ _ hval_v2 h_env2 h_body)
           cases htype_eq

@@ -4,11 +4,11 @@ import LeanSce.Core.Syntax
 
 open SCE
 
-def nmrgStep (a b : Core.Typ) : Core.Exp :=
-  .lam a (.lam b (.mrg (.proj .query 1) (.proj .query 1)))
-
-def nmrgCore (a b : Core.Typ) (ce₁ ce₂ : Core.Exp) : Core.Exp :=
-  .app (.app (nmrgStep a b) ce₁) ce₂
+/-- Save the ambient environment and restore it for each operand. -/
+def nmrgCore (ce₁ ce₂ : Core.Exp) : Core.Exp :=
+  .proj (.mrg .query
+    (.mrg (.box (.proj .query 0) ce₁)
+      (.box (.proj .query 1) ce₂))) 0
 
 def wire (shift : Nat) : Core.Typ → Core.Exp
   | .rcd l _ => .lrec l (.rproj (.proj .query shift) l)
@@ -89,13 +89,13 @@ inductive elabExp : TyCtx → Exp → Typ → Core.Exp → Prop
     Γ ⊢ eˢ₁ : A ⤳ eᶜ₁
     Γ ⊢ eˢ₂ : B ⤳ eᶜ₂
     ──────────────────────────────────────────────────────────
-    Γ ⊢ eˢ₁ ,, eˢ₂ : A & B ⤳ (λ⟦A⟧. λ⟦B⟧. ?.1 ,, ?.1) eᶜ₁ eᶜ₂
+    Γ ⊢ eˢ₁ ,, eˢ₂ : A & B ⤳ (?, ((?.0 ▷ eᶜ₁), (?.1 ▷ eᶜ₂))).0
   -/
   | enmrg (ctx A B : Typ) (se1 se2 : Exp) (ce1 ce2 : Core.Exp)
     : elabExp ctx se1 A ce1
     → elabExp ctx se2 B ce2
     → elabExp ctx (Exp.nmrg se1 se2) (Typ.and A B)
-        (nmrgCore (elabTyp A) (elabTyp B) ce1 ce2)
+        (nmrgCore ce1 ce2)
   | elam (ctx A B : Typ) (se : Exp) (ce : Core.Exp)
     : elabExp (Typ.and ctx A) se B ce
     → elabExp ctx (Exp.lam A se) (Typ.arr A B) (Core.Exp.lam (elabTyp A) ce)
@@ -115,32 +115,16 @@ inductive elabExp : TyCtx → Exp → Typ → Core.Exp → Prop
     : elabExp ctx se1 A ce1
     → elabExp (Typ.and ctx A) se2 B ce2
     → elabExp ctx (Exp.letb se1 se2) B
-        (Core.Exp.app (Core.Exp.lam (elabTyp A) ce2) ce1)
+        (Core.Exp.proj (Core.Exp.mrg ce1 ce2) 0)
   | openm (ctx A B : Typ) (se1 se2 : Exp) (ce1 ce2 : Core.Exp) (l : String)
     : elabExp ctx se1 (Typ.rcd l A) ce1
     → elabExp (Typ.and ctx A) se2 B ce2
     → elabExp ctx (Exp.openm se1 se2) B
         (Core.Exp.app (Core.Exp.lam (elabTyp A) ce2) (Core.Exp.rproj ce1 l))
-  -- a struct still being evaluated: its body runs under the sandboxed (unit)
-  -- or open (current) environment, boxed on the Core side
-  | mstruct (ctx ctxInner B : Typ) (sb : Sandbox) (se : Exp) (ce envCore : Core.Exp)
-    : ¬ SCE.Value se
-    → (sb = Sandbox.sandboxed → ctxInner = Typ.top)
-    → (sb = Sandbox.open_     → ctxInner = ctx)
-    → elabExp ctxInner se B ce
-    → elabExp ctx (Exp.mstruct sb se) (Typ.sig B)
-        (Core.Exp.box
-          (match sb with
-            | Sandbox.sandboxed => Core.Exp.unit
-            | Sandbox.open_     => Core.Exp.query)
-          ce)
-  -- a fully evaluated struct: the source wrapper stays (it is the value of
-  -- type `Sig B`) while the Core side has already discarded its box, so the
-  -- elaboration is the bare elaboration of the content value
-  | mstructv (ctx B : Typ) (sb : Sandbox) (se : Exp) (ce : Core.Exp)
-    : SCE.Value se
-    → elabExp ctx se B ce
-    → elabExp ctx (Exp.mstruct sb se) (Typ.sig B) ce
+  -- Structures use the ambient environment; their wrapper erases uniformly.
+  | mstruct (ctx B : Typ) (se : Exp) (ce : Core.Exp)
+    : elabExp ctx se B ce
+    → elabExp ctx (Exp.mstruct se) (Typ.sig B) ce
   | mfunctor (ctx ctxInner A B : Typ) (sb : Sandbox) (se : Exp) (ce : Core.Exp)
     : (sb = Sandbox.sandboxed → ctxInner = Typ.and Typ.top A)
     → (sb = Sandbox.open_     → ctxInner = Typ.and ctx A)
@@ -203,3 +187,7 @@ inductive elabExp : TyCtx → Exp → Typ → Core.Exp → Prop
     : elabExp ctx se (Typ.mu T) ce
     → A = substTyp 0 (Typ.mu T) T
     → elabExp ctx (Exp.unfold se) A (Core.Exp.unfold ce)
+
+/-- Source typing is elaboration with the generated core term hidden. -/
+abbrev SCE.HasType (Γ : SCE.Typ) (e : SCE.Exp) (A : SCE.Typ) : Prop :=
+  ∃ ce, elabExp Γ e A ce

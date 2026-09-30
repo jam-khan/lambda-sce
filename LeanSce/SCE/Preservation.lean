@@ -21,12 +21,9 @@ theorem elab_value_weaken
   | erproj _ => cases hv
   | letb _ => cases hv
   | openm _ => cases hv
-  | mstruct _ _ _ _ _ _ _ hnv _ _ _ _ =>
+  | mstruct _ _ _ _ h ih =>
     cases hv with
-    | vmstruct hv' => exact absurd hv' hnv
-  | mstructv _ _ _ _ _ hval h ih =>
-    cases hv with
-    | vmstruct hv' => exact elabExp.mstructv _ _ _ _ _ hval (ih hv' _)
+    | vmstruct hv' => exact elabExp.mstruct _ _ _ _ (ih hv' _)
   | mfunctor _ => cases hv
   | mapp _ => cases hv
   | mlink _ => cases hv
@@ -60,6 +57,15 @@ theorem elab_value_weaken
   | mclos _ _ _ _ _ _ _ _ hval ht hb ih1 ih2 =>
     cases hv with
     | vmclos hv' => exact elabExp.mclos _ _ _ _ _ _ _ _ hval ht hb
+
+/-- A source value retains its type under any ambient context. -/
+theorem svalue_weaken
+    {Γ₁ A : SCE.Typ} {v : SCE.Exp}
+    (htyp : SCE.HasType Γ₁ v A)
+    (hv : SCE.Value v)
+    (Γ₂ : SCE.Typ) : SCE.HasType Γ₂ v A := by
+  obtain ⟨ce, helab⟩ := htyp
+  exact ⟨ce, elab_value_weaken helab hv Γ₂⟩
 
 -- SCE LookupV preserves values
 theorem sce_lookupv_value {v v' : SCE.Exp} {n : Nat}
@@ -113,6 +119,7 @@ theorem sce_sel_value {v v' : SCE.Exp} {l : String}
   | dmrg_right _ ih => cases hv; exact ih (by assumption)
   | nmrg_left _ ih => cases hv
   | nmrg_right _ ih => cases hv
+  | mstruct _ ih => cases hv; exact ih (by assumption)
 
 -- If a value elaborates at type A and label l is not in A, then Sel v l v' is impossible
 theorem elab_notin_sel_false
@@ -143,6 +150,12 @@ theorem elab_notin_sel_false
         exact ih hv2 (fun hlin => hnotin (LabelIn.andr _ _ _ hlin)) (elab_value_weaken h2 hv2 _)
   | nmrg_left _ ih => cases hv
   | nmrg_right _ ih => cases hv
+  | mstruct hsel' ih =>
+    cases hv with
+    | vmstruct hv' =>
+      cases helab with
+      | mstruct _ _ _ _ h =>
+        exact ih hv' (fun hlin => hnotin (LabelIn.sig _ _ hlin)) h
 
 -- Record lookup preservation for elaboration
 theorem elab_rlookup_pres {Γ B : SCE.Typ} {l : String}
@@ -181,6 +194,13 @@ theorem elab_rlookup_pres {Γ B : SCE.Typ} {l : String}
     | dmrg_left hsel' =>
       rename_i hrl hnotin
       exact (elab_notin_sel_false hsel' hv1 hnotin (elab_value_weaken h1 hv1 _)).elim
+  | sig _ _ _ _ ih =>
+    intro v ce v' hsel hv helab
+    cases helab <;> cases hv
+    cases hsel with
+    | mstruct hsel' =>
+      have ⟨ce', hce'⟩ := ih hsel' ‹SCE.Value _› ‹elabExp _ _ _ _›
+      exact ⟨_, elab_value_weaken hce' (sce_sel_value hsel' ‹SCE.Value _›) _⟩
 
 -- Lookup progress for elaboration
 theorem elab_lookup_prog {A B : SCE.Typ} {n : Nat}
@@ -225,6 +245,34 @@ theorem elab_rlookup_prog {A B : SCE.Typ} {l : String}
     rename_i v₁ v₂ ce₁ ce₂ h1 h2 hv1 hv2
     have ⟨v', hsel⟩ := ih (elab_value_weaken h2 hv2 _) hv2
     exact ⟨_, Sel.dmrg_right hsel⟩
+  | sig _ _ _ _ ih =>
+    intro v ce helab hv
+    cases helab <;> cases hv
+    rename_i se h hv'
+    have ⟨v', hsel⟩ := ih h hv'
+    exact ⟨_, Sel.mstruct hsel⟩
+
+/-- Indexed lookup in a well-typed source value returns a value. -/
+theorem slookup_progress
+    {A B : SCE.Typ} {n : Nat} {v : SCE.Exp}
+    (hlook : SLookup A n B)
+    (htyp : SCE.HasType .top v A)
+    (hv : SCE.Value v)
+    : ∃ v', SCE.Value v' ∧ S_Sem.LookupV v n v' := by
+  obtain ⟨ce, helab⟩ := htyp
+  obtain ⟨v', hlookup⟩ := elab_lookup_prog hlook helab hv
+  exact ⟨v', sce_lookupv_value hlookup hv, hlookup⟩
+
+/-- A field contained in a well-typed source value's type can be selected. -/
+theorem sselection_progress
+    {A B : SCE.Typ} {l : String} {v : SCE.Exp}
+    (hlook : SRLookup A l B)
+    (htyp : SCE.HasType .top v A)
+    (hv : SCE.Value v)
+    : ∃ v', SCE.Value v' ∧ S_Sem.Sel v l v' := by
+  obtain ⟨ce, helab⟩ := htyp
+  obtain ⟨v', hsel⟩ := elab_rlookup_prog hlook helab hv
+  exact ⟨v', sce_sel_value hsel hv, hsel⟩
 
 -- Package extraction progress: every import of D can be selected from a
 -- well-elaborated module value
@@ -271,15 +319,15 @@ theorem selpkg_pres {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
           (elabExp.elrec SCE.Typ.top _ _ _ _ (elab_value_weaken h hvl SCE.Typ.top))
           (SCE.Value.vlrec hvl) _)⟩
 
--- Generalized preservation: SCE small steps preserve elaboration types
+-- Generalized preservation: SCE small steps preserve source types
 theorem sgpreservation
     {e e' v : SCE.Exp}
     (hstep : SStep v e e') :
     ∀ {Γ A : SCE.Typ},
-    (∃ ce, elabExp Γ e A ce)
+    SCE.HasType Γ e A
     → SCE.Value v
-    → (∃ ρc, elabExp SCE.Typ.top v Γ ρc)
-    → ∃ ce', elabExp Γ e' A ce' := by
+    → SCE.HasType .top v Γ
+    → SCE.HasType Γ e' A := by
   induction hstep with
   | ssquery hval =>
     intro Γ A ⟨ce, helab⟩ hv ⟨ρc, henv⟩
@@ -321,7 +369,7 @@ theorem sgpreservation
     cases helab with
     | edmrg _ _ _ _ _ _ _ h1 h2 =>
       have h1' := elab_value_weaken h1 hv1 (Typ.and Typ.top Γ)
-      have henv' : ∃ ρc, elabExp SCE.Typ.top (.mrg _ _) (Typ.and Γ _) ρc :=
+      have henv' : SCE.HasType .top (.mrg _ _) (Typ.and Γ _) :=
         ⟨_, elabExp.edmrg _ _ _ _ _ _ _ (elab_value_weaken henv hval _) h1'⟩
       have ⟨ce', h⟩ := ih ⟨_, h2⟩ (Value.vmrg hval hv1) henv'
       exact ⟨_, elabExp.edmrg _ _ _ _ _ _ _ h1 h⟩
@@ -378,28 +426,12 @@ theorem sgpreservation
       have ⟨ce', hce'⟩ := elab_rlookup_pres hlook hsel hv1 (elab_value_weaken h1 hv1 _)
       have hv' := sce_sel_value hsel hv1
       exact ⟨_, elab_value_weaken hce' hv' _⟩
-  | @ssmstruct_sandboxed v e e' hv hstep ih =>
+  | @ssmstruct v e e' hv hstep ih =>
     intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
     cases helab with
-    | mstruct _ _ _ _ _ _ _ hnv hsb_sand hsb_open h =>
-      have heq := hsb_sand rfl; subst heq
-      have ⟨ce', h'⟩ := ih ⟨_, h⟩ Value.vunit ⟨_, elabExp.eunit _⟩
-      by_cases hval' : SCE.Value e'
-      · exact ⟨_, elabExp.mstructv _ _ _ _ _ hval' (elab_value_weaken h' hval' _)⟩
-      · exact ⟨_, elabExp.mstruct _ _ _ _ _ _ Core.Exp.unit hval' (fun _ => rfl) hsb_open h'⟩
-    | mstructv _ _ _ _ _ hvse h =>
-      exact absurd hstep (value_no_step hvse)
-  | @ssmstruct_open v e e' hv hstep ih =>
-    intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
-    cases helab with
-    | mstruct _ _ _ _ _ _ _ hnv hsb_sand hsb_open h =>
-      have heq := hsb_open rfl; subst heq
+    | mstruct _ _ _ _ h =>
       have ⟨ce', h'⟩ := ih ⟨_, h⟩ hval ⟨ρc, henv⟩
-      by_cases hval' : SCE.Value e'
-      · exact ⟨_, elabExp.mstructv _ _ _ _ _ hval' h'⟩
-      · exact ⟨_, elabExp.mstruct _ _ _ _ _ _ Core.Exp.unit hval' hsb_sand (fun _ => rfl) h'⟩
-    | mstructv _ _ _ _ _ hvse h =>
-      exact absurd hstep (value_no_step hvse)
+      exact ⟨_, elabExp.mstruct _ _ _ _ h'⟩
   | ssmfunctor_sandboxed hv =>
     intro Γ A ⟨ce, helab⟩ hval ⟨ρc, henv⟩
     cases helab
@@ -620,9 +652,9 @@ theorem sgpreservation
 
 -- Whole-program preservation
 theorem spreservation {e e' : SCE.Exp} {A : SCE.Typ}
-    : (∃ ce, elabExp SCE.Typ.top e A ce)
+    : SCE.HasType .top e A
     → SStep SCE.Exp.unit e e'
-    → ∃ ce', elabExp SCE.Typ.top e' A ce' := by
+    → SCE.HasType .top e' A := by
   intros htyp hstep
   apply sgpreservation hstep htyp Value.vunit
   exact ⟨_, elabExp.eunit _⟩

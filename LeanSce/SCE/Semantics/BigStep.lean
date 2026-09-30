@@ -31,6 +31,10 @@ inductive Sel : Exp → String → Exp → Prop where
   | nmrg_right {v₁ v₂ v' : Exp} {l : String}
     : Sel v₂ l v'
     → Sel (.nmrg v₁ v₂) l v'
+  -- a struct value is transparent for selection (mirrors SRLookup.sig)
+  | mstruct {v v' : Exp} {l : String}
+    : Sel v l v'
+    → Sel (.mstruct v) l v'
 
 -- SelPkg v D pkg: extract from the module value v the record package pkg
 -- shaped after the import interface D (one Sel per labeled import)
@@ -51,6 +55,7 @@ theorem sel_value {v v' : Exp} {l : String}
   | dmrg_right _ ih => cases hv with | vmrg h1 h2 => exact ih h2
   | nmrg_left _ ih => cases hv
   | nmrg_right _ ih => cases hv
+  | mstruct _ ih => cases hv with | vmstruct h => exact ih h
 
 theorem selpkg_value {v : Exp} {D : Typ} {pkg : Exp}
     (hsp : SelPkg v D pkg) (hv : Value v) : Value pkg := by
@@ -130,14 +135,10 @@ inductive BStep : Exp → Exp → Exp → Prop where
     → BStep ρ e₁ (.lrec l v')
     → BStep (.mrg ρ v') e₂ v
     → BStep ρ (.openm e₁ e₂) v
-  | mstruct_sandboxed {ρ body v : Exp}
-    : Value ρ
-    → BStep .unit body v
-    → BStep ρ (.mstruct .sandboxed body) (.mstruct .sandboxed v)
-  | mstruct_open {ρ body v : Exp}
+  | mstruct {ρ body v : Exp}
     : Value ρ
     → BStep ρ body v
-    → BStep ρ (.mstruct .open_ body) (.mstruct .open_ v)
+    → BStep ρ (.mstruct body) (.mstruct v)
   | mfunctor_sandboxed {ρ : Exp} {A : Typ} {body : Exp}
     : Value ρ
     → BStep ρ (.mfunctor .sandboxed A body) (.mclos .unit A body)
@@ -225,6 +226,7 @@ theorem source_sel_value
   | dmrg_right _ ih => cases hval with | vmrg h1 h2 => exact ih h2
   | nmrg_left _ ih => cases hval
   | nmrg_right _ ih => cases hval
+  | mstruct _ ih => cases hval with | vmstruct h => exact ih h
 
 theorem eval_produces_value
     {ρ e v : SCE.Exp}
@@ -259,8 +261,7 @@ theorem eval_produces_value
   | openm _ _ _ ih1 ih2 =>
     have := ih1 hval
     cases this with | vlrec hv => exact ih2 (SCE.Value.vmrg hval hv)
-  | mstruct_sandboxed _ _ ih => exact SCE.Value.vmstruct (ih SCE.Value.vunit)
-  | mstruct_open _ _ ih => exact SCE.Value.vmstruct (ih hval)
+  | mstruct _ _ ih => exact SCE.Value.vmstruct (ih hval)
   | mfunctor_sandboxed _ => exact SCE.Value.vmclos SCE.Value.vunit
   | mfunctor_open hv => exact SCE.Value.vmclos hv
   | mlink hv hstep1 hstep2 hsel hstep3 ih1 ih2 ih3 =>
@@ -308,8 +309,7 @@ theorem bstep_value_id {v : SCE.Exp}
   | vmstruct _ ih =>
     intro _ _ h
     cases h with
-    | mstruct_sandboxed _ hb => rw [ih hb]
-    | mstruct_open _ hb => rw [ih hb]
+    | mstruct _ hb => rw [ih hb]
   | vmrg _ _ ih1 ih2 =>
     intro _ _ h
     cases h with

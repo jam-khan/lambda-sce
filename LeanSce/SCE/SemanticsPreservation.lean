@@ -38,6 +38,10 @@ theorem sel_implies_label_in
     exact SCE.LabelIn.andr _ _ _ (ih hv2 (elab_value_weaken h2 hv2 _))
   | nmrg_left => cases hval
   | nmrg_right => cases hval
+  | mstruct _ ih =>
+    cases hval with | vmstruct hv =>
+    cases helab with
+    | mstruct _ _ _ _ h => exact SCE.LabelIn.sig _ _ (ih hv h)
 
 theorem lookup_preservation
     {v_e v' : SCE.Exp} {vc_e : Core.Exp} {A B : SCE.Typ} {i : Nat}
@@ -99,35 +103,37 @@ theorem sel_preservation
       exact absurd hlin hcond
   | nmrg_left => cases hval
   | nmrg_right => cases hval
+  | mstruct hsel_inner ih =>
+    cases hval with | vmstruct hv =>
+    cases helab with
+    | mstruct _ _ _ _ h =>
+      cases htyp_look with
+      | sig _ _ _ hrl => exact ih hv h hrl
 
-/-! ### Evaluation of the linearized combinators
+/-! ### Evaluation of the composition encodings
 
-Operational lemmas assembling `EBig` derivations for the linearized terms.  Note
+Operational lemmas assembling `EBig` derivations for the generated terms.  Note
 the premise shapes: each operand evaluation appears **once**, mirroring the terms
 themselves. -/
 
-/-- Bind-once merge: if each operand evaluates once under `ρ`, the linearized
-merge evaluates to the merged values. -/
+/-- Non-dependent merge saves the ambient environment and restores it for each
+operand; the final projection discards the saved environment. -/
 theorem nmrgCore_eval
-    {ρc vc₁ vc₂ : Core.Exp} {a b : Core.Typ} {ce₁ ce₂ : Core.Exp}
+    {ρc vc₁ vc₂ ce₁ ce₂ : Core.Exp}
     (hρ : Core.Value ρc)
     (hbig1 : EBig ρc ce₁ vc₁)
     (hbig2 : EBig ρc ce₂ vc₂)
-    : EBig ρc (nmrgCore a b ce₁ ce₂) (.mrg vc₁ vc₂) := by
+    : EBig ρc (nmrgCore ce₁ ce₂) (.mrg vc₁ vc₂) := by
   have hv1 := ebig_produces_value hρ hbig1
-  have hv2 := ebig_produces_value hρ hbig2
-  simp only [nmrgCore, nmrgStep]
-  apply EBig.ebapp
-  · exact EBig.ebapp (EBig.ebclos hρ) hbig1 (EBig.ebclos (Core.Value.vmrg hρ hv1))
-  · exact hbig2
-  · apply EBig.ebmrg
-    · exact EBig.ebproj
-        (EBig.equery (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hv2))
-        (Core.LookupV.lvsucc Core.LookupV.lvzero)
-    · exact EBig.ebproj
-        (EBig.equery
-          (Core.Value.vmrg (Core.Value.vmrg (Core.Value.vmrg hρ hv1) hv2) hv1))
-        (Core.LookupV.lvsucc Core.LookupV.lvzero)
+  have hsaved := Core.Value.vmrg hρ hρ
+  simp only [nmrgCore]
+  apply EBig.ebproj (EBig.ebmrg (EBig.equery hρ) ?_) Core.LookupV.lvzero
+  apply EBig.ebmrg
+  · exact EBig.ebbox
+      (EBig.ebproj (EBig.equery hsaved) Core.LookupV.lvzero) hbig1
+  · exact EBig.ebbox
+      (EBig.ebproj (EBig.equery (Core.Value.vmrg hsaved hv1))
+        (Core.LookupV.lvsucc Core.LookupV.lvzero)) hbig2
 
 -- the extracted package elaborates at the interface type
 theorem selpkg_elab {Γ₁ D : SCE.Typ} (hok : LinkOk Γ₁ D) :
@@ -393,36 +399,13 @@ theorem semantic_preservation
         henv (elab_value_weaken helab_v1 hv1_val _)
       obtain ⟨vc_result, hbig2, helab_result⟩ := ih2 h_elab2 helab_mrg_env hval_mrg
       exact ⟨vc_result,
-             EBig.ebapp (EBig.ebclos (elab_value henv henv_val)) hbig1 hbig2,
+             EBig.ebproj (EBig.ebmrg hbig1 hbig2) Core.LookupV.lvzero,
              helab_result⟩
-  | mstruct_sandboxed hval_ρ hstep_body ih =>
+  | mstruct hval_ρ hstep_body ih =>
     cases helab with
-    | mstruct _ _ _ _ _ ce _ _ hs1 hs2 h_elab_body =>
-      have hctx := hs1 rfl
-      rw [hctx] at h_elab_body
-      obtain ⟨vc, hbig, helab_v⟩ := ih h_elab_body (elabExp.eunit .top) SCE.Value.vunit
-      have hv_body := eval_produces_value SCE.Value.vunit hstep_body
-      exact ⟨vc, EBig.ebbox (EBig.ebunit (elab_value henv henv_val)) hbig,
-             elabExp.mstructv _ _ _ _ _ hv_body helab_v⟩
-    | mstructv _ _ _ _ _ hvse h =>
-      have hveq := bstep_value_id hvse hstep_body
-      subst hveq
-      exact ⟨_, ebig_value_refl (elab_value h hvse) (elab_value henv henv_val),
-             elabExp.mstructv _ _ _ _ _ hvse (elab_value_weaken h hvse _)⟩
-  | mstruct_open hval_ρ hstep_body ih =>
-    cases helab with
-    | mstruct _ _ _ _ _ ce _ _ hs1 hs2 h_elab_body =>
-      have hctx := hs2 rfl
-      rw [hctx] at h_elab_body
+    | mstruct _ _ _ ce h_elab_body =>
       obtain ⟨vc, hbig, helab_v⟩ := ih h_elab_body henv henv_val
-      have hv_body := eval_produces_value henv_val hstep_body
-      exact ⟨vc, EBig.ebbox (EBig.equery (elab_value henv henv_val)) hbig,
-             elabExp.mstructv _ _ _ _ _ hv_body helab_v⟩
-    | mstructv _ _ _ _ _ hvse h =>
-      have hveq := bstep_value_id hvse hstep_body
-      subst hveq
-      exact ⟨_, ebig_value_refl (elab_value h hvse) (elab_value henv henv_val),
-             elabExp.mstructv _ _ _ _ _ hvse (elab_value_weaken h hvse _)⟩
+      exact ⟨vc, hbig, elabExp.mstruct .top _ _ _ helab_v⟩
   | mfunctor_sandboxed hval_ρ =>
     cases helab with
     | mfunctor _ ctxInner _ _ sb _ ce hs1 hs2 h_body =>

@@ -69,14 +69,10 @@ inductive SStep : Exp → Exp → Exp → Prop where
     → Value v1
     → Sel v1 l v2
     → SStep v (.rproj v1 l) v2
-  | ssmstruct_sandboxed {v e e'}
-    : Value v
-    → SStep .unit e e'
-    → SStep v (.mstruct .sandboxed e) (.mstruct .sandboxed e')
-  | ssmstruct_open {v e e'}
+  | ssmstruct {v e e'}
     : Value v
     → SStep v e e'
-    → SStep v (.mstruct .open_ e) (.mstruct .open_ e')
+    → SStep v (.mstruct e) (.mstruct e')
   | ssmfunctor_sandboxed {v : Exp} {A : Typ} {e : Exp}
     : Value v
     → SStep v (.mfunctor .sandboxed A e) (.mclos .unit A e)
@@ -211,8 +207,7 @@ theorem value_no_step {v : Exp} (hv : Value v) : ∀ {ρ e : Exp}, ¬ SStep ρ v
   | vmstruct _ ih =>
     intro _ _ hs
     cases hs with
-    | ssmstruct_sandboxed _ h => exact ih h
-    | ssmstruct_open _ h => exact ih h
+    | ssmstruct _ h => exact ih h
   | vmrg _ _ ih1 ih2 =>
     intro _ _ hs
     cases hs with

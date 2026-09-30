@@ -127,22 +127,13 @@ theorem smstep_rproj {v e1 e2 : Exp} {l : String}
   | refl hv => exact SMStep.refl hv
   | step hs _ ih => exact SMStep.step (SStep.ssrproj (sstep_env_value hs) hs) ih
 
--- Congruence: mstruct sandboxed
-theorem smstep_mstruct_sandboxed {v e1 e2 : Exp}
-    (hv : Value v)
-    (h : SMStep .unit e1 e2)
-    : SMStep v (.mstruct .sandboxed e1) (.mstruct .sandboxed e2) := by
-  induction h with
-  | refl _ => exact SMStep.refl hv
-  | step hs _ ih => exact SMStep.step (SStep.ssmstruct_sandboxed hv hs) ih
-
--- Congruence: mstruct open
-theorem smstep_mstruct_open {v e1 e2 : Exp}
+-- Congruence: structures evaluate their bodies in the ambient environment.
+theorem smstep_mstruct {v e1 e2 : Exp}
     (h : SMStep v e1 e2)
-    : SMStep v (.mstruct .open_ e1) (.mstruct .open_ e2) := by
+    : SMStep v (.mstruct e1) (.mstruct e2) := by
   induction h with
   | refl hv => exact SMStep.refl hv
-  | step hs _ ih => exact SMStep.step (SStep.ssmstruct_open (sstep_env_value hs) hs) ih
+  | step hs _ ih => exact SMStep.step (SStep.ssmstruct (sstep_env_value hs) hs) ih
 
 -- Congruence: mapp left
 theorem smstep_mapp_left {v e1 e1' : Exp}
@@ -340,10 +331,8 @@ theorem sbig_sound {env e v : Exp}
         (smstep_trans
           (SMStep.step (SStep.ssopenm hv hv') (SMStep.refl hv))
           (sbox_mstep_drop_env ih2 hv2 hv))
-  | mstruct_sandboxed hv hb ih =>
-    exact smstep_mstruct_sandboxed hv ih
-  | mstruct_open hv hb ih =>
-    exact smstep_mstruct_open ih
+  | mstruct hv hb ih =>
+    exact smstep_mstruct ih
   | mfunctor_sandboxed hv =>
     exact SMStep.step (SStep.ssmfunctor_sandboxed hv) (SMStep.refl hv)
   | mfunctor_open hv =>
@@ -425,10 +414,7 @@ theorem sbig_value_refl {e v : Exp}
   | vinr hv' ih => exact BStep.inr hvv (ih hvv)
   | vfclos hv' ih => exact BStep.fclos_val hvv hv'
   | vfold hv' ih => exact BStep.fold hvv (ih hvv)
-  | @vmstruct sb _ hv' ih =>
-    cases sb with
-    | sandboxed => exact BStep.mstruct_sandboxed hvv (ih Value.vunit)
-    | open_ => exact BStep.mstruct_open hvv (ih hvv)
+  | vmstruct hv' ih => exact BStep.mstruct hvv (ih hvv)
   | vmrg hv1 hv2 ih1 ih2 =>
     have h1 := ih1 hvv
     exact BStep.dmrg hvv h1 (ih2 (Value.vmrg hvv (sbig_produces_value hvv h1)))
@@ -455,18 +441,11 @@ theorem sbig_val_det {env e v1 : Exp}
   | rproj _ _ _ _ => cases hv
   | letb _ _ _ _ _ => cases hv
   | openm _ _ _ _ _ => cases hv
-  | mstruct_sandboxed _ _ ih1 =>
+  | mstruct _ _ ih1 =>
     cases hv with
     | vmstruct hv' =>
       cases h2 with
-      | mstruct_sandboxed _ hb2 =>
-        congr 1
-        exact ih1 hv' hb2
-  | mstruct_open _ _ ih1 =>
-    cases hv with
-    | vmstruct hv' =>
-      cases h2 with
-      | mstruct_open _ hb2 =>
+      | mstruct _ hb2 =>
         congr 1
         exact ih1 hv' hb2
   | mfunctor_sandboxed _ => cases hv
@@ -588,12 +567,9 @@ theorem sstep_sbig {env e1 e2 v : Exp}
     have heq := sbig_value_eq hb (source_sel_value hv1 hsel)
     subst heq
     exact BStep.rproj hv (sbig_value_refl hv1 hv) hsel
-  | ssmstruct_sandboxed hv _ ih =>
+  | ssmstruct hv _ ih =>
     cases hb with
-    | mstruct_sandboxed _ hb_body => exact BStep.mstruct_sandboxed hv (ih hb_body)
-  | ssmstruct_open hv _ ih =>
-    cases hb with
-    | mstruct_open _ hb_body => exact BStep.mstruct_open hv (ih hb_body)
+    | mstruct _ hb_body => exact BStep.mstruct hv (ih hb_body)
   | ssmfunctor_sandboxed hv =>
     cases hb with
     | mclos_val _ hv' => exact BStep.mfunctor_sandboxed hv
