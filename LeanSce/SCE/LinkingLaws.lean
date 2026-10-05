@@ -56,6 +56,37 @@ theorem link_interface_determined
   have heq := bigstep_deterministic_gen helab henv hρ h₁' h₂
   simpa using heq
 
+/-- **Interface abstraction, import-label form.**  Two providers that agree on
+the client's import label (the only label the link selects) drive the client
+to the same exports.  This is the form stated in the paper: the providers need
+not agree on any other label. -/
+theorem link_respects_import
+    {ρ P₁ P₂ C v₁ v₁' w : Exp}
+    (hlink : BStep ρ (.mlink P₁ C) (.mrg v₁ w))
+    (hP₂   : BStep ρ P₂ v₁')
+    (hagree : ∀ (v₂ : Exp) (l : String) (A : Typ) (body vl : Exp),
+        BStep ρ C (.mclos v₂ (.rcd l A) body) → Sel v₁ l vl → Sel v₁' l vl)
+    : BStep ρ (.mlink P₂ C) (.mrg v₁' w) := by
+  cases hlink with
+  | mlink hρ _hP₁ hC hsel hbody =>
+      exact BStep.mlink hρ hP₂ hC (hagree _ _ _ _ _ hC hsel) hbody
+
+/-- Equality form of `link_respects_import`, for a well-typed link. -/
+theorem link_import_determined
+    {Γ A : Typ} {ρ P₁ P₂ C v₁ v₁' w w' : Exp} {ec ρc : Core.Exp}
+    (helab : elabExp Γ (.mlink P₂ C) A ec)
+    (henv  : elabExp Typ.top ρ Γ ρc)
+    (hρ    : Value ρ)
+    (h₁ : BStep ρ (.mlink P₁ C) (.mrg v₁ w))
+    (hP₂ : BStep ρ P₂ v₁')
+    (hagree : ∀ (v₂ : Exp) (l : String) (A : Typ) (body vl : Exp),
+        BStep ρ C (.mclos v₂ (.rcd l A) body) → Sel v₁ l vl → Sel v₁' l vl)
+    (h₂ : BStep ρ (.mlink P₂ C) (.mrg v₁' w'))
+    : w = w' := by
+  have h₁' := link_respects_import h₁ hP₂ hagree
+  have heq := bigstep_deterministic_gen helab henv hρ h₁' h₂
+  simpa using heq
+
 /-- **Law C prerequisite.**  Selection is unaffected by a merge extension whose
 labels it avoids.  Without disjointness `Sel` genuinely relates both sides. -/
 theorem sel_merge_disjoint
