@@ -22,3 +22,4 @@ import LeanSce.SCE.Progress
 import LeanSce.SCE.Semantics.Equivalence
 import LeanSce.SCE.Confinement
 import LeanSce.SCE.RecLinking
+import LeanSce.SCE.LinkingLaws

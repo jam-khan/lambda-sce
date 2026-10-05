@@ -1,0 +1,74 @@
+/-
+  Linking laws not covered by the existing development.
+
+  A. Interface abstraction -- a client cannot observe anything about the
+     provider beyond the package it extracts through its import interface.
+     This is the semantic half of "compiled against interfaces alone";
+     `core_link_typed` gives only the typing half.
+-/
+import LeanSce.SCE.Semantics.BigStep
+import LeanSce.SCE.Semantics.Determinism
+import LeanSce.SCE.Preservation
+
+open SCE
+
+namespace S_Sem
+
+/-- **Interface abstraction (n-ary).**  If two providers agree on every package
+extractable at any import interface, then either may drive the same client to
+the same exports.  The client's body derivation never mentions the provider, so
+the whole proof is: invert, swap the provider, reapply. -/
+theorem link_respects_interface
+    {ρ P₁ P₂ C v₁ v₁' w : Exp}
+    (hlink : BStep ρ (.mlinkn P₁ C) (.mrg v₁ w))
+    (hP₂   : BStep ρ P₂ v₁')
+    (hagree : ∀ (D : Typ) (pkg : Exp), SelPkg v₁ D pkg → SelPkg v₁' D pkg)
+    : BStep ρ (.mlinkn P₂ C) (.mrg v₁' w) := by
+  cases hlink with
+  | mlinkn hρ _hP₁ hC hpkg hbody =>
+      exact BStep.mlinkn hρ hP₂ hC (hagree _ _ hpkg) hbody
+
+/-- Binary instance, for `link`. -/
+theorem link_respects_interface_bin
+    {ρ P₁ P₂ C v₁ v₁' w : Exp}
+    (hlink : BStep ρ (.mlink P₁ C) (.mrg v₁ w))
+    (hP₂   : BStep ρ P₂ v₁')
+    (hagree : ∀ (l : String) (vl : Exp), Sel v₁ l vl → Sel v₁' l vl)
+    : BStep ρ (.mlink P₂ C) (.mrg v₁' w) := by
+  cases hlink with
+  | mlink hρ _hP₁ hC hsel hbody =>
+      exact BStep.mlink hρ hP₂ hC (hagree _ _ hsel) hbody
+
+/-- Equality form: two interface-agreeing providers drive the client to the
+*same* exports.  Needs the general determinism, indexed by an elaboration
+witness. -/
+theorem link_interface_determined
+    {Γ A : Typ} {ρ P₁ P₂ C v₁ v₁' w w' : Exp} {ec ρc : Core.Exp}
+    (helab : elabExp Γ (.mlinkn P₂ C) A ec)
+    (henv  : elabExp Typ.top ρ Γ ρc)
+    (hρ    : Value ρ)
+    (h₁ : BStep ρ (.mlinkn P₁ C) (.mrg v₁ w))
+    (hP₂ : BStep ρ P₂ v₁')
+    (hagree : ∀ (D : Typ) (pkg : Exp), SelPkg v₁ D pkg → SelPkg v₁' D pkg)
+    (h₂ : BStep ρ (.mlinkn P₂ C) (.mrg v₁' w'))
+    : w = w' := by
+  have h₁' := link_respects_interface h₁ hP₂ hagree
+  have heq := bigstep_deterministic_gen helab henv hρ h₁' h₂
+  simpa using heq
+
+/-- **Law C prerequisite.**  Selection is unaffected by a merge extension whose
+labels it avoids.  Without disjointness `Sel` genuinely relates both sides. -/
+theorem sel_merge_disjoint
+    {v₁ v₂ w : Exp} {B : Typ} {l : String} {ce₂ : Core.Exp}
+    (hv₂ : Value v₂)
+    (helab₂ : elabExp Typ.top v₂ B ce₂)
+    (hnotin : ¬ LabelIn l B)
+    : Sel (.mrg v₁ v₂) l w ↔ Sel v₁ l w := by
+  constructor
+  · intro h
+    cases h with
+    | dmrg_left h'  => exact h'
+    | dmrg_right h' => exact (elab_notin_sel_false h' hv₂ hnotin helab₂).elim
+  · exact Sel.dmrg_left
+
+end S_Sem
