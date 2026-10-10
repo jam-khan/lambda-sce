@@ -63,6 +63,27 @@ theorem separate_compilation
     have hmlink := elabExp.mlink Γ Γ₁ A B l es₁ es₂ ec₁ ec₂ helab₁ helab₂ hlookup
     exact semantic_preservation hmlink heval henv henv_val
 
+/-- Separate compilation reuses a sandboxed client elaborated under the empty
+context with a compatible provider in any ambient context. -/
+theorem separate_compilation_sandboxed
+    {Γ Γ₁ A B : SCE.Typ} {l : String}
+    {es₁ body : SCE.Exp} {ec₁ ec₂ ec : Core.Exp}
+    {ρs vs : SCE.Exp} {ρc : Core.Exp}
+    (helab₁ : elabExp Γ es₁ Γ₁ ec₁)
+    (helab₂ : elabExp SCE.Typ.top (.mfunctor .sandboxed (.rcd l A) body)
+      (.marr (.rcd l A) B) ec₂)
+    (hlookup : SRLookup Γ₁ l A)
+    (hlink : CoreLink l (elabTyp Γ₁) (elabTyp A) (elabTyp B) ec₁ ec₂ ec)
+    (heval : S_Sem.BStep ρs
+      (.mlink es₁ (.mfunctor .sandboxed (.rcd l A) body)) vs)
+    (henv : elabExp SCE.Typ.top ρs Γ ρc)
+    (henv_val : SCE.Value ρs)
+    : ∃ vc, EBig ρc ec vc
+           ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
+  exact separate_compilation helab₁
+    (sandboxed_functor_elab_context_independent helab₂)
+    hlookup hlink heval henv henv_val
+
 /-- **Separate compilation, closed** — the toolchain's actual case: closed
 compiled units, empty initial environment. -/
 theorem separate_compilation_closed
@@ -117,6 +138,24 @@ theorem separate_compilation_n
   | link =>
     have hn := elabExp.mlinkn Γ Γ₁ D B es₁ es₂ ec₁ ec₂ helab₁ helab₂ hok
     exact semantic_preservation hn heval henv henv_val
+
+/-- Multi-import separate compilation reuses a sandboxed client elaborated
+under the empty context with a compatible provider in any ambient context. -/
+theorem separate_compilation_n_sandboxed
+    {Γ Γ₁ D B : SCE.Typ}
+    {es₁ body : SCE.Exp} {ec₁ ec₂ ec : Core.Exp}
+    {ρs vs : SCE.Exp} {ρc : Core.Exp}
+    (helab₁ : elabExp Γ es₁ Γ₁ ec₁)
+    (helab₂ : elabExp SCE.Typ.top (.mfunctor .sandboxed D body) (.marr D B) ec₂)
+    (hok : LinkOk Γ₁ D)
+    (hlink : CoreLinkN D (elabTyp Γ₁) (elabTyp B) ec₁ ec₂ ec)
+    (heval : S_Sem.BStep ρs (.mlinkn es₁ (.mfunctor .sandboxed D body)) vs)
+    (henv : elabExp SCE.Typ.top ρs Γ ρc)
+    (henv_val : SCE.Value ρs)
+    : ∃ vc, EBig ρc ec vc ∧ elabExp SCE.Typ.top vs (.and Γ₁ B) vc := by
+  exact separate_compilation_n helab₁
+    (sandboxed_functor_elab_context_independent helab₂)
+    hok hlink heval henv henv_val
 
 /-- **Separate compilation, n-ary, closed.** -/
 theorem separate_compilation_n_closed

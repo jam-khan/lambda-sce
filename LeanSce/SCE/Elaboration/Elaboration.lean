@@ -188,6 +188,16 @@ inductive elabExp : TyCtx → Exp → Typ → Core.Exp → Prop
     → A = substTyp 0 (Typ.mu T) T
     → elabExp ctx (Exp.unfold se) A (Core.Exp.unfold ce)
 
+/-- A sandboxed functor elaborates identically in any ambient context. -/
+theorem sandboxed_functor_elab_context_independent
+    {Γ₁ Γ₂ A T : Typ} {body : Exp} {c : Core.Exp}
+    (h : elabExp Γ₁ (.mfunctor .sandboxed A body) T c) :
+    elabExp Γ₂ (.mfunctor .sandboxed A body) T c := by
+  cases h with
+  | mfunctor _ ctxInner _ B _ _ ce hSandbox _ hBody =>
+    exact elabExp.mfunctor Γ₂ ctxInner A B .sandboxed body ce
+      hSandbox (by intro h; cases h) hBody
+
 /-- Source typing is elaboration with the generated core term hidden. -/
 abbrev SCE.HasType (Γ : SCE.Typ) (e : SCE.Exp) (A : SCE.Typ) : Prop :=
   ∃ ce, elabExp Γ e A ce

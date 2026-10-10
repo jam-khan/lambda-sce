@@ -15,6 +15,7 @@ import LeanSce.SCE.Elaboration.Uniqueness
 import LeanSce.SCE.Elaboration.Preservation
 import LeanSce.SCE.SemanticsPreservation
 import LeanSce.SCE.Sepcomp
+import LeanSce.SCE.UnitChains
 import LeanSce.SCE.Semantics.Determinism
 import LeanSce.SCE.Semantics.SmallStep
 import LeanSce.SCE.Preservation
