@@ -27,3 +27,8 @@ import LeanSce.Core.Semantics.Determinism
 import LeanSce.SCE.Simulation
 import LeanSce.SCE.Divergence
 import LeanSce.SCE.BehaviourLaws
+
+-- Polymorphic SCE development; independent of the existing Core/SCE calculus.
+import LeanSce.Target.All
+import LeanSce.Source.All
+import LeanSce.ProofAudit
